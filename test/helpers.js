@@ -130,8 +130,8 @@ export const mount = async (html, { server, beforeInit, without = [] } = {}) => 
 
     const errors = [];
     const warnings = [];
-    window.console.error = (...args) => errors.push(args);
-    window.console.warn = (...args) => warnings.push(args);
+    window.console.error = (...args) => void errors.push(args);
+    window.console.warn = (...args) => void warnings.push(args);
 
     const { document } = window;
     document.body.innerHTML = html;

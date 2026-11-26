@@ -242,8 +242,8 @@ describe("replacing a request", () => {
         );
         const scope = page.scope("#first");
         page.$("#first").click();
-        const unwritable = { toString() { throw new Error("no"); } };
-        expect(() => scope.$get("/y", { bad: unwritable })).toThrow("no");
+        const unreadable = { get bad() { throw new Error("no"); } };
+        expect(() => scope.$get("/y", unreadable)).toThrow("no");
         answer(`<div id="target">new</div>`);
         await page.settle();
         expect(page.$("#target").textContent).toBe("new");

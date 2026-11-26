@@ -127,13 +127,28 @@
 
             const opts = runWithEl(el, () => {
                 let body;
-                if (data instanceof FormData || data instanceof URLSearchParams) body = data;
-                else if (data?.tagName === "FORM") body = new FormData(data);
-                else {
-                    body = new URLSearchParams();
-                    Object.entries(data ?? {}).forEach(([key, value]) =>
-                        [value].flat().forEach((item) => item != null && body.append(key, item)),
+                const isEvent = typeof data?.preventDefault === "function";
+                const isBlob = (value) => typeof value?.arrayBuffer === "function";
+                if (typeof data?.append === "function" && typeof data[Symbol.iterator] === "function") body = data;
+                else if (isEvent || data?.nodeType === 1) {
+                    const node = isEvent ? data.target : data;
+                    const form = node?.tagName === "FORM" ? node : node?.form ?? node?.closest?.("form");
+                    if (!form) return console.error("[Nomini] no form to send for:", data), refused;
+                    body = new FormData(form, (isEvent && data.submitter) || undefined);
+                } else {
+                    const pairs = Object.entries(data ?? {}).flatMap(([key, value]) =>
+                        [value]
+                            .flat()
+                            .flatMap((item) => (typeof item?.item === "function" && typeof item[Symbol.iterator] === "function" ? [...item] : [item]))
+                            .filter((item) => item != null)
+                            .filter((item) => {
+                                if (item !== Object(item) || isBlob(item)) return true;
+                                console.warn("[Nomini] cannot send:", key, item);
+                            })
+                            .map((item) => [key, isBlob(item) ? item : String(item)]),
                     );
+                    body = pairs.some(([, value]) => isBlob(value)) ? new FormData() : new URLSearchParams();
+                    pairs.forEach(([key, value]) => body.append(key, value));
                 }
 
                 const entries = [...body];
@@ -148,7 +163,7 @@
                     url = path + joiner + query + url.slice(hashAt);
                 }
 
-                const sent = entries.map(([key, value]) => [key, typeof value === "string" ? value : `${value.name}:${value.size}`]);
+                const sent = entries.map(([key, value]) => [key, typeof value === "string" ? value : `\0file${idOf(value)}`]);
                 write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sent) : ""}`;
                 if (writing.has(write)) return;
 
@@ -156,6 +171,7 @@
                 return opts;
             });
 
+            if (opts === refused) return;
             if (!opts) return report("fetchskip", { method, url });
 
             this._nmAbort = reading ? controller : new AbortController();
@@ -233,6 +249,14 @@
     });
 
     // --- BEGIN fetch
+    const refused = Symbol();
+    const fileIds = new WeakMap();
+    let fileCount = 0;
+    const idOf = (file) => {
+        if (!fileIds.has(file)) fileIds.set(file, ++fileCount);
+        return fileIds.get(file);
+    };
+
     const drop = (el) => {
         queryAttr(el, "*").forEach((node) => node.nmBound && dispatch(node, "destroy", { bubbles: false }));
         // --- BEGIN ref
@@ -350,8 +374,11 @@
 
 
         // --- BEGIN data
-        const reserved = (key, el) =>
-            /^(\$|_nm|__proto__$)/i.test(key) && console.error("[Nomini] this name is nomini's own:", key, el);
+        const reserved = (key, el) => {
+            if (!/^(\$|_nm|__proto__$)/i.test(key)) return false;
+            console.error("[Nomini] this name is nomini's own:", key, el);
+            return true;
+        };
 
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
             acceptNode: (node) => (node.hasAttribute("nm-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),

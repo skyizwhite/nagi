@@ -98,3 +98,68 @@ describe("$fetching", () => {
         expect(page.$("#s").hidden).toBe(true);
     });
 });
+
+describe("what a request sends, after review", () => {
+    it("sends files inside an object as FormData, a FileList as its files", async () => {
+        const page = await mount(`<div id="d" nm-scope></div>`, { server: () => "" });
+        const window = page.window;
+        const a = new window.File(["1"], "a.txt");
+        const b = new window.File(["2"], "b.txt");
+        page.$("#d").nmProxy.$post("/up", { title: "x", doc: a, docs: [b] });
+        await page.settle();
+        expect(page.requests[0].body.map(([k, v]) => [k, typeof v === "string" ? v : v.name])).toEqual([
+            ["title", "x"],
+            ["doc", "a.txt"],
+            ["docs", "b.txt"],
+        ]);
+    });
+
+    it("warns about an object value that is not a file, and leaves it out", async () => {
+        const page = await send(`$get('/x', { a: 1, nested: { b: 2 } })`);
+        expect(page.requests[0].url).toBe("http://localhost/x?a=1");
+        expect(page.warnings).toHaveLength(1);
+    });
+
+    it("sends the form an element is in when the element is passed", async () => {
+        const page = await mount(
+            `<form nm-scope><input name="q" value="hi"><button id="b" type="button" nm-on-click="$post('/x', this)"></button></form>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.requests[0].body).toEqual([["q", "hi"]]);
+    });
+
+    it("logs an element that is in no form, and sends nothing", async () => {
+        const page = await send(`$post('/x', this)`);
+        expect(page.requests).toHaveLength(0);
+        expect(page.errors).toHaveLength(1);
+    });
+
+    it("sends the submitter of a submit event it is passed", async () => {
+        const page = await mount(
+            `<form id="f" nm-scope nm-on-submit.prevent="$post('/x', e)">
+                <input name="q" value="hi">
+                <button id="del" name="action" value="delete">Delete</button>
+            </form>`,
+            { server: () => "" },
+        );
+        const event = new page.window.SubmitEvent("submit", { cancelable: true, submitter: page.$("#del") });
+        page.$("#f").dispatchEvent(event);
+        await page.settle();
+        expect(page.requests[0].body).toEqual([["q", "hi"], ["action", "delete"]]);
+    });
+
+    it("tells apart two files of the same name and size", async () => {
+        const answers = [];
+        const page = await mount(`<div id="d" nm-scope></div>`, {
+            server: () => new Promise((resolve) => answers.push(resolve)),
+        });
+        const scope = page.$("#d").nmProxy;
+        scope.$post("/up", { doc: new page.window.File(["1"], "photo.jpg") });
+        scope.$post("/up", { doc: new page.window.File(["2"], "photo.jpg") });
+        expect(page.requests).toHaveLength(2);
+        answers.forEach((answer) => answer(""));
+        await page.settle();
+    });
+});
