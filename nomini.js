@@ -123,10 +123,11 @@
             data = { ...this.$nmData(), ...this.$dataset(), ...data };
 
             const encodedData = new URLSearchParams(data);
+            const query = String(encodedData);
 
-            if (/GET|DELETE/.test(method))
-                url += (url.includes("?") ? "&" : "?") + encodedData;
-            else opts.body = encodedData;
+            if (/GET|DELETE/.test(method)) {
+                if (query) url += (url.includes("?") ? "&" : "?") + query;
+            } else opts.body = encodedData;
 
             fetch(url, opts)
                 .then(async (res) => {
@@ -184,10 +185,10 @@
         },
         $debounce(fn, ms, abortable = true) {
             const el = currentEl;
-            const signal = this._nmAbort.signal;
+            const signal = this._nmAbort?.signal;
             clearTimeout(el.nmTimer);
             el.nmTimer = setTimeout(() => {
-                if (!(abortable && signal.aborted)) runWithEl(el, fn)
+                if (!(abortable && signal?.aborted)) runWithEl(el, fn)
             }, ms);
         },
         // --- BEGIN helpers
@@ -214,7 +215,11 @@
             if (refs[name] === node) delete refs[name];
         });
         // --- END ref
-        [el, ...el.querySelectorAll("*")].forEach((node) => node.nmRuns?.forEach(kill));
+        [el, ...el.querySelectorAll("*")].forEach((node) => {
+            node.nmRuns?.forEach(kill);
+            node.nmCleanup?.forEach((clean) => clean());
+            clearTimeout(node.nmTimer);
+        });
     };
 
     const initAll = (nodes) => nodes.forEach((node) => node.nodeType === 1 && init(node));
@@ -318,12 +323,13 @@
                 ...helpers(),
             };
 
-            const trackedDeps = {};
+            const trackedDeps = new Map();
 
             const proxyData = new Proxy(rawData, {
                 get(obj, prop) {
                     if (currentBind) {
-                        const deps = (trackedDeps[prop] ||= new Set());
+                        let deps = trackedDeps.get(prop);
+                        if (!deps) trackedDeps.set(prop, (deps = new Set()));
                         deps.add(currentBind);
                         currentBind.deps.add(deps);
                     }
@@ -334,7 +340,7 @@
                     if (prop in obj && val !== Object(val) && Object.is(obj[prop], val)) return true;
                     obj[prop] = val;
 
-                    const deps = trackedDeps[prop];
+                    const deps = trackedDeps.get(prop);
 
                     deps && [...deps].forEach((run) => run());
 
@@ -372,8 +378,13 @@
 
                 if (inputType === "checkbox")
                     res = inputEl.checked;
-                else if (inputType === "radio" && inputEl.checked)
+                else if (inputType === "radio") {
+                    if (!inputEl.checked) {
+                        if (!(inputEl.name in proxyData)) proxyData[inputEl.name] = undefined;
+                        return;
+                    }
                     res = inputEl.value;
+                }
                 else if (inputType === "file")
                     res = inputEl.files;
                 else if (/number|range/.test(inputType))
@@ -422,9 +433,10 @@
                         else val(e);
                     });
 
-                    (mods.includes("window") ? window : bindEl).addEventListener(eventName, listener, {
-                        once: mods.includes("once"),
-                    });
+                    const listenOn = mods.includes("window") ? window : bindEl;
+                    listenOn.addEventListener(eventName, listener, { once: mods.includes("once") });
+                    if (listenOn === window)
+                        (bindEl.nmCleanup ||= []).push(() => window.removeEventListener(eventName, listener));
 
                     return;
                     // --- END events
