@@ -7,7 +7,7 @@
     // Utility functions
     const dispatch = (el, name, opts) => {
         opts = { bubbles: true, detail: {}, ...opts };
-        el.dispatchEvent(new CustomEvent(name, opts));
+        return el.dispatchEvent(new CustomEvent(name, opts));
     };
 
     const failed = Symbol();
@@ -122,7 +122,8 @@
             method = (method || "GET").toUpperCase();
             url = String(url);
             const reading = /^(GET|HEAD|OPTIONS)$/.test(method);
-            const report = (name, detail) => dispatch(el?.isConnected ? el : document, name, { detail });
+            const report = (name, detail, cancelable = false) =>
+                dispatch(el?.isConnected ? el : document, name, { detail, cancelable });
             let write;
 
             const opts = runWithEl(el, () => {
@@ -194,24 +195,36 @@
 
             fetch(url, opts)
                 .then(async (res) => {
-                    if (!res.ok) {
-                        throw new Error(`${res.statusText}: ${await res.text()}`);
+                    const redirect = res.headers.get("nm-redirect");
+                    if (redirect) {
+                        res.body?.cancel();
+                        if (!signal.aborted && report("fetchredirect", { url: redirect }, true)) location.assign(redirect);
+                        return;
                     }
 
-                    if (!res.body) return;
-
-                    const stream = res.body.pipeThrough(new TextDecoderStream()).getReader();
                     let buf = "";
+                    if (res.body) {
+                        const stream = res.body.pipeThrough(new TextDecoderStream()).getReader();
+                        while (true) {
+                            const { done, value } = await stream.read();
+                            if (done) break;
+                            buf += value;
+                        }
+                    }
+                    if (signal.aborted) return;
 
-                    while (true) {
-                        const { done, value } = await stream.read();
-                        if (done) break;
-                        buf += value;
+                    if (!res.ok) {
+                        const template = document.createElement("template");
+                        template.innerHTML = buf;
+                        if (![...template.content.children].some((child) => child.id))
+                            throw Object.assign(new Error(`${res.status} ${res.statusText}`), { status: res.status, text: buf });
                     }
 
-                    if (!signal.aborted) swap(buf);
+                    swap(buf);
+                    const replace = res.headers.get("nm-replace-url");
+                    if (replace) history.replaceState(history.state, "", replace);
                 })
-                .catch((err) => signal.aborted || report("fetcherr", { err, url }))
+                .catch((err) => signal.aborted || report("fetcherr", { err, url, status: err.status, text: err.text }))
                 .finally(() => {
                     writing.delete(write);
                     if (!--pending) this.$fetching = false;

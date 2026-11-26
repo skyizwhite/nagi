@@ -132,19 +132,21 @@ describe("requests", () => {
         expect(page.scope("#b")._err.message).toBe("cut");
     });
 
-    it("dispatches fetcherr from the element when the answer is not ok, and swaps nothing", async () => {
+    it("dispatches fetcherr with the status and text for an error answer with nothing to swap", async () => {
         const page = await mount(
             `<div nm-scope="{ _err: null }" nm-on-fetcherr="_err = e.detail">
                 <button id="b" nm-on-click="$get('/x', { q: 1 })"></button>
             </div>
             <div id="target">old</div>`,
-            { server: () => ({ status: 500, body: `<div id="target">new</div>` }) },
+            { server: () => ({ status: 500, body: "Server broke" }) },
         );
         page.$("#b").click();
         await page.settle();
 
-        expect(page.scope("#b")._err.url).toBe("/x?q=1");
+        const err = page.scope("#b")._err;
+        expect([err.url, err.status, err.text]).toEqual(["/x?q=1", 500, "Server broke"]);
         expect(page.$("#target").textContent).toBe("old");
+        expect(page.warnings).toEqual([]);
     });
 });
 
