@@ -299,7 +299,7 @@ describe("reactivity", () => {
         expect(scope.ran).toEqual([]);
     });
 
-    it("drops the binds of an element removed by other code", async () => {
+    it("does not run the binds of an element out of the document", async () => {
         const page = await mount(`
             <div id="d" nm-data="{ n: 1, ran: 0 }">
                 <span id="s" nm-bind="{ textContent: () => (ran++, n) }"></span>
@@ -310,6 +310,73 @@ describe("reactivity", () => {
         scope.n = 2;
         scope.n = 3;
         expect(scope.ran).toBe(1);
+    });
+
+    it("runs the binds of an element put back in the document", async () => {
+        const page = await mount(`
+            <div id="d" nm-data="{ n: 1 }"><span id="s" nm-bind="{ textContent: () => n }"></span></div>
+        `);
+        const scope = page.$("#d").nmProxy;
+        const span = page.$("#s");
+        span.remove();
+        scope.n = 2;
+        page.$("#d").append(span);
+        scope.n = 3;
+        expect(span.textContent).toBe("3");
+    });
+
+    it("keeps a $watch set up from an element a swap removed while its scope stays", async () => {
+        const page = await mount(
+            `<div id="d" nm-data="{ n: 1, seen: [] }">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <div id="target"><span nm-bind="{ oninit: () => $watch(() => seen.push(n)) }"></span></div>
+            </div>`,
+            { server: () => `<div id="target"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        page.$("#d").nmProxy.n = 2;
+        expect(page.$("#d").nmProxy.seen).toEqual([1, 2]);
+    });
+
+    it("keeps a $persist set up from an element a swap removed while its scope stays", async () => {
+        const page = await mount(
+            `<div id="d" nm-data="{ n: 1 }">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <div id="target"><span nm-bind="{ oninit: () => $persist('n') }"></span></div>
+            </div>`,
+            { server: () => `<div id="target"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        page.$("#d").nmProxy.n = 5;
+        expect(page.window.localStorage["_nmProp-n"]).toBe("5");
+    });
+
+    it("logs a bind that throws and goes on binding the rest", async () => {
+        const page = await mount(`
+            <div nm-data="{ n: 1 }">
+                <span id="bad" nm-bind="{ textContent: () => n.missing.x }"></span>
+                <span id="s" nm-bind="{ textContent: () => n }"></span>
+            </div>
+        `);
+        expect(page.$("#s").textContent).toBe("1");
+        expect(page.errors).toHaveLength(1);
+
+        page.scope("#s").n = 2;
+        expect(page.$("#s").textContent).toBe("2");
+        expect(page.errors).toHaveLength(2);
+    });
+
+    it("runs a bind again when another bind it set off changes what it read", async () => {
+        const page = await mount(`
+            <div nm-data="{ a: 1, total: 0, label: '' }">
+                <span id="first" nm-bind="{ textContent: () => { const shown = label; total = a + 1; return shown } }"></span>
+                <span id="second" nm-bind="{ textContent: () => (label = 'v' + total) }"></span>
+            </div>
+        `);
+        page.scope("#first").a = 5;
+        expect(page.$("#first").textContent).toBe("v6");
     });
 
     it("does not track what an event handler reads into the bind that sent the event", async () => {

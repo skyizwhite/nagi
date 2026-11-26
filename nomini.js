@@ -47,19 +47,29 @@
         }
     };
 
-    const watch = (fn, el = currentEl) => {
+    const watch = (fn, el = currentEl, owner = el) => {
         const run = () => {
-            if (run.active) return;
+            if (run === currentBind) return;
+            if (run.active) return (run.dirty = true);
             run.active = true;
             try {
-                runWithEl(el, fn, run);
+                for (let i = 0; i < 100 && (i === 0 || run.dirty); i++) {
+                    run.dirty = false;
+                    try {
+                        runWithEl(el, fn, run);
+                    } catch (err) {
+                        console.error("[Nomini] failed to run:", fn, "\n", err);
+                    }
+                }
             } finally {
                 run.active = false;
             }
         };
-        run.el = el;
+        run.owner = owner;
         run();
     };
+
+    const scopeOf = (el) => el?.closest("[nm-data]");
 
     // Important reactivity stuff
     let currentBind = null;
@@ -150,7 +160,7 @@
 
             return datasets;
         },
-        $watch: (fn) => watch(fn),
+        $watch: (fn) => watch(fn, currentEl, scopeOf(currentEl)),
         $dispatch(evt, detail, opts) {
             dispatch(currentEl, evt, { detail, ...opts });
         },
@@ -171,12 +181,15 @@
 
             watch(() => {
                 localStorage[key] = JSON.stringify(this[prop]);
-            });
+            }, currentEl, scopeOf(currentEl));
         },
         // --- END helpers
     });
 
     // --- BEGIN fetch
+    const markGone = (el) =>
+        [el, ...el.querySelectorAll("*")].forEach((node) => (node.nmGone = true));
+
     const swap = (text) => {
         const template = document.createElement("template");
         template.innerHTML = text;
@@ -204,9 +217,11 @@
             // --- END morph
 
             if (strategy === "inner") {
+                [...target.children].forEach(markGone);
                 target.replaceChildren(...fragment.childNodes);
                 init(target);
             } else if (strategy === "outer") {
+                markGone(target);
                 target.replaceWith(fragment);
                 init(fragment);
             } else if (/(before|after|prepend|append)/.test(strategy)) {
@@ -279,8 +294,9 @@
                     const deps = trackedDeps[prop];
 
                     deps && [...deps].forEach((run) => {
-                        if (run.el && !run.el.isConnected) deps.delete(run);
-                        else run();
+                        const { owner } = run;
+                        if (owner?.nmGone) deps.delete(run);
+                        else if (!owner || owner.isConnected) run();
                     });
 
                     return true;
