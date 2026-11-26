@@ -12,12 +12,13 @@ const mountAsking = (answer, extra = "") =>
     );
 
 describe("#7 error answers", () => {
-    it("swaps an error answer that has elements with ids, and sends no fetcherr", async () => {
+    it("swaps an error answer aimed at the page, and still sends fetcherr, marked swapped", async () => {
         const page = await mountAsking({ status: 422, body: `<div id="target">fix the title</div>` });
         page.$("#b").click();
         await page.settle();
         expect(page.$("#target").textContent).toBe("fix the title");
-        expect(page.scope("#b")._err).toBeNull();
+        const err = page.scope("#b")._err;
+        expect([err.status, err.swapped]).toEqual([422, true]);
     });
 
     it("sends fetcherr with the error when the request cannot be made", async () => {
@@ -66,7 +67,7 @@ describe("response handling, after review", () => {
         const page = await mountAsking({ status: 500, body: `<div id="summary">Traceback</div>` });
         page.$("#b").click();
         await page.settle();
-        expect(page.scope("#b")._err.status).toBe(500);
+        expect([page.scope("#b")._err.status, page.scope("#b")._err.swapped]).toEqual([500, false]);
         expect(page.warnings).toEqual([]);
     });
 

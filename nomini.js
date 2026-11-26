@@ -213,11 +213,11 @@
                     }
                     if (signal.aborted) return;
 
+                    let swapped = res.ok;
                     if (!res.ok) {
                         const template = document.createElement("template");
                         template.innerHTML = buf;
-                        if (![...template.content.children].some((child) => child.id && document.getElementById(child.id)))
-                            throw Object.assign(new Error(`${res.status} ${res.statusText}`), { status: res.status, text: buf });
+                        swapped = [...template.content.children].some((child) => child.id && document.getElementById(child.id));
                     }
 
                     const replace = res.headers.get("nm-replace-url");
@@ -228,9 +228,11 @@
                             console.warn("[Nomini] cannot replace the URL with", replace, err);
                         }
                     }
-                    swap(buf);
+                    if (swapped) swap(buf);
+                    if (!res.ok)
+                        throw Object.assign(new Error(`${res.status} ${res.statusText}`), { status: res.status, text: buf, swapped });
                 })
-                .catch((err) => signal.aborted || report("fetcherr", { err, url, status: err?.status, text: err?.text }))
+                .catch((err) => signal.aborted || report("fetcherr", { err, url, status: err?.status, text: err?.text, swapped: !!err?.swapped }))
                 .finally(() => {
                     writing.delete(write);
                     if (!--pending) this.$fetching = false;
