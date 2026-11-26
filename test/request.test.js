@@ -122,6 +122,23 @@ describe("what is sent", () => {
         expect(page.requests[0].body).toEqual([["title", "Hi"], ["tag", "a"], ["tag", "b"]]);
     });
 
+    it("sends a form element as its fields, though a browser's form can be iterated", async () => {
+        const page = await mount(
+            `<form id="f" n-scope>
+                <input name="title" value="Hi">
+                <input name="tag" value="a"><input name="tag" value="b">
+            </form>`,
+            { server: () => "" },
+        );
+        const form = page.$("#f");
+        form[Symbol.iterator] = function* () {
+            yield* this.elements;
+        };
+        form.nagiProxy.$post("/save", form);
+        await page.settle();
+        expect(page.requests[0].body).toEqual([["title", "Hi"], ["tag", "a"], ["tag", "b"]]);
+    });
+
     it("sends a file in FormData", async () => {
         const page = await mount(`<div id="f" n-scope></div>`, { server: () => "" });
         const file = new page.window.File(["hello"], "a.txt", { type: "text/plain" });
