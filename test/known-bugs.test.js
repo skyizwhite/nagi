@@ -84,3 +84,19 @@ describe("#4 a bind writes to the DOM only after an await", () => {
         expect(page.$("#s").textContent).toBe("1");
     });
 });
+
+describe("(not filed yet) an answer with no body is taken for an error", () => {
+    it("dispatches fetcherr for a 204", async () => {
+        const page = await mount(
+            `<div nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail.err }">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+            </div>`,
+            { server: () => ({ status: 204 }) },
+        );
+        page.$("#b").click();
+        await page.settle();
+        // Right: null (nothing to swap, nothing wrong). nomini reads the null
+        // body of the 204 and fails.
+        expect(page.scope("#b")._err?.name).toBe("TypeError");
+    });
+});

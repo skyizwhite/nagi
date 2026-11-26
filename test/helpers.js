@@ -14,7 +14,7 @@ export const closeWindows = async () => {
 const respond = (answer) => {
     if (answer instanceof Response) return answer;
     if (typeof answer === "string") answer = { body: answer };
-    const { body = "", status = 200, headers = {} } = answer ?? {};
+    const { body = null, status = 200, headers = {} } = answer ?? {};
     return new Response(body, { status, headers });
 };
 
@@ -42,7 +42,14 @@ const trackBody = (response, signal, done) => {
             signal?.addEventListener("abort", abort, { once: true });
         },
         async pull(controller) {
-            const { done: ended, value } = await reader.read();
+            let ended, value;
+            try {
+                ({ done: ended, value } = await reader.read());
+            } catch (err) {
+                signal?.removeEventListener("abort", abort);
+                done();
+                throw err;
+            }
             if (signal?.aborted) return;
             if (ended) {
                 signal?.removeEventListener("abort", abort);

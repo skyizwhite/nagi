@@ -123,7 +123,7 @@ describe("requests", () => {
         page.$("#b").click();
         await new Promise((resolve) => setTimeout(resolve));
         page.$("#b").click();
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await page.settle();
         expect(page.$("#target").textContent).toBe("second");
 
         // The first body comes in only now, after the second was swapped in.
@@ -134,6 +134,18 @@ describe("requests", () => {
         } catch {}
         await page.settle();
         expect(page.$("#target").textContent).toBe("second");
+    });
+
+    it("dispatches fetcherr when the answer's body fails partway", async () => {
+        const page = await mount(
+            `<div nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail.err }">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+            </div>`,
+            { server: () => new Response(new ReadableStream({ start: (c) => c.error(new Error("cut")) })) },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#b")._err.message).toBe("cut");
     });
 
     it("dispatches fetcherr from the element when the answer is not ok, and swaps nothing", async () => {
