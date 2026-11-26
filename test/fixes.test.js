@@ -4,7 +4,7 @@ import { mount } from "./helpers.js";
 describe("scope keys", () => {
     it("lets a bind read a key named like an Object.prototype member", async () => {
         const page = await mount(`
-            <div nm-data="{ n: 1 }"><span id="s" nm-bind="{ textContent: () => String(hasOwnProperty('n')) }"></span></div>
+            <div nm-data="{ n: 1 }"><span id="s" nm-bind-text-content="String(hasOwnProperty('n'))"></span></div>
         `);
         expect(page.$("#s").textContent).toBe("true");
         expect(page.errors).toEqual([]);
@@ -12,7 +12,7 @@ describe("scope keys", () => {
 
     it("lets a key named like an Object.prototype member be set and bound", async () => {
         const page = await mount(`
-            <div nm-data="{ valueOf: 1 }"><span id="s" nm-bind="{ textContent: () => valueOf }"></span></div>
+            <div nm-data="{ valueOf: 1 }"><span id="s" nm-bind-text-content="valueOf"></span></div>
         `);
         page.scope("#s").valueOf = 2;
         expect(page.$("#s").textContent).toBe("2");
@@ -38,7 +38,7 @@ describe("nm-form radio groups with nothing checked", () => {
             <form nm-data="{}" nm-form>
                 <input type="radio" name="c" value="a">
                 <input type="radio" name="c" value="b">
-                <span id="s" nm-bind="{ textContent: () => c ?? 'none' }"></span>
+                <span id="s" nm-bind-text-content="c ?? 'none'"></span>
             </form>
         `);
         expect(page.$("#s").textContent).toBe("none");
@@ -49,7 +49,7 @@ describe("nm-form radio groups with nothing checked", () => {
 describe("builds without blocks", () => {
     it("debounces in the core build, which has no fetch block", async () => {
         const page = await mount(
-            `<div nm-data="{ got: [] }"><input id="i" nm-bind="{ oninput: () => $debounce(() => got = [...got, this.value], 30) }"></div>`,
+            `<div nm-data="{ got: [] }"><input id="i" nm-on-input="$debounce(() => got = [...got, this.value], 30)"></div>`,
             { without: ["template", "form", "fetch", "morph", "helpers", "events"] },
         );
         const input = page.$("#i");
@@ -64,7 +64,7 @@ describe("builds without blocks", () => {
 describe("request URLs", () => {
     it("adds no ? when there is nothing to send", async () => {
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>`,
+            `<div nm-data="{}"><button id="b" nm-on-click="$get('/x')"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -74,7 +74,7 @@ describe("request URLs", () => {
 
     it("adds no & to a URL with a query when there is nothing to send", async () => {
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x?a=1') }"></button></div>`,
+            `<div nm-data="{}"><button id="b" nm-on-click="$get('/x?a=1')"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -87,8 +87,8 @@ describe("what a swap cleans up", () => {
     it("stops the debounce of an element it removed", async () => {
         const page = await mount(
             `<div id="d" nm-data="{ got: [] }">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
-                <div id="target"><input id="i" nm-bind="{ oninput: () => $debounce(() => got = [...got, 'ran'], 30) }"></div>
+                <button id="b" nm-on-click="$get('/x')"></button>
+                <div id="target"><input id="i" nm-on-input="$debounce(() => got = [...got, 'ran'], 30)"></div>
             </div>`,
             { server: () => `<div id="target"></div>` },
         );
@@ -100,10 +100,10 @@ describe("what a swap cleans up", () => {
     });
 
     it("removes the window listeners of an element it removed", async () => {
-        const target = `<div id="target" nm-bind="{ 'onkeydown.window': () => hits++ }"></div>`;
+        const target = `<div id="target" nm-on-keydown.window="hits++"></div>`;
         const page = await mount(
             `<div id="d" nm-data="{ hits: 0 }">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <button id="b" nm-on-click="$get('/x')"></button>
                 ${target}
             </div>`,
             { server: () => target },
@@ -120,8 +120,8 @@ describe("what a swap cleans up", () => {
 describe("helpers called with no current element", () => {
     it("sends fetcherr from the scope's element for a request made after an await", async () => {
         const page = await mount(
-            `<div id="d" nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail.err }">
-                <button id="b" nm-bind="{ onclick: async () => { await 0; $get('/x') } }"></button>
+            `<div id="d" nm-data="{ _err: null }" nm-on-fetcherr="_err = e.detail.err">
+                <button id="b" nm-on-click="await 0; $get('/x')"></button>
             </div>`,
             { server: () => ({ status: 500, body: "no" }) },
         );
@@ -133,7 +133,7 @@ describe("helpers called with no current element", () => {
     it("sends the scope's data-* for a request made after an await", async () => {
         const page = await mount(
             `<div nm-data="{}" data-from="scope">
-                <button id="b" nm-bind="{ onclick: async () => { await 0; $get('/x') } }"></button>
+                <button id="b" nm-on-click="await 0; $get('/x')"></button>
             </div>`,
             { server: () => "" },
         );
@@ -144,8 +144,8 @@ describe("helpers called with no current element", () => {
 
     it("dispatches from the scope's element after an await", async () => {
         const page = await mount(`
-            <div id="d" nm-data="{ got: null }" nm-bind="{ onping: (e) => got = e.detail }">
-                <button id="b" nm-bind="{ onclick: async () => { await 0; $dispatch('ping', 1) } }"></button>
+            <div id="d" nm-data="{ got: null }" nm-on-ping="got = e.detail">
+                <button id="b" nm-on-click="await 0; $dispatch('ping', 1)"></button>
             </div>
         `);
         page.$("#b").click();
@@ -156,7 +156,7 @@ describe("helpers called with no current element", () => {
     it("debounces after an await", async () => {
         const page = await mount(`
             <div id="d" nm-data="{ ran: 0 }">
-                <button id="b" nm-bind="{ onclick: async () => { await 0; $debounce(() => ran++, 10) } }"></button>
+                <button id="b" nm-on-click="await 0; $debounce(() => ran++, 10)"></button>
             </div>
         `);
         page.$("#b").click();
@@ -169,7 +169,7 @@ describe("helpers called with no current element", () => {
 describe("request URLs and methods", () => {
     it("puts the query before a #fragment", async () => {
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x#top', { a: 1 }) }"></button></div>`,
+            `<div nm-data="{}"><button id="b" nm-on-click="$get('/x#top', { a: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -179,7 +179,7 @@ describe("request URLs and methods", () => {
 
     it("adds no & to a URL that ends in ?", async () => {
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x?', { a: 1 }) }"></button></div>`,
+            `<div nm-data="{}"><button id="b" nm-on-click="$get('/x?', { a: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -189,7 +189,7 @@ describe("request URLs and methods", () => {
 
     it("puts the data in the query for a lowercase get", async () => {
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $fetch('/x', 'get', { a: 1 }) }"></button></div>`,
+            `<div nm-data="{}"><button id="b" nm-on-click="$fetch('/x', 'get', { a: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -205,7 +205,7 @@ describe("debounces", () => {
     it("keeps a timer for each handler of an element", async () => {
         const page = await mount(`
             <div nm-data="{ got: [] }">
-                <input id="i" nm-bind="{ 'oninput.debounce20': () => got = [...got, 'input'], 'onping.debounce20': () => got = [...got, 'ping'] }">
+                <input id="i" nm-on-input.debounce20="got = [...got, 'input']" nm-on-ping.debounce20="got = [...got, 'ping']">
             </div>
         `);
         const input = page.$("#i");
@@ -218,8 +218,8 @@ describe("debounces", () => {
     it("still runs when another request starts in the scope", async () => {
         const page = await mount(
             `<div nm-data="{ got: [] }">
-                <input id="i" nm-bind="{ 'oninput.debounce20': () => got = [...got, 'saved'] }">
-                <button id="b" nm-bind="{ onclick: () => $get('/poll') }"></button>
+                <input id="i" nm-on-input.debounce20="got = [...got, 'saved']">
+                <button id="b" nm-on-click="$get('/poll')"></button>
             </div>`,
             { server: () => "" },
         );
@@ -235,7 +235,7 @@ describe("replacing a request", () => {
         let answer;
         const page = await mount(
             `<div nm-data="{ broken() { throw new Error('no') } }">
-                <button id="first" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <button id="first" nm-on-click="$get('/x')"></button>
                 <div id="target">old</div>
             </div>`,
             { server: () => new Promise((resolve) => (answer = resolve)) },
@@ -256,10 +256,8 @@ describe("debounces and URLs, after review", () => {
     it("keeps a timer for each watcher of an element", async () => {
         const page = await mount(`
             <div nm-data="{ got: [] }">
-                <span id="s" nm-bind="{ oninit: () => {
-                    $watch(() => $debounce(() => got.push('a'), 10));
-                    $watch(() => $debounce(() => got.push('b'), 10));
-                } }"></span>
+                <span id="s" nm-on-init="$watch(() => $debounce(() => got.push('a'), 10));
+                    $watch(() => $debounce(() => got.push('b'), 10));"></span>
             </div>
         `);
         await page.settle();
@@ -268,7 +266,7 @@ describe("debounces and URLs, after review", () => {
 
     it("debounces a request with no scope after an await", async () => {
         const page = await mount(
-            `<button id="b" nm-bind="{ onclick: async () => { await 0; $debounce(() => $get('/s'), 10) } }"></button>`,
+            `<button id="b" nm-on-click="await 0; $debounce(() => $get('/s'), 10)"></button>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -279,7 +277,7 @@ describe("debounces and URLs, after review", () => {
 
     it("leaves the query a URL already has as it is", async () => {
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/items?expand&path=/a/b', { q: 1 }) }"></button></div>`,
+            `<div nm-data="{}"><button id="b" nm-on-click="$get('/items?expand&path=/a/b', { q: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -289,7 +287,7 @@ describe("debounces and URLs, after review", () => {
 
     it("takes a request with no method as a GET", async () => {
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $fetch('/x', undefined, { a: 1 }) }"></button></div>`,
+            `<div nm-data="{}"><button id="b" nm-on-click="$fetch('/x', undefined, { a: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -303,7 +301,7 @@ describe("request URLs as written", () => {
     it("leaves a relative URL for the document's base to resolve", async () => {
         const page = await mount(
             `<base href="/api/">
-            <div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('items', { a: 1 }) }"></button></div>`,
+            <div nm-data="{}"><button id="b" nm-on-click="$get('items', { a: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -313,8 +311,8 @@ describe("request URLs as written", () => {
 
     it("sends fetcherr for a URL that cannot be fetched", async () => {
         const page = await mount(
-            `<div nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail }">
-                <button id="b" nm-bind="{ onclick: () => $get('http://[bad', { a: 1 }) }"></button>
+            `<div nm-data="{ _err: null }" nm-on-fetcherr="_err = e.detail">
+                <button id="b" nm-on-click="$get('http://[bad', { a: 1 })"></button>
             </div>`,
             { server: () => "" },
         );
@@ -329,8 +327,8 @@ describe("abortable debounces, core-build keys and trailing &", () => {
     it("drops a debounce asked to be abortable when a request starts in its scope", async () => {
         const page = await mount(
             `<div nm-data="{ got: [] }">
-                <input id="i" nm-bind="{ oninput: () => $debounce(() => got = [...got, 'search'], 20, true) }">
-                <button id="b" nm-bind="{ onclick: () => $get('/reset') }"></button>
+                <input id="i" nm-on-input="$debounce(() => got = [...got, 'search'], 20, true)">
+                <button id="b" nm-on-click="$get('/reset')"></button>
             </div>`,
             { server: () => "" },
         );
@@ -343,7 +341,7 @@ describe("abortable debounces, core-build keys and trailing &", () => {
     it("keeps a timer for each handler of an element in the core build", async () => {
         const page = await mount(
             `<div nm-data="{ got: [] }">
-                <input id="i" nm-bind="{ oninput: () => $debounce(() => got.push('input'), 20), onping: () => $debounce(() => got.push('ping'), 20) }">
+                <input id="i" nm-on-input="$debounce(() => got.push('input'), 20)" nm-on-ping="$debounce(() => got.push('ping'), 20)">
             </div>`,
             { without: ["template", "form", "fetch", "morph", "helpers", "events"] },
         );
@@ -356,7 +354,7 @@ describe("abortable debounces, core-build keys and trailing &", () => {
 
     it("adds no second & to a URL that ends in &", async () => {
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x?a=1&', { b: 2 }) }"></button></div>`,
+            `<div nm-data="{}"><button id="b" nm-on-click="$get('/x?a=1&', { b: 2 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
 const button = (call, scope = "{}") => `
-    <div id="d" nm-data="${scope}"><button id="b" nm-bind="{ onclick: () => ${call} }"></button></div>
+    <div id="d" nm-data="${scope}"><button id="b" nm-on-click="${call}"></button></div>
     <div id="target">old</div>
 `;
 
@@ -54,7 +54,7 @@ describe("requests", () => {
 
     it("sends the data-* of the element up to its scope", async () => {
         const page = await mount(
-            `<div nm-data="{}" data-from-scope="s"><button id="b" data-from-button="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>`,
+            `<div nm-data="{}" data-from-scope="s"><button id="b" data-from-button="b" nm-on-click="$get('/x')"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -88,7 +88,7 @@ describe("requests", () => {
     it("aborts the scope's request in flight when it makes another", async () => {
         const answers = [];
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>
+            `<div nm-data="{}"><button id="b" nm-on-click="$get('/x')"></button></div>
             <div id="target">old</div>`,
             { server: () => new Promise((resolve) => answers.push(resolve)) },
         );
@@ -114,7 +114,7 @@ describe("requests", () => {
         const slow = new ReadableStream({ pull: () => reading() }, { highWaterMark: 0 });
         const answers = [new Response(slow), `<div id="target">second</div>`];
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>
+            `<div nm-data="{}"><button id="b" nm-on-click="$get('/x')"></button></div>
             <div id="target">old</div>`,
             { server: () => answers.shift() },
         );
@@ -127,8 +127,8 @@ describe("requests", () => {
 
     it("dispatches fetcherr when the answer's body fails partway", async () => {
         const page = await mount(
-            `<div nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail.err }">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+            `<div nm-data="{ _err: null }" nm-on-fetcherr="_err = e.detail.err">
+                <button id="b" nm-on-click="$get('/x')"></button>
             </div>`,
             { server: () => new Response(new ReadableStream({ start: (c) => c.error(new Error("cut")) })) },
         );
@@ -139,8 +139,8 @@ describe("requests", () => {
 
     it("dispatches fetcherr from the element when the answer is not ok, and swaps nothing", async () => {
         const page = await mount(
-            `<div nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail }">
-                <button id="b" nm-bind="{ onclick: () => $get('/x', { q: 1 }) }"></button>
+            `<div nm-data="{ _err: null }" nm-on-fetcherr="_err = e.detail">
+                <button id="b" nm-on-click="$get('/x', { q: 1 })"></button>
             </div>
             <div id="target">old</div>`,
             { server: () => ({ status: 500, body: `<div id="target">new</div>` }) },
@@ -200,7 +200,7 @@ describe("swaps", () => {
 
     it("binds what it swaps in", async () => {
         const page = await swap(
-            `<div id="target" nm-data="{ n: 9 }"><span id="s" nm-bind="{ textContent: () => n }"></span></div>`,
+            `<div id="target" nm-data="{ n: 9 }"><span id="s" nm-bind-text-content="n"></span></div>`,
         );
         expect(page.$("#s").textContent).toBe("9");
     });
@@ -208,8 +208,8 @@ describe("swaps", () => {
     it("dispatches destroy on the bound elements it replaces", async () => {
         const page = await mount(
             `<div nm-data="{ gone: [] }" id="d">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
-                <div id="target"><span nm-bind="{ ondestroy: () => gone = [...gone, 'span'] }"></span></div>
+                <button id="b" nm-on-click="$get('/x')"></button>
+                <div id="target"><span nm-on-destroy="gone = [...gone, 'span']"></span></div>
             </div>`,
             { server: () => `<div id="target"></div>` },
         );
@@ -249,7 +249,7 @@ describe("swap strategies and their element's lifecycle", () => {
     const mountSwap = (html, answer) =>
         mount(
             `<div id="d" nm-data="{ hits: 0, gone: [] }">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <button id="b" nm-on-click="$get('/x')"></button>
                 ${html}
             </div>`,
             { server: () => answer },
@@ -262,7 +262,7 @@ describe("swap strategies and their element's lifecycle", () => {
 
     it("binds the target of an inner swap only once", async () => {
         const page = await mountSwap(
-            `<div id="target" nm-bind="{ onping: () => hits++ }"></div>`,
+            `<div id="target" nm-on-ping="hits++"></div>`,
             `<div id="target" nm-swap="inner"><span>new</span></div>`,
         );
         await swapOnce(page);
@@ -273,9 +273,9 @@ describe("swap strategies and their element's lifecycle", () => {
 
     it("keeps the scope of the target of an inner swap, and binds the new children to it", async () => {
         const page = await mount(
-            `<button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+            `<button id="b" nm-on-click="$get('/x')"></button>
             <div id="target" nm-data="{ n: 1 }"></div>`,
-            { server: () => `<div id="target" nm-swap="inner"><span id="s" nm-bind="{ textContent: () => n }"></span></div>` },
+            { server: () => `<div id="target" nm-swap="inner"><span id="s" nm-bind-text-content="n"></span></div>` },
         );
         const scope = page.$("#target").nmProxy;
         scope.n = 5;
@@ -298,8 +298,8 @@ describe("swap strategies and their element's lifecycle", () => {
     });
 
     const destroyed = `
-        <div id="target" nm-bind="{ ondestroy: () => gone = [...gone, 'target'] }">
-            <span nm-bind="{ ondestroy: () => gone = [...gone, 'child'] }"></span>
+        <div id="target" nm-on-destroy="gone = [...gone, 'target']">
+            <span nm-on-destroy="gone = [...gone, 'child']"></span>
         </div>
     `;
 
@@ -331,7 +331,7 @@ describe("inner swaps into elements with nm-form, nm-use and nm-ref", () => {
     it("wires the new fields and submit buttons of an nm-form target", async () => {
         const page = await mount(
             `<div nm-data="{}">
-                <button id="b" type="button" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <button id="b" type="button" nm-on-click="$get('/x')"></button>
                 <form id="target" nm-form></form>
             </div>`,
             { server: () => `<form id="target" nm-swap="inner"><input name="q" value="hi"><button id="go">Go</button></form>` },
@@ -352,7 +352,7 @@ describe("inner swaps into elements with nm-form, nm-use and nm-ref", () => {
     it("wires the fields swapped into an element inside an nm-form", async () => {
         const page = await mount(
             `<form nm-data="{}" nm-form>
-                <button id="b" type="button" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <button id="b" type="button" nm-on-click="$get('/x')"></button>
                 <div id="target"></div>
             </form>`,
             { server: () => `<div id="target" nm-swap="inner"><input name="q" value="hi"></div>` },
@@ -365,19 +365,19 @@ describe("inner swaps into elements with nm-form, nm-use and nm-ref", () => {
         const page = await mount(
             `<template id="frame"><div class="frame"><slot></slot></div></template>
             <div nm-data="{ n: 3 }">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <button id="b" nm-on-click="$get('/x')"></button>
                 <div id="target" nm-use="frame"><p>old</p></div>
             </div>`,
-            { server: () => `<div id="target" nm-swap="inner"><p id="p" nm-bind="{ textContent: () => n }">new</p></div>` },
+            { server: () => `<div id="target" nm-swap="inner"><p id="p" nm-bind-text-content="n">new</p></div>` },
         );
         await swapOnce(page);
-        expect(page.$("#target").innerHTML).toBe(`<div class="frame"><p id="p" nm-bind="{ textContent: () => n }">3</p></div>`);
+        expect(page.$("#target").innerHTML).toBe(`<div class="frame"><p id="p" nm-bind-text-content="n">3</p></div>`);
     });
 
     it("forgets the $refs of the children it removes", async () => {
         const page = await mount(
             `<div id="target" nm-data="{}">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <button id="b" nm-on-click="$get('/x')"></button>
                 <input nm-ref="box">
             </div>`,
             { server: () => `<div id="target" nm-swap="inner"><button id="b2"></button></div>` },
@@ -389,7 +389,7 @@ describe("inner swaps into elements with nm-form, nm-use and nm-ref", () => {
     it("keeps a ref the new children set under the same name", async () => {
         const page = await mount(
             `<div id="target" nm-data="{}">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <button id="b" nm-on-click="$get('/x')"></button>
                 <input nm-ref="box">
             </div>`,
             { server: () => `<div id="target" nm-swap="inner"><input id="new" nm-ref="box"></div>` },
@@ -405,8 +405,8 @@ describe("a request's lifecycle", () => {
     it("sends no fetcherr for a request it aborted, and stays fetching for the newer one", async () => {
         const answers = [];
         const page = await mount(
-            `<div nm-data="{ _errs: [] }" nm-bind="{ onfetcherr: (e) => _errs = [..._errs, e.detail.err] }">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+            `<div nm-data="{ _errs: [] }" nm-on-fetcherr="_errs = [..._errs, e.detail.err]">
+                <button id="b" nm-on-click="$get('/x')"></button>
             </div>`,
             { server: () => new Promise((resolve) => answers.push(resolve)) },
         );
@@ -428,7 +428,7 @@ describe("a request's lifecycle", () => {
         const first = new ReadableStream({ start: (controller) => (send = controller) });
         const answers = [new Response(first), `<div id="other">second</div>`];
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>
+            `<div nm-data="{}"><button id="b" nm-on-click="$get('/x')"></button></div>
             <div id="target">old</div><div id="other">old</div>`,
             { server: () => answers.shift() },
         );
@@ -454,7 +454,7 @@ describe("a request's lifecycle", () => {
             },
         });
         const page = await mount(
-            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>
+            `<div nm-data="{}"><button id="b" nm-on-click="$get('/x')"></button></div>
             <div id="target">old</div>`,
             { server: () => new Response(body) },
         );
@@ -467,7 +467,7 @@ describe("a request's lifecycle", () => {
     it("is still fetching until what it answered is swapped in", async () => {
         const page = await mount(
             `<div nm-data="{ seen: [] }">
-                <button id="b" nm-bind="{ onclick: () => $get('/x'), oninit: () => $watch(() => _nmFetching || seen.push(document.getElementById('target').textContent)) }"></button>
+                <button id="b" nm-on-click="$get('/x')" nm-on-init="$watch(() => _nmFetching || seen.push(document.getElementById('target').textContent))"></button>
             </div>
             <div id="target">old</div>`,
             { server: () => `<div id="target">new</div>` },
@@ -479,8 +479,8 @@ describe("a request's lifecycle", () => {
 
     it("takes an answer with no body as nothing to swap", async () => {
         const page = await mount(
-            `<div nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail.err }">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+            `<div nm-data="{ _err: null }" nm-on-fetcherr="_err = e.detail.err">
+                <button id="b" nm-on-click="$get('/x')"></button>
             </div>
             <div id="target">old</div>`,
             { server: () => ({ status: 204 }) },
@@ -496,9 +496,9 @@ describe("a request's lifecycle", () => {
         const signals = [];
         let answerInner;
         const page = await mount(
-            `<div nm-data="{}"><button id="outer" nm-bind="{ onclick: () => $get('/outer') }"></button></div>
+            `<div nm-data="{}"><button id="outer" nm-on-click="$get('/outer')"></button></div>
             <div id="target" nm-data="{}">
-                <button id="inner" nm-bind="{ onclick: () => $get('/inner') }"></button>
+                <button id="inner" nm-on-click="$get('/inner')"></button>
             </div>
             <div id="late">old</div>`,
             {
@@ -525,7 +525,7 @@ describe("a request's lifecycle", () => {
     it("does not rerun a watcher that read the abort signal when it makes a request", async () => {
         const page = await mount(
             `<div nm-data="{ q: 'a' }">
-                <span nm-bind="{ oninit: () => $watch(() => { q; $debounce(() => 0, 10); $get('/s') }) }"></span>
+                <span nm-on-init="$watch(() => { q; $debounce(() => 0, 10); $get('/s') })"></span>
             </div>`,
             { server: () => "" },
         );
@@ -537,7 +537,7 @@ describe("a request's lifecycle", () => {
     it("does not rerun a watcher that debounces a request when the request is made", async () => {
         const page = await mount(
             `<div nm-data="{ q: 'a' }">
-                <span nm-bind="{ oninit: () => $watch(() => { q; $debounce(() => $get('/s'), 10) }) }"></span>
+                <span nm-on-init="$watch(() => { q; $debounce(() => $get('/s'), 10) })"></span>
             </div>`,
             { server: () => "" },
         );
@@ -550,7 +550,7 @@ describe("a request's lifecycle", () => {
     it("does not track what a request reads into the watcher that made it", async () => {
         const page = await mount(
             `<div nm-data="{ q: 'a' }">
-                <span nm-bind="{ oninit: () => $watch(() => $get('/s', { q })) }"></span>
+                <span nm-on-init="$watch(() => $get('/s', { q }))"></span>
             </div>`,
             { server: () => "" },
         );
@@ -567,9 +567,9 @@ describe("reads and writes", () => {
     const mountWrites = (answers) =>
         mount(
             `<div nm-data="{}">
-                <button id="order" nm-bind="{ onclick: () => $post('/order') }"></button>
-                <button id="del" nm-bind="{ onclick: () => $fetch('/item', 'DELETE') }"></button>
-                <button id="search" nm-bind="{ onclick: () => $get('/search') }"></button>
+                <button id="order" nm-on-click="$post('/order')"></button>
+                <button id="del" nm-on-click="$fetch('/item', 'DELETE')"></button>
+                <button id="search" nm-on-click="$get('/search')"></button>
             </div>
             <div id="done">old</div><div id="results">old</div>`,
             {
@@ -634,8 +634,8 @@ describe("reads and writes", () => {
         let answer;
         const page = await mount(
             `<div nm-data="{}">
-                <button id="a" nm-bind="{ onclick: () => $post('/save', { v: 1 }) }"></button>
-                <button id="b" nm-bind="{ onclick: () => $post('/save', { v: 2 }) }"></button>
+                <button id="a" nm-on-click="$post('/save', { v: 1 })"></button>
+                <button id="b" nm-on-click="$post('/save', { v: 2 })"></button>
             </div>`,
             { server: () => new Promise((resolve) => (answer = resolve)) },
         );
@@ -647,8 +647,8 @@ describe("reads and writes", () => {
     it("sends fetchskip from the element for a write it did not send", async () => {
         const answers = {};
         const page = await mount(
-            `<div nm-data="{ _skipped: [] }" nm-bind="{ onfetchskip: (e) => _skipped = [..._skipped, e.detail] }">
-                <button id="order" nm-bind="{ onclick: () => $post('/order') }"></button>
+            `<div nm-data="{ _skipped: [] }" nm-on-fetchskip="_skipped = [..._skipped, e.detail]">
+                <button id="order" nm-on-click="$post('/order')"></button>
             </div>`,
             { server: () => new Promise((resolve) => (answers.order = resolve)) },
         );
@@ -661,8 +661,8 @@ describe("reads and writes", () => {
         const signals = [];
         const page = await mount(
             `<div nm-data="{}">
-                <button id="o" nm-bind="{ onclick: () => $fetch('/x', 'OPTIONS') }"></button>
-                <button id="g" nm-bind="{ onclick: () => $get('/y') }"></button>
+                <button id="o" nm-on-click="$fetch('/x', 'OPTIONS')"></button>
+                <button id="g" nm-on-click="$get('/y')"></button>
             </div>`,
             { server: () => "" },
         );
@@ -680,8 +680,8 @@ describe("reads and writes", () => {
     it("sends fetcherr to document when the element that asked is gone", async () => {
         let answer;
         const page = await mount(
-            `<div nm-data="{}"><button id="outer" nm-bind="{ onclick: () => $get('/outer') }"></button></div>
-            <div id="target" nm-data="{}"><button id="order" nm-bind="{ onclick: () => $post('/order') }"></button></div>`,
+            `<div nm-data="{}"><button id="outer" nm-on-click="$get('/outer')"></button></div>
+            <div id="target" nm-data="{}"><button id="order" nm-on-click="$post('/order')"></button></div>`,
             {
                 server: ({ url }) =>
                     url.endsWith("/order") ? new Promise((resolve) => (answer = resolve)) : `<div id="target"></div>`,
@@ -725,8 +725,8 @@ describe("reads and writes", () => {
     it("lets a write finish when a swap removes its scope", async () => {
         let answer;
         const page = await mount(
-            `<div nm-data="{}"><button id="outer" nm-bind="{ onclick: () => $get('/outer') }"></button></div>
-            <div id="target" nm-data="{}"><button id="order" nm-bind="{ onclick: () => $post('/order') }"></button></div>
+            `<div nm-data="{}"><button id="outer" nm-on-click="$get('/outer')"></button></div>
+            <div id="target" nm-data="{}"><button id="order" nm-on-click="$post('/order')"></button></div>
             <div id="done">old</div>`,
             {
                 server: ({ url }) =>
@@ -744,8 +744,8 @@ describe("reads and writes", () => {
     it("drops an abortable debounce when a write starts", async () => {
         const page = await mount(
             `<div nm-data="{ got: [] }">
-                <input id="i" nm-bind="{ oninput: () => $debounce(() => got = [...got, 'search'], 20, true) }">
-                <button id="b" nm-bind="{ onclick: () => $post('/order') }"></button>
+                <input id="i" nm-on-input="$debounce(() => got = [...got, 'search'], 20, true)">
+                <button id="b" nm-on-click="$post('/order')"></button>
             </div>`,
             { server: () => "" },
         );

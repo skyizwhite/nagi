@@ -227,7 +227,7 @@
 
     // --- BEGIN fetch
     const drop = (el) => {
-        queryAttr(el, "[nm-bind]").forEach((node) => dispatch(node, "destroy", { bubbles: false }));
+        queryAttr(el, "*").forEach((node) => node.nmBound && dispatch(node, "destroy", { bubbles: false }));
         // --- BEGIN ref
         queryAttr(el, "[nm-ref]").forEach((node) => {
             const refs = getClosestProxy(node).$refs;
@@ -429,19 +429,26 @@
         // --- END form
 
         // --- BEGIN bind
-        queryAttr(baseEl, "[nm-bind]").forEach((bindEl) => {
-            const proxyData = getClosestProxy(bindEl);
+        queryAttr(baseEl, "*").forEach((bindEl) => {
+            const entries = [...bindEl.attributes].flatMap(({ name, value }) => {
+                const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
+                if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
+                if (!kind) return [];
+                const [main, ...subs] = rest.split(".");
+                const key = [main.replace(/-(\w)/g, (_, c) => c.toUpperCase()), ...subs].join(".");
+                return `${JSON.stringify(key)}: () => (${value || "undefined"}\n)`;
+            });
 
-            const props = evalExpression(
-                bindEl.getAttribute("nm-bind"),
-                proxyData,
-                bindEl,
-            );
+            if (!entries.length) return;
+            bindEl.nmBound = true;
+
+            const proxyData = getClosestProxy(bindEl);
+            const props = evalExpression(entries.join(","), proxyData, bindEl);
 
             Object.entries(props).forEach(([key, val]) => {
-                if (key.startsWith("on")) {
+                if (key.startsWith("@")) {
                     // --- BEGIN events
-                    const [eventName, ...mods] = key.slice(2).split(".");
+                    const [eventName, ...mods] = key.slice(1).split(".");
 
                     const debounceMod = mods.find((val) => val.startsWith("debounce"));
                     const delay = +debounceMod?.slice(8);
@@ -464,7 +471,7 @@
                     // --- END events
 
                     // If special event handling isn't enabled just do a normal event listener
-                    bindEl.addEventListener(key.slice(2), () => runWithEl(bindEl, val, null, val));
+                    bindEl.addEventListener(key.slice(1), (e) => runWithEl(bindEl, () => val(e), null, val));
                 } else {
                     const [main, sub] = key.split(".");
                     const write = (resolvedVal) => {
