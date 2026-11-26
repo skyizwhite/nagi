@@ -560,3 +560,120 @@ describe("a request's lifecycle", () => {
         expect(page.requests).toHaveLength(1);
     });
 });
+
+describe("reads and writes", () => {
+    const later = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const mountWrites = (answers) =>
+        mount(
+            `<div nm-data="{}">
+                <button id="order" nm-bind="{ onclick: () => $post('/order') }"></button>
+                <button id="del" nm-bind="{ onclick: () => $fetch('/item', 'DELETE') }"></button>
+                <button id="search" nm-bind="{ onclick: () => $get('/search') }"></button>
+            </div>
+            <div id="done">old</div><div id="results">old</div>`,
+            {
+                server: ({ url }) => {
+                    const path = new URL(url).pathname;
+                    return new Promise((resolve) => (answers[path] = resolve));
+                },
+            },
+        );
+
+    it("does not abort a write when a read starts", async () => {
+        const answers = {};
+        const page = await mountWrites(answers);
+        page.$("#order").click();
+        page.$("#search").click();
+        answers["/search"](`<div id="results">found</div>`);
+        await later(10);
+        answers["/order"](`<div id="done">ordered</div>`);
+        await page.settle();
+        expect(page.$("#done").textContent).toBe("ordered");
+        expect(page.$("#results").textContent).toBe("found");
+    });
+
+    it("does not abort a DELETE when a read starts", async () => {
+        const answers = {};
+        const page = await mountWrites(answers);
+        page.$("#del").click();
+        page.$("#search").click();
+        answers["/search"]("");
+        answers["/item"](`<div id="done">deleted</div>`);
+        await page.settle();
+        expect(page.$("#done").textContent).toBe("deleted");
+    });
+
+    it("sends no second write while one is out, and sends one after it", async () => {
+        const answers = {};
+        const page = await mountWrites(answers);
+        page.$("#order").click();
+        page.$("#order").click();
+        expect(page.requests.filter((r) => r.method === "POST")).toHaveLength(1);
+
+        answers["/order"]("");
+        await page.settle();
+        page.$("#order").click();
+        expect(page.requests.filter((r) => r.method === "POST")).toHaveLength(2);
+        answers["/order"]("");
+        await page.settle();
+    });
+
+    it("aborts a read when a write starts", async () => {
+        const answers = {};
+        const page = await mountWrites(answers);
+        page.$("#search").click();
+        page.$("#order").click();
+        answers["/search"](`<div id="results">stale</div>`);
+        answers["/order"]("");
+        await page.settle();
+        expect(page.$("#results").textContent).toBe("old");
+    });
+
+    it("stays fetching while any request is out", async () => {
+        const answers = {};
+        const page = await mountWrites(answers);
+        const scope = page.scope("#order");
+        page.$("#order").click();
+        page.$("#search").click();
+        answers["/search"]("");
+        await later(10);
+        expect(scope._nmFetching).toBe(true);
+        answers["/order"]("");
+        await page.settle();
+        expect(scope._nmFetching).toBe(false);
+    });
+
+    it("lets a write finish when a swap removes its scope", async () => {
+        let answer;
+        const page = await mount(
+            `<div nm-data="{}"><button id="outer" nm-bind="{ onclick: () => $get('/outer') }"></button></div>
+            <div id="target" nm-data="{}"><button id="order" nm-bind="{ onclick: () => $post('/order') }"></button></div>
+            <div id="done">old</div>`,
+            {
+                server: ({ url }) =>
+                    url.endsWith("/order") ? new Promise((resolve) => (answer = resolve)) : `<div id="target"></div>`,
+            },
+        );
+        page.$("#order").click();
+        page.$("#outer").click();
+        await later(10);
+        answer(`<div id="done">ordered</div>`);
+        await page.settle();
+        expect(page.$("#done").textContent).toBe("ordered");
+    });
+
+    it("drops an abortable debounce when a write starts", async () => {
+        const page = await mount(
+            `<div nm-data="{ got: [] }">
+                <input id="i" nm-bind="{ oninput: () => $debounce(() => got = [...got, 'search'], 20, true) }">
+                <button id="b" nm-bind="{ onclick: () => $post('/order') }"></button>
+            </div>`,
+            { server: () => "" },
+        );
+        page.$("#i").dispatchEvent(new page.window.Event("input"));
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#i").got).toEqual([]);
+    });
+});

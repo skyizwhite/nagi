@@ -96,7 +96,7 @@
     let currentHandler = null;
 
     // Helpers that are included with every data object
-    const helpers = () => ({
+    const helpers = (pending = 0, writing = false) => ({
         // --- BEGIN ref
         $refs: {},
         // --- END ref
@@ -114,6 +114,9 @@
             const controller = new AbortController();
             const { signal } = controller;
             method = (method || "GET").toUpperCase();
+            const reading = /^(GET|HEAD)$/.test(method);
+
+            if (!reading && writing) return;
 
             const opts = runWithEl(el, () => {
                 data = { ...this.$nmData(), ...this.$dataset(), ...data };
@@ -134,7 +137,9 @@
                 return opts;
             });
 
-            this._nmAbort = controller;
+            this._nmAbort = reading ? controller : new AbortController();
+            writing ||= !reading;
+            pending++;
             this._nmFetching = true;
 
             fetch(url, opts)
@@ -158,7 +163,8 @@
                 })
                 .catch((err) => signal.aborted || dispatch(el ?? document, "fetcherr", { detail: { err, url } }))
                 .finally(() => {
-                    if (this._nmAbort === controller) this._nmFetching = false;
+                    if (!reading) writing = false;
+                    if (!--pending) this._nmFetching = false;
                 });
         },
         $nmData() {
