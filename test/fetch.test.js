@@ -398,3 +398,140 @@ describe("inner swaps into elements with nm-form, nm-use and nm-ref", () => {
         expect(page.$("#target").nmProxy.$refs.box).toBe(page.$("#new"));
     });
 });
+
+describe("a request's lifecycle", () => {
+    const later = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    it("sends no fetcherr for a request it aborted, and stays fetching for the newer one", async () => {
+        const answers = [];
+        const page = await mount(
+            `<div nm-data="{ _errs: [] }" nm-bind="{ onfetcherr: (e) => _errs = [..._errs, e.detail.err] }">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+            </div>`,
+            { server: () => new Promise((resolve) => answers.push(resolve)) },
+        );
+        page.$("#b").click();
+        page.$("#b").click();
+        await later(10);
+        const scope = page.scope("#b");
+        expect(scope._errs).toEqual([]);
+        expect(scope._nmFetching).toBe(true);
+
+        answers[1]("");
+        await page.settle();
+        expect(scope._nmFetching).toBe(false);
+    });
+
+    it("swaps nothing from a request aborted while its body is arriving", async () => {
+        const encoder = new TextEncoder();
+        let send;
+        const first = new ReadableStream({ start: (controller) => (send = controller) });
+        const answers = [new Response(first), `<div id="other">second</div>`];
+        const page = await mount(
+            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>
+            <div id="target">old</div><div id="other">old</div>`,
+            { server: () => answers.shift() },
+        );
+        page.$("#b").click();
+        await later(5);
+        send.enqueue(encoder.encode(`<div id="target">first</div>`));
+        await later(5);
+        page.$("#b").click();
+        await page.settle();
+        await later(40);
+        expect(page.$("#other").textContent).toBe("second");
+        expect(page.$("#target").textContent).toBe("old");
+    });
+
+    it("swaps an answer whose pieces come far apart as one", async () => {
+        const encoder = new TextEncoder();
+        const body = new ReadableStream({
+            async start(controller) {
+                controller.enqueue(encoder.encode(`<div id="target"><p>a`));
+                await later(50);
+                controller.enqueue(encoder.encode(`b</p></div>`));
+                controller.close();
+            },
+        });
+        const page = await mount(
+            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>
+            <div id="target">old</div>`,
+            { server: () => new Response(body) },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#target").innerHTML).toBe("<p>ab</p>");
+        expect(page.warnings).toEqual([]);
+    });
+
+    it("is still fetching until what it answered is swapped in", async () => {
+        const page = await mount(
+            `<div nm-data="{ seen: [] }">
+                <button id="b" nm-bind="{ onclick: () => $get('/x'), oninit: () => $watch(() => _nmFetching || seen.push(document.getElementById('target').textContent)) }"></button>
+            </div>
+            <div id="target">old</div>`,
+            { server: () => `<div id="target">new</div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#b").seen).toEqual(["old", "new"]);
+    });
+
+    it("takes an answer with no body as nothing to swap", async () => {
+        const page = await mount(
+            `<div nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail.err }">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+            </div>
+            <div id="target">old</div>`,
+            { server: () => ({ status: 204 }) },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#b")._err).toBeNull();
+        expect(page.$("#target").textContent).toBe("old");
+        expect(page.scope("#b")._nmFetching).toBe(false);
+    });
+
+    it("aborts the request of a scope a swap removes", async () => {
+        const signals = [];
+        let answerInner;
+        const page = await mount(
+            `<div nm-data="{}"><button id="outer" nm-bind="{ onclick: () => $get('/outer') }"></button></div>
+            <div id="target" nm-data="{}">
+                <button id="inner" nm-bind="{ onclick: () => $get('/inner') }"></button>
+            </div>
+            <div id="late">old</div>`,
+            {
+                server: ({ url }) =>
+                    url.endsWith("/inner")
+                        ? new Promise((resolve) => (answerInner = resolve))
+                        : `<div id="target"></div>`,
+            },
+        );
+        const fetch = page.window.fetch;
+        page.window.fetch = (url, opts) => {
+            signals.push(opts.signal);
+            return fetch(url, opts);
+        };
+        page.$("#inner").click();
+        page.$("#outer").click();
+        await later(20);
+        expect(signals[0].aborted).toBe(true);
+        answerInner(`<div id="late">late</div>`);
+        await page.settle();
+        expect(page.$("#late").textContent).toBe("old");
+    });
+
+    it("does not track what a request reads into the watcher that made it", async () => {
+        const page = await mount(
+            `<div nm-data="{ q: 'a' }">
+                <span nm-bind="{ oninit: () => $watch(() => $get('/s', { q })) }"></span>
+            </div>`,
+            { server: () => "" },
+        );
+        await page.settle();
+        await later(30);
+        await page.settle();
+        expect(page.requests).toHaveLength(1);
+    });
+});

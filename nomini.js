@@ -110,50 +110,51 @@
         $fetch(url, method, data) {
             const el = currentEl;
 
-            this._nmAbort.abort();
-            this._nmAbort = new AbortController();
-            this._nmFetching = true;
+            runWithEl(el, () => {
+                this._nmAbort.abort();
+                const controller = (this._nmAbort = new AbortController());
+                const { signal } = controller;
+                this._nmFetching = true;
 
-            const opts = {
-                headers: { "nm-request": true },
-                method,
-                signal: this._nmAbort.signal,
-            };
+                const opts = {
+                    headers: { "nm-request": true },
+                    method,
+                    signal,
+                };
 
-            data = { ...this.$nmData(), ...this.$dataset(), ...data };
+                data = { ...this.$nmData(), ...this.$dataset(), ...data };
 
-            const encodedData = new URLSearchParams(data);
-            const query = String(encodedData);
+                const encodedData = new URLSearchParams(data);
+                const query = String(encodedData);
 
-            if (/GET|DELETE/.test(method)) {
-                if (query) url += (url.includes("?") ? "&" : "?") + query;
-            } else opts.body = encodedData;
+                if (/GET|DELETE/.test(method)) {
+                    if (query) url += (url.includes("?") ? "&" : "?") + query;
+                } else opts.body = encodedData;
 
-            fetch(url, opts)
-                .then(async (res) => {
-                    if (!res.ok) {
-                        throw new Error(`${res.statusText}: ${await res.text()}`);
-                    }
+                fetch(url, opts)
+                    .then(async (res) => {
+                        if (!res.ok) {
+                            throw new Error(`${res.statusText}: ${await res.text()}`);
+                        }
 
-                    const stream = res.body.pipeThrough(new TextDecoderStream()).getReader();
-                    let buf = "";
-                    let timeout;
+                        if (!res.body) return;
 
-                    while (true) {
-                        const { done, value } = await stream.read();
-                        if (done) break;
+                        const stream = res.body.pipeThrough(new TextDecoderStream()).getReader();
+                        let buf = "";
 
-                        buf += value;
+                        while (true) {
+                            const { done, value } = await stream.read();
+                            if (done) break;
+                            buf += value;
+                        }
 
-                        clearTimeout(timeout);
-                        timeout = setTimeout(() => {
-                            swap(buf);
-                            buf = "";
-                        }, 20);
-                    }
-                })
-                .catch((err) => dispatch(el, "fetcherr", { detail: { err, url } }))
-                .finally(() => this._nmFetching = false);
+                        if (!signal.aborted) swap(buf);
+                    })
+                    .catch((err) => signal.aborted || dispatch(el, "fetcherr", { detail: { err, url } }))
+                    .finally(() => {
+                        if (this._nmAbort === controller) this._nmFetching = false;
+                    });
+            });
         },
         $nmData() {
             const isPrimitive = (x) => x !== Object(x);
@@ -216,6 +217,7 @@
         });
         // --- END ref
         [el, ...el.querySelectorAll("*")].forEach((node) => {
+            node.nmProxy?._nmAbort.abort();
             node.nmRuns?.forEach(kill);
             node.nmCleanup?.forEach((clean) => clean());
             clearTimeout(node.nmTimer);
