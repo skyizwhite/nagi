@@ -68,3 +68,39 @@ describe("#11 names of outer scopes", () => {
         await page.settle();
     });
 });
+
+describe("#11 after review", () => {
+    it("runs an outer method with the outer scope as this", async () => {
+        let answer;
+        const page = await mount(
+            `<div id="outer" nm-scope="{ open() { this.isOpen = true }, save() { this.$get('/s') } }">
+                <span id="s" nm-bind-hidden="!isOpen"></span>
+                <section nm-let-x="1"><button id="b" nm-on-click="open(); save()"></button></section>
+            </div>`,
+            { server: () => new Promise((resolve) => (answer = resolve)) },
+        );
+        page.$("#b").click();
+        const outer = page.$("#outer").nmProxy;
+        expect(outer.isOpen).toBe(true);
+        expect(page.$("#s").hidden).toBe(false);
+        expect(outer.$fetching).toBe(true);
+        answer("");
+        await page.settle();
+    });
+
+    it("gives the same function each time an outer method is read", async () => {
+        const page = await mount(`<div nm-scope="{ f() {} }"><div id="i" nm-let-x="1"></div></div>`);
+        const inner = page.$("#i").nmProxy;
+        expect(inner.f).toBe(inner.f);
+    });
+
+    it("keeps the fields of an inner nm-form in the form's scope", async () => {
+        const page = await mount(`
+            <div id="outer" nm-scope="{ name: 'Page title' }">
+                <form id="f" nm-scope nm-form><input name="name" value="typed"></form>
+            </div>
+        `);
+        expect(page.$("#outer").nmProxy.name).toBe("Page title");
+        expect(page.$("#f").nmProxy.name).toBe("typed");
+    });
+});
