@@ -36,8 +36,6 @@
     const getClosestProxy = (el) =>
         el.closest("[nm-data]")?.nmProxy || helpers();
 
-    // Runs fn with el as the current element and bind as what tracks the
-    // scope values fn reads (none by default, as for an event handler).
     const runWithEl = (el, fn, bind = null) => {
         const prev = [currentEl, currentBind];
         currentEl = el;
@@ -49,9 +47,6 @@
         }
     };
 
-    // Runs fn now and again whenever a scope value it read changes, with el
-    // as the current element each time. Once el has left the document, the
-    // next change drops it instead of running it.
     const watch = (fn, el = currentEl) => {
         const run = () => {
             if (run.active) return;
@@ -387,7 +382,6 @@
 
                     watch(() => {
                         const value = val();
-                        // Only what val reads before its first await is tracked.
                         if (typeof value?.then === "function") value.then(write);
                         else write(value);
                     }, bindEl);

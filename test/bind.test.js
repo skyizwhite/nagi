@@ -232,7 +232,6 @@ describe("helpers", () => {
 });
 
 describe("reactivity", () => {
-    // #4
     it("has written a bind by the time the element's init runs", async () => {
         const page = await mount(`
             <div nm-data="{ n: 1, seen: null }">
@@ -242,7 +241,6 @@ describe("reactivity", () => {
         expect(page.scope("#s").seen).toBe("1");
     });
 
-    // #4
     it("writes a bind as the scope changes, without waiting", async () => {
         const page = await mount(`
             <div nm-data="{ n: 1 }"><span id="s" nm-bind="{ textContent: () => n }"></span></div>
@@ -251,7 +249,6 @@ describe("reactivity", () => {
         expect(page.$("#s").textContent).toBe("2");
     });
 
-    // #16
     it("tracks what a bind reads when it runs again", async () => {
         const page = await mount(`
             <div nm-data="{ flag: true, a: 'a', b: 'b' }">
@@ -264,7 +261,6 @@ describe("reactivity", () => {
         expect(page.$("#s").textContent).toBe("b2");
     });
 
-    // #16
     it("runs a bind again with its element as the current one", async () => {
         const page = await mount(`
             <div nm-data="{ n: 1, got: [] }" nm-bind="{ onchanged: (e) => got = [...got, e.detail] }">
@@ -276,7 +272,6 @@ describe("reactivity", () => {
         expect(page.errors).toEqual([]);
     });
 
-    // #17
     it("keeps tracking a bind after it calls $watch", async () => {
         const page = await mount(`
             <div nm-data="{ x: 1, y: 'y' }">
@@ -287,7 +282,6 @@ describe("reactivity", () => {
         expect(page.$("#s").textContent).toBe("y2");
     });
 
-    // #2
     it("drops the binds of an element a swap removed", async () => {
         const page = await mount(
             `<div id="d" nm-data="{ n: 1, ran: [] }">
@@ -305,7 +299,6 @@ describe("reactivity", () => {
         expect(scope.ran).toEqual([]);
     });
 
-    // #2
     it("drops the binds of an element removed by other code", async () => {
         const page = await mount(`
             <div id="d" nm-data="{ n: 1, ran: 0 }">
