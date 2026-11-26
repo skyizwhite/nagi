@@ -286,7 +286,7 @@
             const el = currentEl ?? this._nmEl;
             const signal = abortable && runWithEl(el, () => this._nmAbort?.signal);
             const timers = ((el ?? document).nmTimers ||= new Map());
-            const key = currentHandler ?? currentBind?.key ?? String(fn);
+            const key = currentHandler ?? currentBind?.key ?? fn.nmSource ?? String(fn);
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);
@@ -482,8 +482,24 @@
 
             const trackedDeps = new Map();
 
+            let outer = null;
+            for (let node = dataEl.parentElement; node && !outer; node = node.parentElement) outer = node.nmProxy ?? null;
+            const fromOuter = (obj, prop) => !(prop in obj) && !!outer && prop in outer;
+            const bound = new WeakMap();
+            const bindToOuter = (fn) => {
+                if (!bound.has(fn)) bound.set(fn, Object.assign(fn.bind(outer), { nmSource: fn.nmSource ?? String(fn) }));
+                return bound.get(fn);
+            };
+
             const proxyData = new Proxy(rawData, {
+                has(obj, prop) {
+                    return prop in obj || (!!outer && prop in outer);
+                },
                 get(obj, prop, receiver) {
+                    if (fromOuter(obj, prop)) {
+                        const value = outer[prop];
+                        return typeof value === "function" ? bindToOuter(value) : value;
+                    }
                     if (currentBind) {
                         let deps = trackedDeps.get(prop);
                         if (!deps) trackedDeps.set(prop, (deps = new Set()));
@@ -494,6 +510,7 @@
                     return Reflect.get(obj, prop, receiver);
                 },
                 set(obj, prop, val, receiver) {
+                    if (fromOuter(obj, prop)) return Reflect.set(outer, prop, val);
                     if (prop in obj && val !== Object(val) && isData(obj, prop) && Object.is(obj[prop], val)) return true;
                     if (!Reflect.set(obj, prop, val, receiver)) return false;
 
@@ -506,12 +523,14 @@
             });
 
             dataEl.nmProxy = proxyData;
+            dataEl.nmRaw = rawData;
 
             attrs.forEach(({ name, value }) => {
                 const key = name.match(/^nm-let-(.+)$/)?.[1];
                 if (!key || reserved(key, dataEl)) return;
                 const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, dataEl)) : undefined;
-                if (result !== failed && !Reflect.set(proxyData, key, result)) define(rawData, key, result);
+                if (result === failed) return;
+                if (!(key in rawData) || !Reflect.set(proxyData, key, result)) define(rawData, key, result);
             });
         };
 
@@ -547,6 +566,11 @@
         queryAttr(baseEl, "[name]").forEach((inputEl) => {
             const proxyData = formProxy(inputEl);
             if (!proxyData) return;
+
+            let scopeEl = inputEl.closest("[nm-form]");
+            while (scopeEl && !scopeEl.nmRaw) scopeEl = scopeEl.parentElement;
+            if (scopeEl && !(inputEl.name in scopeEl.nmRaw))
+                Object.defineProperty(scopeEl.nmRaw, inputEl.name, { writable: true, enumerable: true, configurable: true });
 
             const inputType = inputEl.type;
 

@@ -18,16 +18,15 @@ describe("nm-scope", () => {
         expect(page.errors).toHaveLength(1);
     });
 
-    it("gives an element only its nearest scope", async () => {
+    it("reads the nearest scope first, and outer scopes for what it lacks", async () => {
         const page = await mount(`
-            <div nm-scope="{ outer: 'o' }">
-                <div nm-scope="{ inner: 'i' }">
-                    <span id="s" nm-bind-textcontent="typeof outer + ':' + inner"></span>
+            <div nm-scope="{ outer: 'o', both: 'outer' }">
+                <div nm-scope="{ inner: 'i', both: 'inner' }">
+                    <span id="s" nm-bind-textcontent="outer + ':' + inner + ':' + both"></span>
                 </div>
             </div>
         `);
-        await page.settle();
-        expect(page.$("#s").textContent).toBe("undefined:i");
+        expect(page.$("#s").textContent).toBe("o:i:inner");
     });
 
     it("skips everything under nm-ignore", async () => {
