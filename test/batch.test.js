@@ -89,3 +89,58 @@ describe("#46 debounces", () => {
         expect([scope.a, scope.b]).toEqual([1, 1]);
     });
 });
+
+describe("after review", () => {
+    const swapTwice = async (fragment, before = `<div id="t" class="old"></div>`) => {
+        const page = await mount(
+            `<div nm-scope><button id="b" nm-on-click="$get('/x')"></button>${before}</div>`,
+            { server: () => fragment },
+        );
+        for (let i = 0; i < 2; i++) {
+            page.$("#b").click();
+            await page.settle();
+            await later(30);
+        }
+        return page;
+    };
+
+    it("keeps what init sets when the old element had it too", async () => {
+        const page = await swapTwice(`<div id="t" class="new" nm-on-init="this.classList.add('ready'); this.style.padding = '2px'"></div>`);
+        const t = page.$("#t");
+        expect([...t.classList].sort()).toEqual(["new", "ready"]);
+        expect(t.style.padding).toBe("2px");
+    });
+
+    it("keeps a class init takes away from the answer's markup", async () => {
+        const page = await swapTwice(`<div id="t" class="loading" nm-on-init="this.classList.remove('loading')"></div>`);
+        expect(page.$("#t").classList.contains("loading")).toBe(false);
+    });
+
+    it("keeps apart debounces of sibling watchers with the same code", async () => {
+        const page = await mount(`
+            <div nm-let-a="0" nm-let-b="0" nm-let-saved="[]">
+                <span id="s" nm-on-init="[['a', () => a], ['b', () => b]].forEach(([name, read]) => $watch(() => { read(); $debounce(() => saved.push(name), 20) }))"></span>
+            </div>
+        `);
+        const scope = page.scope("#s");
+        await later(40);
+        scope.saved.length = 0;
+        scope.a = 1;
+        scope.b = 1;
+        await later(50);
+        expect([...scope.saved].sort()).toEqual(["a", "b"]);
+    });
+
+    it("still runs a debounce whose watcher a parent made again without debouncing", async () => {
+        const page = await mount(`
+            <div nm-let-mode="0" nm-let-q="''" nm-let-saved="0">
+                <span id="s" nm-on-init="let last = ''; $watch(() => { mode; $watch(() => { const v = q; if (v !== last) { last = v; $debounce(() => saved++, 20) } }) })"></span>
+            </div>
+        `);
+        const scope = page.scope("#s");
+        scope.q = "x";
+        scope.mode = 1;
+        await later(50);
+        expect(scope.saved).toBe(1);
+    });
+});
