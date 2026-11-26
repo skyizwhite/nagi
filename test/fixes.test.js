@@ -4,7 +4,7 @@ import { mount } from "./helpers.js";
 describe("scope keys", () => {
     it("lets a bind read a key named like an Object.prototype member", async () => {
         const page = await mount(`
-            <div nm-data="{ n: 1 }"><span id="s" nm-bind-text-content="String(hasOwnProperty('n'))"></span></div>
+            <div nm-data="{ n: 1 }"><span id="s" nm-bind-textcontent="String(hasOwnProperty('n'))"></span></div>
         `);
         expect(page.$("#s").textContent).toBe("true");
         expect(page.errors).toEqual([]);
@@ -12,7 +12,7 @@ describe("scope keys", () => {
 
     it("lets a key named like an Object.prototype member be set and bound", async () => {
         const page = await mount(`
-            <div nm-data="{ valueOf: 1 }"><span id="s" nm-bind-text-content="valueOf"></span></div>
+            <div nm-data="{ valueOf: 1 }"><span id="s" nm-bind-textcontent="valueOf"></span></div>
         `);
         page.scope("#s").valueOf = 2;
         expect(page.$("#s").textContent).toBe("2");
@@ -38,7 +38,7 @@ describe("nm-form radio groups with nothing checked", () => {
             <form nm-data="{}" nm-form>
                 <input type="radio" name="c" value="a">
                 <input type="radio" name="c" value="b">
-                <span id="s" nm-bind-text-content="c ?? 'none'"></span>
+                <span id="s" nm-bind-textcontent="c ?? 'none'"></span>
             </form>
         `);
         expect(page.$("#s").textContent).toBe("none");

@@ -26,14 +26,10 @@
         }
     };
 
-    const camel = (name) => name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
-
     const propOf = (obj, name) => {
-        const flat = name.replace(/-/g, "");
         for (let o = obj; o; o = Object.getPrototypeOf(o))
             for (const key of Object.getOwnPropertyNames(o))
-                if (key.toLowerCase() === flat) return key;
-        return camel(name);
+                if (key.toLowerCase() === name) return key;
     };
 
     const queryAttr = (el, selector) => {
@@ -207,13 +203,6 @@
             return datasets;
         },
         $watch: (fn) => watch(fn),
-        $on(name, fn, opts) {
-            const el = currentEl ?? this._nmEl;
-            const listener = (e) => runWithEl(el, () =>
-                fn(e)?.catch?.((err) => console.error("[Nomini] failed to run:", fn, "\n", err)), null, fn);
-            el.addEventListener(name, listener, opts);
-            (el.nmCleanup ||= []).push(() => el.removeEventListener(name, listener, opts));
-        },
         $dispatch(evt, detail, opts) {
             dispatch(currentEl ?? this._nmEl ?? document, evt, { detail, ...opts });
         },
@@ -456,10 +445,14 @@
                 if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
                 if (!kind) return [];
                 const [first, ...subs] = rest.split(".");
-                const main = propOf(bindEl, first);
                 const sub = subs.join(".");
-                const keep = main === "class" || sub.startsWith("--");
-                const key = main + (sub ? "." + (keep ? sub : propOf(bindEl[main], sub)) : "");
+                const main = first === "class" ? first : propOf(bindEl, first);
+                const inner = !sub || /^(class|style|dataset)$/.test(main) ? sub : propOf(bindEl[main], sub);
+                if (!main || inner === undefined) {
+                    console.error("[Nomini] no such property:", name, bindEl);
+                    return [];
+                }
+                const key = main + (sub ? "." + inner : "");
                 return `${JSON.stringify(key)}: () => (${value.trim() ? value : "undefined"}\n)`;
             });
 
@@ -509,12 +502,20 @@
                                     : Array.isArray(v) ? v.filter(Boolean)
                                     : Object.keys(v ?? {}).filter((name) => v[name]),
                             );
+                            const mine = new Set();
                             added.forEach((name) => next.has(name) || bindEl.classList.remove(name));
-                            next.forEach((name) => bindEl.classList.add(name));
-                            added = next;
+                            next.forEach((name) => {
+                                if (added.has(name) || !bindEl.classList.contains(name)) mine.add(name);
+                                bindEl.classList.add(name);
+                            });
+                            added = mine;
                         } else if (sub) {
+                            const unset = resolvedVal == null || resolvedVal === false;
                             if (main === "class") bindEl.classList.toggle(sub, resolvedVal);
-                            else if (sub.startsWith("--")) bindEl[main].setProperty(sub, resolvedVal);
+                            else if (main === "style")
+                                unset ? bindEl.style.removeProperty(sub) : bindEl.style.setProperty(sub, resolvedVal);
+                            else if (main === "dataset")
+                                unset ? bindEl.removeAttribute("data-" + sub) : bindEl.setAttribute("data-" + sub, resolvedVal);
                             else bindEl[main][sub] = resolvedVal;
                         } else bindEl[main] = resolvedVal;
                     };

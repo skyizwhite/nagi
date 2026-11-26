@@ -200,7 +200,7 @@ describe("swaps", () => {
 
     it("binds what it swaps in", async () => {
         const page = await swap(
-            `<div id="target" nm-data="{ n: 9 }"><span id="s" nm-bind-text-content="n"></span></div>`,
+            `<div id="target" nm-data="{ n: 9 }"><span id="s" nm-bind-textcontent="n"></span></div>`,
         );
         expect(page.$("#s").textContent).toBe("9");
     });
@@ -275,7 +275,7 @@ describe("swap strategies and their element's lifecycle", () => {
         const page = await mount(
             `<button id="b" nm-on-click="$get('/x')"></button>
             <div id="target" nm-data="{ n: 1 }"></div>`,
-            { server: () => `<div id="target" nm-swap="inner"><span id="s" nm-bind-text-content="n"></span></div>` },
+            { server: () => `<div id="target" nm-swap="inner"><span id="s" nm-bind-textcontent="n"></span></div>` },
         );
         const scope = page.$("#target").nmProxy;
         scope.n = 5;
@@ -368,10 +368,10 @@ describe("inner swaps into elements with nm-form, nm-use and nm-ref", () => {
                 <button id="b" nm-on-click="$get('/x')"></button>
                 <div id="target" nm-use="frame"><p>old</p></div>
             </div>`,
-            { server: () => `<div id="target" nm-swap="inner"><p id="p" nm-bind-text-content="n">new</p></div>` },
+            { server: () => `<div id="target" nm-swap="inner"><p id="p" nm-bind-textcontent="n">new</p></div>` },
         );
         await swapOnce(page);
-        expect(page.$("#target").innerHTML).toBe(`<div class="frame"><p id="p" nm-bind-text-content="n">3</p></div>`);
+        expect(page.$("#target").innerHTML).toBe(`<div class="frame"><p id="p" nm-bind-textcontent="n">3</p></div>`);
     });
 
     it("forgets the $refs of the children it removes", async () => {

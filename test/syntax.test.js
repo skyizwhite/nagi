@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
 describe("nm-bind-* attributes", () => {
-    it("turns a kebab-case name into a camelCase property", async () => {
+    it("finds the element's property by its name in lowercase", async () => {
         const page = await mount(`
-            <div nm-data="{ n: 3 }"><span id="s" nm-bind-tab-index="n" nm-bind-text-content="n * 2"></span></div>
+            <div nm-data="{ n: 3 }"><span id="s" nm-bind-tabindex="n" nm-bind-textcontent="n * 2"></span></div>
         `);
         expect(page.$("#s").tabIndex).toBe(3);
         expect(page.$("#s").textContent).toBe("6");
@@ -18,9 +18,20 @@ describe("nm-bind-* attributes", () => {
         expect(page.$("#s").style.backgroundColor).toBe("red");
     });
 
+    it("logs a name the element has no property for, and binds the rest", async () => {
+        const page = await mount(`
+            <div nm-data="{ n: 1 }"><span id="s" nm-bind-text-content="n" nm-bind-myprop="n" nm-bind-title="n"></span></div>
+        `);
+        const span = page.$("#s");
+        expect(span.title).toBe("1");
+        expect(span["text-content"]).toBeUndefined();
+        expect(span.myprop).toBeUndefined();
+        expect(page.errors).toHaveLength(2);
+    });
+
     it("sets a property whose name starts with on, without taking it for an event", async () => {
-        const page = await mount(`<div nm-data="{}"><span id="s" nm-bind-once-value="'v'"></span></div>`);
-        expect(page.$("#s").onceValue).toBe("v");
+        const page = await mount(`<div nm-data="{}"><span id="s" nm-bind-onclick="() => 1"></span></div>`);
+        expect(typeof page.$("#s").onclick).toBe("function");
     });
 
     it("binds undefined for an empty value", async () => {
@@ -31,7 +42,7 @@ describe("nm-bind-* attributes", () => {
 
     it("takes an expression that ends in a line comment", async () => {
         const page = await mount(`
-            <div nm-data="{ n: 1 }"><span id="s" nm-bind-text-content="n // the count"></span></div>
+            <div nm-data="{ n: 1 }"><span id="s" nm-bind-textcontent="n // the count"></span></div>
         `);
         expect(page.$("#s").textContent).toBe("1");
     });
@@ -46,8 +57,8 @@ describe("nm-bind-* attributes", () => {
     it("logs an element whose attributes do not make an expression, and binds the rest", async () => {
         const page = await mount(`
             <div nm-data="{ n: 1 }">
-                <span id="bad" nm-bind-text-content="n +"></span>
-                <span id="s" nm-bind-text-content="n"></span>
+                <span id="bad" nm-bind-textcontent="n +"></span>
+                <span id="s" nm-bind-textcontent="n"></span>
             </div>
         `);
         expect(page.$("#s").textContent).toBe("1");
@@ -106,14 +117,10 @@ describe("nm-on-* attributes", () => {
 });
 
 describe("attribute names and values, after review", () => {
-    it("finds a property with capitals in a row however the name is split", async () => {
+    it("finds a property with capitals in a row", async () => {
         const page = await mount(`
-            <div nm-data="{ html: '<b>x</b>' }">
-                <div id="a" nm-bind-inner-html="html"></div>
-                <div id="b" nm-bind-innerhtml="html"></div>
-            </div>
+            <div nm-data="{ html: '<b>x</b>' }"><div id="b" nm-bind-innerhtml="html"></div></div>
         `);
-        expect(page.$("#a").innerHTML).toBe("<b>x</b>");
         expect(page.$("#b").innerHTML).toBe("<b>x</b>");
     });
 
@@ -130,10 +137,26 @@ describe("attribute names and values, after review", () => {
         expect(page.scope("#s").got).toBe(1);
     });
 
-    it("turns the key after dataset into camelCase", async () => {
-        const page = await mount(`<div nm-data="{}"><span id="s" nm-bind-dataset.user-id="7"></span></div>`);
-        expect(page.$("#s").dataset.userId).toBe("7");
-        expect(page.errors).toEqual([]);
+    it("sets the data-* attribute named after dataset", async () => {
+        const page = await mount(`
+            <div nm-data="{ id: 7 }"><span id="s" data-userid="x" nm-bind-dataset.user-id="id"></span></div>
+        `);
+        const span = page.$("#s");
+        expect(span.getAttribute("data-user-id")).toBe("7");
+        expect(span.getAttribute("data-userid")).toBe("x");
+        page.scope("#s").id = null;
+        expect(span.hasAttribute("data-user-id")).toBe(false);
+    });
+
+    it("sets a style by its CSS name, and removes it for null or false", async () => {
+        const page = await mount(`
+            <div nm-data="{ c: 'red' }"><span id="s" nm-bind-style.background-color="c" nm-bind-style.--accent="c"></span></div>
+        `);
+        const span = page.$("#s");
+        expect(span.style.backgroundColor).toBe("red");
+        page.scope("#s").c = false;
+        expect(span.style.backgroundColor).toBe("");
+        expect(span.style.getPropertyValue("--accent")).toBe("");
     });
 
     it("toggles a class name with dots in it", async () => {
@@ -173,7 +196,7 @@ describe("attribute names and values, after review", () => {
     });
 });
 
-describe("names that keep their case, in values", () => {
+describe("class names that keep their case, in values", () => {
     it("toggles the classes of an object, capitals and dots kept", async () => {
         const page = await mount(`
             <div nm-data="{ on: true }"><span id="s" class="base" nm-bind-class="{ isActive: on, 'py-1.5': !on }"></span></div>
@@ -196,49 +219,17 @@ describe("names that keep their case, in values", () => {
         expect([...span.classList]).toEqual(["base"]);
     });
 
-    it("listens with $on to an event with capitals or dots in its name", async () => {
+});
+
+describe("the class value, after review", () => {
+    it("leaves a class written in the HTML when the value had it too", async () => {
         const page = await mount(`
-            <div nm-data="{ got: [] }">
-                <span id="s" nm-on-init="$on('itemAdded', (e) => got.push(e.type)); $on('show.bs.modal', () => got.push(this.id))"></span>
-            </div>
+            <div nm-data="{ on: true }"><span id="s" class="btn" nm-bind-class="on ? 'btn active' : ''"></span></div>
         `);
         const span = page.$("#s");
-        span.dispatchEvent(new page.window.Event("itemAdded"));
-        span.dispatchEvent(new page.window.Event("show.bs.modal"));
-        expect(page.scope("#s").got).toEqual(["itemAdded", "s"]);
+        expect([...span.classList]).toEqual(["btn", "active"]);
+        page.scope("#s").on = false;
+        expect([...span.classList]).toEqual(["btn"]);
     });
 
-    it("runs a $on handler with its element as the current one", async () => {
-        const page = await mount(`
-            <div nm-data="{ got: null }" nm-on-hello="got = e.detail">
-                <span id="s" nm-on-init="$on('ping', () => $dispatch('hello', 'from span'))"></span>
-            </div>
-        `);
-        page.$("#s").dispatchEvent(new page.window.Event("ping"));
-        expect(page.scope("#s").got).toBe("from span");
-    });
-
-    it("logs a $on handler that rejects", async () => {
-        const page = await mount(`
-            <div nm-data="{}"><span id="s" nm-on-init="$on('ping', async () => { throw new Error('no') })"></span></div>
-        `);
-        page.$("#s").dispatchEvent(new page.window.Event("ping"));
-        await page.settle();
-        expect(page.errors).toHaveLength(1);
-    });
-
-    it("takes $on listeners off an element a swap removes", async () => {
-        const page = await mount(
-            `<div id="d" nm-data="{ hits: 0 }">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target"><span id="s" nm-on-init="$on('ping', () => hits++)"></span></div>
-            </div>`,
-            { server: () => `<div id="target"></div>` },
-        );
-        const span = page.$("#s");
-        page.$("#b").click();
-        await page.settle();
-        span.dispatchEvent(new page.window.Event("ping"));
-        expect(page.$("#d").nmProxy.hits).toBe(0);
-    });
 });
