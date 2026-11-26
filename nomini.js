@@ -283,11 +283,12 @@
             const el = currentEl ?? this._nmEl;
             const signal = abortable && runWithEl(el, () => this._nmAbort?.signal);
             const timers = ((el ?? document).nmTimers ||= new Map());
-            const key = currentHandler ?? currentBind;
+            const key = currentHandler ?? String(fn);
+            const owner = currentBind;
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);
-                if (!signal?.aborted) runWithEl(el, fn);
+                if (!signal?.aborted && !owner?.gone) runWithEl(el, fn);
             }, ms));
         },
         // --- BEGIN helpers
@@ -326,6 +327,7 @@
             node.nmRuns?.forEach(kill);
             node.nmCleanup?.forEach((clean) => clean());
             node.nmTimers?.forEach(clearTimeout);
+            node.nmTimers?.clear();
         });
     };
 
@@ -391,17 +393,31 @@
 
             if (oldEl && oldEl.tagName === newEl.tagName) {
                 const newElCopy = newEl.cloneNode();
+                const oldClasses = [...oldEl.classList];
+                const propsOf = (style) => Array.from({ length: style.length }, (_, i) => style[i]);
+                const oldStyles = propsOf(oldEl.style);
 
-                const morph = (src) =>
-                    attributesToSettle.forEach((attr) => {
-                        const attrVal = src.getAttribute(attr);
+                attributesToSettle.forEach((attr) => {
+                    const attrVal = oldEl.getAttribute(attr);
+                    if (attrVal) newEl.setAttribute(attr, attrVal);
+                    else newEl.removeAttribute(attr);
+                });
+
+                requestAnimationFrame(() => {
+                    oldClasses.forEach((name) => newElCopy.classList.contains(name) || newEl.classList.remove(name));
+                    newEl.classList.add(...newElCopy.classList);
+                    oldStyles.forEach((prop) => newElCopy.style.getPropertyValue(prop) || newEl.style.removeProperty(prop));
+                    propsOf(newElCopy.style).forEach((prop) =>
+                        newEl.style.setProperty(prop, newElCopy.style.getPropertyValue(prop), newElCopy.style.getPropertyPriority(prop)),
+                    );
+                    ["class", "style"].forEach((attr) => {
+                        if (!newEl.getAttribute(attr) && !newElCopy.hasAttribute(attr)) newEl.removeAttribute(attr);
+                    });
+                    ["height", "width"].forEach((attr) => {
+                        const attrVal = newElCopy.getAttribute(attr);
                         if (attrVal) newEl.setAttribute(attr, attrVal);
                         else newEl.removeAttribute(attr);
                     });
-
-                morph(oldEl);
-                requestAnimationFrame(() => {
-                    morph(newElCopy);
                     newEl.nmRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
                 });
             }
@@ -665,6 +681,7 @@
                     // --- END events
 
                     // If special event handling isn't enabled just do a normal event listener
+                    if (key.includes(".")) console.warn("[Nomini] this build does not handle modifiers:", key.slice(1), bindEl);
                     bindEl.addEventListener(key.slice(1).split(".")[0], (e) => runWithEl(bindEl, () => handle(val, e), null, val));
                 } else {
                     const [main, ...rest] = key.split(".");
@@ -696,12 +713,17 @@
                         } else bindEl[main] = resolvedVal;
                     };
 
-                    watch(() => {
+                    let latest = 0;
+                    const run = watch(() => {
                         const value = val();
+                        const mine = ++latest;
                         if (typeof value?.then === "function")
-                            value.then(write).catch((err) => console.error("[Nomini] failed to run:", val, "\n", err));
+                            value
+                                .then((resolved) => mine === latest && !run?.gone && write(resolved))
+                                .catch((err) => console.error("[Nomini] failed to run:", val, "\n", err));
                         else write(value);
-                    }, bindEl).attr = /^class(name|list)$/i.test(main) ? "class" : main;
+                    }, bindEl);
+                    run.attr = /^class(name|list)$/i.test(main) ? "class" : main;
                 }
             });
 
