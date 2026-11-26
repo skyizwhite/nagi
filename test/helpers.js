@@ -82,9 +82,9 @@ export const mount = async (html, { server, beforeInit, without = [] } = {}) => 
     const unserved = [];
 
     window.TextDecoderStream = TextDecoderStream;
-    window.fetch = (url, opts = {}) => {
+    window.fetch = async (url, opts = {}) => {
         const request = {
-            url: new URL(url, window.location.href).href,
+            url: new URL(url, window.document.baseURI).href,
             method: opts.method ?? "GET",
             headers: Object.fromEntries(new Headers(opts.headers)),
             body: opts.body === undefined ? undefined : String(opts.body),
