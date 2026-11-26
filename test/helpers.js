@@ -5,7 +5,6 @@ const source = readFileSync(new URL("../nomini.js", import.meta.url), "utf8");
 
 const windows = new Set();
 
-/** Closes every window `mount` opened. `test/setup.js` runs it after each test. */
 export const closeWindows = async () => {
     const closing = [...windows].map((window) => window.happyDOM.close());
     windows.clear();
@@ -21,11 +20,6 @@ const respond = (answer) => {
 
 const abortError = () => new DOMException("The operation was aborted.", "AbortError");
 
-/**
- * Hands out `response` with a body that settles `done` once its reader has
- * read it to the end or given up on it, and that errors with an AbortError,
- * as a browser's does, if `signal` aborts before then.
- */
 const trackBody = (response, signal, done) => {
     if (!response.body) {
         done();
@@ -42,7 +36,6 @@ const trackBody = (response, signal, done) => {
             };
             signal?.addEventListener("abort", abort, { once: true });
         },
-        // Read from the answer only as nomini reads, as a network would.
         async pull(controller) {
             let ended, value;
             try {
@@ -68,18 +61,6 @@ const trackBody = (response, signal, done) => {
     return new Response(body, response);
 };
 
-/**
- * Loads nomini into a fresh window holding `html`, and runs its init.
- *
- * `server(request)` answers each fetch nomini makes. `request` has the
- * `url`, `method`, `headers` and `body` (as a string) that were sent, and
- * the answer is a string, a `{ body, status, headers }` object or a
- * `Response`, or a promise of one. Aborting a request rejects its fetch, or
- * errors its body if it has been answered, with an AbortError.
- *
- * `beforeInit(window)` runs after the HTML is in place and before nomini is
- * loaded, to set up what nomini should find when it starts.
- */
 export const mount = async (html, { server, beforeInit } = {}) => {
     const window = new Window({ url: "http://localhost/" });
     windows.add(window);
@@ -152,16 +133,7 @@ export const mount = async (html, { server, beforeInit } = {}) => {
         requests,
         errors,
         warnings,
-        /** The reactive scope of the nearest `nm-data` around `selector`. */
         scope: (selector) => $(selector).closest("[nm-data]").nmProxy,
-        /**
-         * Waits until every fetch has been answered and its body read to the
-         * end (or aborted), and the window's timers (nomini's swap timer,
-         * debounces) have run. A fetch still pending after `timeout` ms, such
-         * as one whose server never answers or whose body nomini never reads,
-         * fails the wait with the requests it was waiting for. So does a
-         * fetch made by a page mounted with no `server`.
-         */
         settle: async (timeout = 1000) => {
             await settle(window, pending, timeout);
             if (unserved.length) {
@@ -190,8 +162,6 @@ const settle = async (window, pending, timeout) => {
 const drain = async (window, pending) => {
     do {
         await Promise.all(pending);
-        // Let the reader handle the end of the body before looking for the
-        // timers it sets.
         await new Promise((resolve) => setTimeout(resolve));
         await window.happyDOM.waitUntilComplete();
     } while (pending.size > 0);

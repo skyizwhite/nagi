@@ -36,7 +36,6 @@ describe("requests", () => {
         expect(request.body).toBe("q=a");
     });
 
-    // Issue #5 is to stop sending these without being asked.
     it("sends the scope's letter-only primitive members, calling functions for them", async () => {
         const page = await mount(
             button(`$get('/x')`, "{ name: 'n', list: [1, 2], obj: { a: 1 }, _hidden: 1, getter() { return 'g' } }"),
@@ -53,7 +52,6 @@ describe("requests", () => {
         expect(query.has("_hidden")).toBe(false);
     });
 
-    // Issue #5 is to stop sending these without being asked.
     it("sends the data-* of the element up to its scope", async () => {
         const page = await mount(
             `<div nm-data="{}" data-from-scope="s"><button id="b" data-from-button="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>`,
@@ -121,7 +119,6 @@ describe("requests", () => {
             { server: () => answers.shift() },
         );
         page.$("#b").click();
-        // Abort only once nomini is reading the first body.
         await read;
         page.$("#b").click();
         await page.settle();
@@ -151,7 +148,6 @@ describe("requests", () => {
         page.$("#b").click();
         await page.settle();
 
-        // The url is the one fetched, query string and all.
         expect(page.scope("#b")._err.url).toBe("/x?q=1");
         expect(page.$("#target").textContent).toBe("old");
     });

@@ -36,16 +36,57 @@
     const getClosestProxy = (el) =>
         el.closest("[nm-data]")?.nmProxy || helpers();
 
-    const runTracked = (fn) => {
-        currentBind = fn;
-        currentBind();
-        currentBind = null;
+    const runWithEl = (el, fn, bind = null) => {
+        const prev = [currentEl, currentBind];
+        currentEl = el;
+        currentBind = bind;
+        try {
+            return fn();
+        } finally {
+            [currentEl, currentBind] = prev;
+        }
     };
 
-    const runWithEl = (el, fn) => {
-        currentEl = el;
-        fn();
-        currentEl = null;
+    const unlink = (run) => {
+        run.deps.forEach((deps) => deps.delete(run));
+        run.deps.clear();
+        run.children.forEach(kill);
+        run.children = [];
+    };
+
+    const kill = (run) => {
+        run.gone = true;
+        run.owner?.nmRuns.delete(run);
+        unlink(run);
+    };
+
+    const watch = (fn, el = currentEl, owner = el) => {
+        const run = () => {
+            if (run.gone || run === currentBind) return;
+            if (run.active) return (run.dirty = true);
+            run.active = true;
+            try {
+                for (let i = 0; i < 100 && !run.gone && (i === 0 || run.dirty); i++) {
+                    run.dirty = false;
+                    unlink(run);
+                    try {
+                        runWithEl(el, fn, run);
+                    } catch (err) {
+                        console.error("[Nomini] failed to run:", fn, "\n", err);
+                    }
+                }
+                if (run.gone) unlink(run);
+                else if (run.dirty) console.error("[Nomini] stopped running after 100 times:", fn);
+            } finally {
+                run.active = false;
+            }
+        };
+        run.owner = owner;
+        run.deps = new Set();
+        run.children = [];
+        owner && (owner.nmRuns ||= new Set()).add(run);
+        currentBind?.children.push(run);
+        run();
     };
 
     // Important reactivity stuff
@@ -137,7 +178,7 @@
 
             return datasets;
         },
-        $watch: runTracked,
+        $watch: (fn) => watch(fn),
         $dispatch(evt, detail, opts) {
             dispatch(currentEl, evt, { detail, ...opts });
         },
@@ -156,7 +197,7 @@
             const stored = localStorage[key];
             if (stored) this[prop] = JSON.parse(stored);
 
-            runTracked(() => {
+            watch(() => {
                 localStorage[key] = JSON.stringify(this[prop]);
             });
         },
@@ -164,6 +205,9 @@
     });
 
     // --- BEGIN fetch
+    const markGone = (el) =>
+        [el, ...el.querySelectorAll("*")].forEach((node) => node.nmRuns?.forEach(kill));
+
     const swap = (text) => {
         const template = document.createElement("template");
         template.innerHTML = text;
@@ -191,9 +235,11 @@
             // --- END morph
 
             if (strategy === "inner") {
+                [...target.children].forEach(markGone);
                 target.replaceChildren(...fragment.childNodes);
                 init(target);
             } else if (strategy === "outer") {
+                markGone(target);
                 target.replaceWith(fragment);
                 init(fragment);
             } else if (/(before|after|prepend|append)/.test(strategy)) {
@@ -256,24 +302,21 @@
 
             const proxyData = new Proxy(rawData, {
                 get(obj, prop) {
-                    if (currentBind) (trackedDeps[prop] ||= new Set()).add(currentBind);
+                    if (currentBind) {
+                        const deps = (trackedDeps[prop] ||= new Set());
+                        deps.add(currentBind);
+                        currentBind.deps.add(deps);
+                    }
 
                     return obj[prop];
                 },
                 set(obj, prop, val) {
+                    if (prop in obj && val !== Object(val) && Object.is(obj[prop], val)) return true;
                     obj[prop] = val;
 
                     const deps = trackedDeps[prop];
 
-                    if (deps) {
-                        // Required to prevent infinite loops (this took 3 hours to debug!)
-                        const thisBind = currentBind;
-                        currentBind = null;
-
-                        deps.forEach((fn) => fn());
-
-                        currentBind = thisBind;
-                    }
+                    deps && [...deps].forEach((run) => run());
 
                     return true;
                 },
@@ -322,7 +365,7 @@
             });
 
             queryAttr(el, "button, input[type='submit']").forEach((submitEl) => {
-                runTracked(() => submitEl.disabled = proxyData._nmFetching);
+                watch(() => submitEl.disabled = proxyData._nmFetching, submitEl);
             });
         });
         // --- END form
@@ -365,16 +408,19 @@
                     bindEl.addEventListener(key.slice(2), () => runWithEl(bindEl, val));
                 } else {
                     const [main, sub] = key.split(".");
-                    runWithEl(bindEl,
-                        () => runTracked(async () => {
-                            const resolvedVal = await val();
+                    const write = (resolvedVal) => {
+                        if (sub) {
+                            if (main === "class") bindEl.classList.toggle(sub, resolvedVal);
+                            else bindEl[main][sub] = resolvedVal;
+                        } else bindEl[main] = resolvedVal;
+                    };
 
-                            if (sub) {
-                                if (main === "class") bindEl.classList.toggle(sub, resolvedVal);
-                                else bindEl[main][sub] = resolvedVal;
-                            } else bindEl[main] = resolvedVal;
-                        })
-                    );
+                    watch(() => {
+                        const value = val();
+                        if (typeof value?.then === "function")
+                            value.then(write).catch((err) => console.error("[Nomini] failed to run:", val, "\n", err));
+                        else write(value);
+                    }, bindEl);
                 }
             });
 
