@@ -93,6 +93,7 @@
         owner && (owner.nmRuns ||= new Set()).add(run);
         currentBind?.children.push(run);
         run();
+        return run;
     };
 
     // Important reactivity stuff
@@ -313,18 +314,18 @@
             if (oldEl && oldEl.tagName === newEl.tagName) {
                 const newElCopy = newEl.cloneNode();
 
-                const settled = attributesToSettle.filter(
-                    (attr) => ![...newEl.attributes].some(({ name }) => name.startsWith("nm-bind-" + attr)),
-                );
                 const morph = (src) =>
-                    settled.forEach((attr) => {
+                    attributesToSettle.forEach((attr) => {
                         const attrVal = src.getAttribute(attr);
                         if (attrVal) newEl.setAttribute(attr, attrVal);
                         else newEl.removeAttribute(attr);
                     });
 
                 morph(oldEl);
-                requestAnimationFrame(() => morph(newElCopy));
+                requestAnimationFrame(() => {
+                    morph(newElCopy);
+                    newEl.nmRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
+                });
             }
         });
     };
@@ -535,13 +536,17 @@
                     return [];
                 }
                 const keyed = sub && /^(class|style|dataset)$/.test(main);
-                const unknownStyle = main === "style" && sub && !sub.startsWith("--") && !(sub in bindEl.style);
-                if (unknownStyle || (!keyed && !(sub ? writable(bindEl[main], inner) : writable(bindEl, main)))) {
+                const camelSub = sub.replace(/-(\w)/g, (_, c) => c.toUpperCase());
+                if (main === "style" && sub && !sub.startsWith("--") && !(sub in bindEl.style) && !(camelSub in bindEl.style))
+                    console.warn("[Nomini] the style has no such property:", name, bindEl);
+                if (!keyed && !(sub ? writable(bindEl[main], inner) : writable(bindEl, main))) {
                     console.error("[Nomini] cannot write:", name, bindEl);
                     return [];
                 }
                 const key = main + (sub ? "." + inner : "");
-                return `${JSON.stringify(key)}: () => { return ${value.trim()}\n}`;
+                const body = value.replace(/[\s;]+$/, "");
+                const empty = !body.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "").trim();
+                return `${JSON.stringify(key)}: () => (${empty ? "undefined" : body}\n)`;
             });
 
             if (!entries.length) return;
@@ -554,11 +559,9 @@
             Object.entries(props).forEach(([key, val]) => {
                 if (key.startsWith("@")) {
                     // --- BEGIN events
-                    const parts = key.slice(1).split(".");
-                    const mods = [];
-                    while (parts.length > 1 && /^(prevent|stop|once|window|debounce\d+)$/.test(parts.at(-1)))
-                        mods.unshift(parts.pop());
-                    const eventName = parts.join(".");
+                    const [eventName, ...mods] = key.slice(1).split(".");
+                    const unknown = mods.filter((mod) => !/^(prevent|stop|once|window|debounce\d+)$/.test(mod));
+                    if (unknown.length) console.warn("[Nomini] unknown modifiers:", unknown, bindEl);
 
                     const debounceMod = mods.find((val) => val.startsWith("debounce"));
                     const delay = +debounceMod?.slice(8);
@@ -581,10 +584,7 @@
                     // --- END events
 
                     // If special event handling isn't enabled just do a normal event listener
-                    bindEl.addEventListener(
-                        key.slice(1).replace(/(\.(prevent|stop|once|window|debounce\d+))+$/, ""),
-                        (e) => runWithEl(bindEl, () => handle(val, e), null, val),
-                    );
+                    bindEl.addEventListener(key.slice(1).split(".")[0], (e) => runWithEl(bindEl, () => handle(val, e), null, val));
                 } else {
                     const [main, ...rest] = key.split(".");
                     const sub = rest.join(".");
@@ -595,7 +595,7 @@
                             const next = new Set(
                                 typeof v === "string" ? v.split(/\s+/).filter(Boolean)
                                     : Array.isArray(v) ? v.filter(Boolean).flatMap((item) => String(item).split(/\s+/)).filter(Boolean)
-                                    : Object.keys(v ?? {}).filter((name) => v[name]),
+                                    : Object.keys(v ?? {}).filter((name) => v[name]).flatMap((name) => name.split(/\s+/)).filter(Boolean),
                             );
                             const mine = new Set();
                             added.forEach((name) => next.has(name) || bindEl.classList.remove(name));
@@ -620,7 +620,7 @@
                         if (typeof value?.then === "function")
                             value.then(write).catch((err) => console.error("[Nomini] failed to run:", val, "\n", err));
                         else write(value);
-                    }, bindEl);
+                    }, bindEl).attr = main;
                 }
             });
 

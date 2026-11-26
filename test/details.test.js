@@ -16,6 +16,23 @@ describe("#56 values of nm-bind-*", () => {
         expect(page.errors).toEqual([]);
     });
 
+    it("takes a value whose first line is a comment", async () => {
+        const page = await mount(`<div nm-let-name="'Ann'"><span id="s" nm-bind-textcontent="// label
+            name"></span></div>`);
+        expect(page.$("#s").textContent).toBe("Ann");
+    });
+
+    it("logs a value with more than one statement", async () => {
+        const page = await mount(`<div nm-let-n="1"><span id="s" nm-bind-textcontent="n; n + 1">x</span></div>`);
+        expect(page.$("#s").textContent).toBe("x");
+        expect(page.errors).toHaveLength(1);
+    });
+
+    it("splits the keys of a class object on spaces", async () => {
+        const page = await mount(`<div nm-let-on="true"><span id="s" nm-bind-class="{ 'btn primary': on }"></span></div>`);
+        expect([...page.$("#s").classList]).toEqual(["btn", "primary"]);
+    });
+
     it("keeps a class off while its value is undefined", async () => {
         const page = await mount(`
             <div nm-let-sel="undefined" nm-let-n="0"><span id="s" nm-bind-class.active="(n, sel?.on)"></span></div>
@@ -37,9 +54,10 @@ describe("#56 values of nm-bind-*", () => {
         expect([...span.classList]).toEqual([]);
     });
 
-    it("logs a style name the element's style does not have", async () => {
-        const page = await mount(`<div nm-scope><span nm-bind-style.backgroundcolor="'red'"></span></div>`);
-        expect(page.errors).toHaveLength(1);
+    it("warns about a style name the element's style does not have, and still sets it", async () => {
+        const page = await mount(`<div nm-scope><span id="s" nm-bind-style.--x="'1'" nm-bind-style.backgroundcolor="'red'"></span></div>`);
+        expect(page.warnings).toHaveLength(1);
+        expect(page.errors).toEqual([]);
     });
 
     it("logs a property that cannot be written", async () => {
@@ -49,14 +67,13 @@ describe("#56 values of nm-bind-*", () => {
 });
 
 describe("#56 nm-on-*", () => {
-    it("listens to an event with dots in its name, taking only known modifiers off the end", async () => {
+    it("takes the name before the first dot as the event, and warns about modifiers it does not know", async () => {
         const page = await mount(`
-            <div nm-let-got="0"><span id="s" nm-on-shown.bs.modal.once="got++"></span></div>
+            <div nm-let-got="0"><button id="b" nm-on-click.self="got++"></button></div>
         `);
-        const span = page.$("#s");
-        span.dispatchEvent(new page.window.Event("shown.bs.modal"));
-        span.dispatchEvent(new page.window.Event("shown.bs.modal"));
-        expect(page.scope("#s").got).toBe(1);
+        page.$("#b").click();
+        expect(page.scope("#b").got).toBe(1);
+        expect(page.warnings).toHaveLength(1);
     });
 
     it("warns about a handler that only makes a function", async () => {
@@ -80,6 +97,20 @@ describe("#59 #33 cssMorph", () => {
         const target = page.$("#target");
         expect(target.classList.contains("active")).toBe(true);
         expect(target.style.color).toBe("red");
+    });
+
+    it("settles the class of an outer swap's bound target, and puts the bound classes back", async () => {
+        const page = await mount(
+            `<div nm-let-on="true">
+                <button id="b" nm-on-click="$get('/x')"></button>
+                <div id="target" class="card collapsed" nm-bind-class.active="on"></div>
+            </div>`,
+            { server: () => `<div id="target" class="card expanded" nm-bind-class.active="on"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        await frame();
+        expect([...page.$("#target").classList].sort()).toEqual(["active", "card", "expanded"]);
     });
 
     it("still settles the class of an outer swap's target from the old to the new", async () => {
