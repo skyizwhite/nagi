@@ -244,3 +244,157 @@ describe("swaps", () => {
         expect(page.$("#target").textContent).toBe("new");
     });
 });
+
+describe("swap strategies and their element's lifecycle", () => {
+    const mountSwap = (html, answer) =>
+        mount(
+            `<div id="d" nm-data="{ hits: 0, gone: [] }">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                ${html}
+            </div>`,
+            { server: () => answer },
+        );
+
+    const swapOnce = async (page) => {
+        page.$("#b").click();
+        await page.settle();
+    };
+
+    it("binds the target of an inner swap only once", async () => {
+        const page = await mountSwap(
+            `<div id="target" nm-bind="{ onping: () => hits++ }"></div>`,
+            `<div id="target" nm-swap="inner"><span>new</span></div>`,
+        );
+        await swapOnce(page);
+        await swapOnce(page);
+        page.$("#target").dispatchEvent(new page.window.Event("ping"));
+        expect(page.$("#d").nmProxy.hits).toBe(1);
+    });
+
+    it("keeps the scope of the target of an inner swap, and binds the new children to it", async () => {
+        const page = await mount(
+            `<button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+            <div id="target" nm-data="{ n: 1 }"></div>`,
+            { server: () => `<div id="target" nm-swap="inner"><span id="s" nm-bind="{ textContent: () => n }"></span></div>` },
+        );
+        const scope = page.$("#target").nmProxy;
+        scope.n = 5;
+        await swapOnce(page);
+        expect(page.$("#target").nmProxy).toBe(scope);
+        expect(page.$("#s").textContent).toBe("5");
+        scope.n = 6;
+        expect(page.$("#s").textContent).toBe("6");
+    });
+
+    it("logs a strategy that only contains a valid one, and goes on with the rest", async () => {
+        const page = await mountSwap(
+            `<div id="target">old</div><div id="other">old</div>`,
+            `<div id="target" nm-swap="afterend">new</div><div id="other">new</div>`,
+        );
+        await swapOnce(page);
+        expect(page.$("#target").textContent).toBe("old");
+        expect(page.$("#other").textContent).toBe("new");
+        expect(page.errors).toHaveLength(1);
+    });
+
+    const destroyed = `
+        <div id="target" nm-bind="{ ondestroy: () => gone = [...gone, 'target'] }">
+            <span nm-bind="{ ondestroy: () => gone = [...gone, 'child'] }"></span>
+        </div>
+    `;
+
+    it("sends destroy to the target and what is in it on an outer swap", async () => {
+        const page = await mountSwap(destroyed, `<div id="target"></div>`);
+        await swapOnce(page);
+        expect(page.$("#d").nmProxy.gone).toEqual(["target", "child"]);
+    });
+
+    it("sends destroy only to the children on an inner swap", async () => {
+        const page = await mountSwap(destroyed, `<div id="target" nm-swap="inner"></div>`);
+        await swapOnce(page);
+        expect(page.$("#d").nmProxy.gone).toEqual(["child"]);
+    });
+
+    it.each(["before", "after", "prepend", "append"])("sends no destroy on a %s swap", async (strategy) => {
+        const page = await mountSwap(destroyed, `<div id="target" nm-swap="${strategy}"><b>new</b></div>`);
+        await swapOnce(page);
+        expect(page.$("#d").nmProxy.gone).toEqual([]);
+    });
+});
+
+describe("inner swaps into elements with nm-form, nm-use and nm-ref", () => {
+    const swapOnce = async (page) => {
+        page.$("#b").click();
+        await page.settle();
+    };
+
+    it("wires the new fields and submit buttons of an nm-form target", async () => {
+        const page = await mount(
+            `<div nm-data="{}">
+                <button id="b" type="button" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <form id="target" nm-form></form>
+            </div>`,
+            { server: () => `<form id="target" nm-swap="inner"><input name="q" value="hi"><button id="go">Go</button></form>` },
+        );
+        await swapOnce(page);
+        const scope = page.scope("#target");
+        expect(scope.q).toBe("hi");
+
+        const input = page.$("[name=q]");
+        input.value = "bye";
+        input.dispatchEvent(new page.window.Event("input"));
+        expect(scope.q).toBe("bye");
+
+        scope._nmFetching = true;
+        expect(page.$("#go").disabled).toBe(true);
+    });
+
+    it("wires the fields swapped into an element inside an nm-form", async () => {
+        const page = await mount(
+            `<form nm-data="{}" nm-form>
+                <button id="b" type="button" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <div id="target"></div>
+            </form>`,
+            { server: () => `<div id="target" nm-swap="inner"><input name="q" value="hi"></div>` },
+        );
+        await swapOnce(page);
+        expect(page.scope("#target").q).toBe("hi");
+    });
+
+    it("keeps the template of an nm-use target around the new children", async () => {
+        const page = await mount(
+            `<template id="frame"><div class="frame"><slot></slot></div></template>
+            <div nm-data="{ n: 3 }">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <div id="target" nm-use="frame"><p>old</p></div>
+            </div>`,
+            { server: () => `<div id="target" nm-swap="inner"><p id="p" nm-bind="{ textContent: () => n }">new</p></div>` },
+        );
+        await swapOnce(page);
+        expect(page.$("#target").innerHTML).toBe(`<div class="frame"><p id="p" nm-bind="{ textContent: () => n }">3</p></div>`);
+    });
+
+    it("forgets the $refs of the children it removes", async () => {
+        const page = await mount(
+            `<div id="target" nm-data="{}">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <input nm-ref="box">
+            </div>`,
+            { server: () => `<div id="target" nm-swap="inner"><button id="b2"></button></div>` },
+        );
+        await swapOnce(page);
+        expect(page.$("#target").nmProxy.$refs.box).toBeUndefined();
+    });
+
+    it("keeps a ref the new children set under the same name", async () => {
+        const page = await mount(
+            `<div id="target" nm-data="{}">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <input nm-ref="box">
+            </div>`,
+            { server: () => `<div id="target" nm-swap="inner"><input id="new" nm-ref="box"></div>` },
+        );
+        await swapOnce(page);
+        expect(page.$("#target").nmProxy.$refs.box).toBe(page.$("#new"));
+    });
+});

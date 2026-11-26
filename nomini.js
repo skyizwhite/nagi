@@ -205,8 +205,19 @@
     });
 
     // --- BEGIN fetch
-    const markGone = (el) =>
+    const drop = (el) => {
+        queryAttr(el, "[nm-bind]").forEach((node) => dispatch(node, "destroy", { bubbles: false }));
+        // --- BEGIN ref
+        queryAttr(el, "[nm-ref]").forEach((node) => {
+            const refs = getClosestProxy(node).$refs;
+            const name = node.getAttribute("nm-ref");
+            if (refs[name] === node) delete refs[name];
+        });
+        // --- END ref
         [el, ...el.querySelectorAll("*")].forEach((node) => node.nmRuns?.forEach(kill));
+    };
+
+    const initAll = (nodes) => nodes.forEach((node) => node.nodeType === 1 && init(node));
 
     const swap = (text) => {
         const template = document.createElement("template");
@@ -226,27 +237,32 @@
                 continue;
             }
 
-            queryAttr(target, "[nm-bind]").forEach(
-                (el) => dispatch(el, "destroy", { bubbles: false })
-            );
+            if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) {
+                console.error("[Nomini] Invalid swap strategy: ", strategy);
+                continue;
+            }
 
             // --- BEGIN morph
             cssMorph(fragment);
             // --- END morph
 
+            const kids = [...fragment.childNodes];
+
             if (strategy === "inner") {
-                [...target.children].forEach(markGone);
-                target.replaceChildren(...fragment.childNodes);
-                init(target);
+                [...target.children].forEach(drop);
+                target.replaceChildren(...kids);
+                // --- BEGIN template
+                if (target.hasAttribute("nm-use")) use(target);
+                // --- END template
+                initAll([...target.childNodes]);
             } else if (strategy === "outer") {
-                markGone(target);
+                drop(target);
                 target.replaceWith(fragment);
                 init(fragment);
-            } else if (/(before|after|prepend|append)/.test(strategy)) {
-                const kids = [...fragment.childNodes];
+            } else {
                 target[strategy](...kids);
-                kids.forEach((n) => n.nodeType === 1 && init(n));
-            } else console.error("[Nomini] Invalid swap strategy: ", strategy);
+                initAll(kids);
+            }
         }
     };
     // --- END fetch
@@ -277,18 +293,22 @@
     };
     // --- END morph
 
+    // --- BEGIN template
+    const use = (useEl) => {
+        const id = useEl.getAttribute("nm-use");
+        const template = document.getElementById(id);
+        if (template) {
+            const templateFrag = template.content.cloneNode(true);
+            const slot = templateFrag.querySelector("slot:not([name])");
+            if (slot) slot.replaceWith(...useEl.childNodes);
+            useEl.replaceChildren(templateFrag);
+        } else console.error("[Nomini] No template with id: #", id);
+    };
+    // --- END template
+
     const init = (baseEl) => {
         // --- BEGIN template
-        queryAttr(baseEl, "[nm-use]").forEach((useEl) => {
-            const id = useEl.getAttribute("nm-use");
-            const template = document.getElementById(id);
-            if (template) {
-                const templateFrag = template.content.cloneNode(true);
-                const slot = templateFrag.querySelector("slot:not([name])");
-                if (slot) slot.replaceWith(...useEl.childNodes);
-                useEl.replaceChildren(templateFrag);
-            } else console.error("[Nomini] No template with id: #", id);
-        });
+        queryAttr(baseEl, "[nm-use]").forEach(use);
         // --- END template
 
         // --- BEGIN data
@@ -336,37 +356,42 @@
         // --- END ref
 
         // --- BEGIN form
-        queryAttr(baseEl, "[nm-form]").forEach((el) => {
-            const proxyData = getClosestProxy(el);
+        const formProxy = (el) => {
+            const form = el.closest("[nm-form]");
+            return form && getClosestProxy(form);
+        };
 
-            queryAttr(el, "[name]").forEach((inputEl) => {
-                const inputType = inputEl.type;
+        queryAttr(baseEl, "[name]").forEach((inputEl) => {
+            const proxyData = formProxy(inputEl);
+            if (!proxyData) return;
 
-                const setVal = () => {
-                    let res;
+            const inputType = inputEl.type;
 
-                    if (inputType === "checkbox")
-                        res = inputEl.checked;
-                    else if (inputType === "radio" && inputEl.checked)
-                        res = inputEl.value;
-                    else if (inputType === "file")
-                        res = inputEl.files;
-                    else if (/number|range/.test(inputType))
-                        res = +inputEl.value;
-                    else res = inputEl.value;
+            const setVal = () => {
+                let res;
 
-                    proxyData[inputEl.name] = res;
-                };
+                if (inputType === "checkbox")
+                    res = inputEl.checked;
+                else if (inputType === "radio" && inputEl.checked)
+                    res = inputEl.value;
+                else if (inputType === "file")
+                    res = inputEl.files;
+                else if (/number|range/.test(inputType))
+                    res = +inputEl.value;
+                else res = inputEl.value;
 
-                setVal();
+                proxyData[inputEl.name] = res;
+            };
 
-                inputEl.addEventListener("input", setVal);
-                inputEl.addEventListener("change", setVal);
-            });
+            setVal();
 
-            queryAttr(el, "button, input[type='submit']").forEach((submitEl) => {
-                watch(() => submitEl.disabled = proxyData._nmFetching, submitEl);
-            });
+            inputEl.addEventListener("input", setVal);
+            inputEl.addEventListener("change", setVal);
+        });
+
+        queryAttr(baseEl, "button, input[type='submit']").forEach((submitEl) => {
+            const proxyData = formProxy(submitEl);
+            if (proxyData) watch(() => submitEl.disabled = proxyData._nmFetching, submitEl);
         });
         // --- END form
 
