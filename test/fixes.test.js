@@ -88,7 +88,7 @@ describe("what a swap cleans up", () => {
         const page = await mount(
             `<div id="d" nm-data="{ got: [] }">
                 <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
-                <div id="target"><input id="i" nm-bind="{ oninput: () => $debounce(() => got = [...got, 'ran'], 30, false) }"></div>
+                <div id="target"><input id="i" nm-bind="{ oninput: () => $debounce(() => got = [...got, 'ran'], 30) }"></div>
             </div>`,
             { server: () => `<div id="target"></div>` },
         );
@@ -114,5 +114,140 @@ describe("what a swap cleans up", () => {
         }
         page.window.dispatchEvent(new page.window.KeyboardEvent("keydown", { key: "a" }));
         expect(page.$("#d").nmProxy.hits).toBe(1);
+    });
+});
+
+describe("helpers called with no current element", () => {
+    it("sends fetcherr from the scope's element for a request made after an await", async () => {
+        const page = await mount(
+            `<div id="d" nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail.err }">
+                <button id="b" nm-bind="{ onclick: async () => { await 0; $get('/x') } }"></button>
+            </div>`,
+            { server: () => ({ status: 500, body: "no" }) },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#d").nmProxy._err).not.toBeNull();
+    });
+
+    it("sends the scope's data-* for a request made after an await", async () => {
+        const page = await mount(
+            `<div nm-data="{}" data-from="scope">
+                <button id="b" nm-bind="{ onclick: async () => { await 0; $get('/x') } }"></button>
+            </div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(new URL(page.requests[0].url).searchParams.get("from")).toBe("scope");
+    });
+
+    it("dispatches from the scope's element after an await", async () => {
+        const page = await mount(`
+            <div id="d" nm-data="{ got: null }" nm-bind="{ onping: (e) => got = e.detail }">
+                <button id="b" nm-bind="{ onclick: async () => { await 0; $dispatch('ping', 1) } }"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#d").nmProxy.got).toBe(1);
+    });
+
+    it("debounces after an await", async () => {
+        const page = await mount(`
+            <div id="d" nm-data="{ ran: 0 }">
+                <button id="b" nm-bind="{ onclick: async () => { await 0; $debounce(() => ran++, 10) } }"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#d").nmProxy.ran).toBe(1);
+        expect(page.errors).toEqual([]);
+    });
+});
+
+describe("request URLs and methods", () => {
+    it("puts the query before a #fragment", async () => {
+        const page = await mount(
+            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x#top', { a: 1 }) }"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(new URL(page.requests[0].url).searchParams.get("a")).toBe("1");
+    });
+
+    it("adds no & to a URL that ends in ?", async () => {
+        const page = await mount(
+            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x?', { a: 1 }) }"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.requests[0].url).toBe("http://localhost/x?a=1");
+    });
+
+    it("puts the data in the query for a lowercase get", async () => {
+        const page = await mount(
+            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $fetch('/x', 'get', { a: 1 }) }"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const [request] = page.requests;
+        expect(request.method).toBe("GET");
+        expect(request.body).toBeUndefined();
+        expect(new URL(request.url).searchParams.get("a")).toBe("1");
+    });
+});
+
+describe("debounces", () => {
+    it("keeps a timer for each handler of an element", async () => {
+        const page = await mount(`
+            <div nm-data="{ got: [] }">
+                <input id="i" nm-bind="{ 'oninput.debounce20': () => got = [...got, 'input'], 'onping.debounce20': () => got = [...got, 'ping'] }">
+            </div>
+        `);
+        const input = page.$("#i");
+        input.dispatchEvent(new page.window.Event("input"));
+        input.dispatchEvent(new page.window.Event("ping"));
+        await page.settle();
+        expect([...page.scope("#i").got].sort()).toEqual(["input", "ping"]);
+    });
+
+    it("still runs when another request starts in the scope", async () => {
+        const page = await mount(
+            `<div nm-data="{ got: [] }">
+                <input id="i" nm-bind="{ 'oninput.debounce20': () => got = [...got, 'saved'] }">
+                <button id="b" nm-bind="{ onclick: () => $get('/poll') }"></button>
+            </div>`,
+            { server: () => "" },
+        );
+        page.$("#i").dispatchEvent(new page.window.Event("input"));
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#i").got).toEqual(["saved"]);
+    });
+});
+
+describe("replacing a request", () => {
+    it("keeps the request in flight when building the next one throws", async () => {
+        let answer;
+        const page = await mount(
+            `<div nm-data="{ broken() { throw new Error('no') } }">
+                <button id="first" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <div id="target">old</div>
+            </div>`,
+            { server: () => new Promise((resolve) => (answer = resolve)) },
+        );
+        const scope = page.scope("#first");
+        const broken = scope.broken;
+        scope.broken = () => "fine";
+        page.$("#first").click();
+        scope.broken = broken;
+        expect(() => scope.$get("/y")).toThrow("no");
+        answer(`<div id="target">new</div>`);
+        await page.settle();
+        expect(page.$("#target").textContent).toBe("new");
     });
 });

@@ -36,14 +36,15 @@
     const getClosestProxy = (el) =>
         el.closest("[nm-data]")?.nmProxy || helpers();
 
-    const runWithEl = (el, fn, bind = null) => {
-        const prev = [currentEl, currentBind];
+    const runWithEl = (el, fn, bind = null, handler = null) => {
+        const prev = [currentEl, currentBind, currentHandler];
         currentEl = el;
         currentBind = bind;
+        currentHandler = handler;
         try {
             return fn();
         } finally {
-            [currentEl, currentBind] = prev;
+            [currentEl, currentBind, currentHandler] = prev;
         }
     };
 
@@ -92,6 +93,7 @@
     // Important reactivity stuff
     let currentBind = null;
     let currentEl = null;
+    let currentHandler = null;
 
     // Helpers that are included with every data object
     const helpers = () => ({
@@ -108,23 +110,25 @@
             this.$fetch(url, "POST", data);
         },
         $fetch(url, method, data) {
-            const el = currentEl;
+            const el = currentEl ?? this._nmEl;
             const controller = new AbortController();
             const { signal } = controller;
+            method = method.toUpperCase();
 
             const opts = runWithEl(el, () => {
-                this._nmAbort.abort();
-
                 data = { ...this.$nmData(), ...this.$dataset(), ...data };
 
                 const encodedData = new URLSearchParams(data);
-                const query = String(encodedData);
                 const opts = { headers: { "nm-request": true }, method, signal };
+                const target = new URL(url, location.href);
 
-                if (/GET|DELETE/.test(method)) {
-                    if (query) url += (url.includes("?") ? "&" : "?") + query;
-                } else opts.body = encodedData;
+                if (/^(GET|HEAD|DELETE)$/.test(method))
+                    encodedData.forEach((value, key) => target.searchParams.append(key, value));
+                else opts.body = encodedData;
 
+                url = target.href;
+
+                this._nmAbort.abort();
                 return opts;
             });
 
@@ -150,7 +154,7 @@
 
                     if (!signal.aborted) swap(buf);
                 })
-                .catch((err) => signal.aborted || dispatch(el, "fetcherr", { detail: { err, url } }))
+                .catch((err) => signal.aborted || dispatch(el ?? document, "fetcherr", { detail: { err, url } }))
                 .finally(() => {
                     if (this._nmAbort === controller) this._nmFetching = false;
                 });
@@ -169,7 +173,7 @@
         // --- END fetch
         $dataset() {
             let datasets = {};
-            let el = currentEl;
+            let el = currentEl ?? this._nmEl;
 
             while (el) {
                 datasets = { ...el.dataset, ...datasets };
@@ -181,15 +185,17 @@
         },
         $watch: (fn) => watch(fn),
         $dispatch(evt, detail, opts) {
-            dispatch(currentEl, evt, { detail, ...opts });
+            dispatch(currentEl ?? this._nmEl ?? document, evt, { detail, ...opts });
         },
-        $debounce(fn, ms, abortable = true) {
-            const el = currentEl;
-            const signal = runWithEl(el, () => this._nmAbort?.signal);
-            clearTimeout(el.nmTimer);
-            el.nmTimer = setTimeout(() => {
-                if (!(abortable && signal?.aborted)) runWithEl(el, fn)
-            }, ms);
+        $debounce(fn, ms) {
+            const el = currentEl ?? this._nmEl ?? document;
+            const timers = (el.nmTimers ||= new Map());
+            const key = currentHandler;
+            clearTimeout(timers.get(key));
+            timers.set(key, setTimeout(() => {
+                timers.delete(key);
+                runWithEl(el, fn);
+            }, ms));
         },
         // --- BEGIN helpers
         $persist(prop, key) {
@@ -219,7 +225,7 @@
             node.nmProxy?._nmAbort.abort();
             node.nmRuns?.forEach(kill);
             node.nmCleanup?.forEach((clean) => clean());
-            clearTimeout(node.nmTimer);
+            node.nmTimers?.forEach(clearTimeout);
         });
     };
 
@@ -322,6 +328,7 @@
             const rawData = {
                 ...evalExpression(dataEl.getAttribute("nm-data"), {}, dataEl),
                 ...helpers(),
+                _nmEl: dataEl,
             };
 
             const trackedDeps = new Map();
@@ -432,7 +439,7 @@
 
                         if (delay) proxyData.$debounce(() => val(e), delay);
                         else val(e);
-                    });
+                    }, null, val);
 
                     const listenOn = mods.includes("window") ? window : bindEl;
                     listenOn.addEventListener(eventName, listener, { once: mods.includes("once") });
