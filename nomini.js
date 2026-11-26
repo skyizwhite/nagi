@@ -67,6 +67,8 @@
         unlink(run);
     };
 
+    let runCount = 0;
+
     const watch = (fn, el = currentEl, owner = el) => {
         const run = () => {
             if (run.gone || run === currentBind) return;
@@ -92,6 +94,7 @@
         run.deps = new Set();
         run.children = [];
         owner && (owner.nmRuns ||= new Set()).add(run);
+        run.key = currentBind ? `${currentBind.key}.${currentBind.children.length}` : `run${++runCount}`;
         currentBind?.children.push(run);
         run();
         return run;
@@ -283,7 +286,7 @@
             const el = currentEl ?? this._nmEl;
             const signal = abortable && runWithEl(el, () => this._nmAbort?.signal);
             const timers = ((el ?? document).nmTimers ||= new Map());
-            const key = currentHandler ?? currentBind;
+            const key = currentHandler ?? currentBind?.key ?? String(fn);
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);
@@ -326,6 +329,7 @@
             node.nmRuns?.forEach(kill);
             node.nmCleanup?.forEach((clean) => clean());
             node.nmTimers?.forEach(clearTimeout);
+            node.nmTimers?.clear();
         });
     };
 
@@ -357,8 +361,7 @@
             const kids = [...fragment.childNodes];
 
             // --- BEGIN morph
-            if (strategy === "outer") cssMorph(fragment);
-            else kids.forEach((kid) => kid.nodeType === 1 && cssMorph(kid));
+            const settles = (strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1)).map(cssMorph);
             // --- END morph
 
             if (strategy === "inner") {
@@ -376,6 +379,10 @@
                 target[strategy](...kids);
                 initAll(kids);
             }
+
+            // --- BEGIN morph
+            settles.forEach((settle) => settle());
+            // --- END morph
         }
     };
     // --- END fetch
@@ -383,29 +390,26 @@
     // --- BEGIN morph
     const cssMorph = (fragment) => {
         const attributesToSettle = ["style", "class", "height", "width"];
+        const read = (el) => attributesToSettle.map((attr) => [attr, el.getAttribute(attr)]);
 
-        const idSet = queryAttr(fragment, "[id]");
-
-        idSet.forEach((newEl) => {
+        const pairs = queryAttr(fragment, "[id]").flatMap((newEl) => {
             const oldEl = document.getElementById(newEl.id);
+            return oldEl && oldEl.tagName === newEl.tagName ? [[newEl, read(oldEl)]] : [];
+        });
 
-            if (oldEl && oldEl.tagName === newEl.tagName) {
-                const newElCopy = newEl.cloneNode();
-
-                const morph = (src) =>
-                    attributesToSettle.forEach((attr) => {
-                        const attrVal = src.getAttribute(attr);
-                        if (attrVal) newEl.setAttribute(attr, attrVal);
-                        else newEl.removeAttribute(attr);
-                    });
-
-                morph(oldEl);
+        return () =>
+            pairs.forEach(([newEl, oldValues]) => {
+                const apply = (values) =>
+                    values.forEach(([attr, value]) =>
+                        value != null ? newEl.setAttribute(attr, value) : newEl.removeAttribute(attr),
+                    );
+                const settled = read(newEl);
+                apply(oldValues);
                 requestAnimationFrame(() => {
-                    morph(newElCopy);
+                    apply(settled);
                     newEl.nmRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
                 });
-            }
-        });
+            });
     };
     // --- END morph
 
@@ -665,6 +669,7 @@
                     // --- END events
 
                     // If special event handling isn't enabled just do a normal event listener
+                    if (key.includes(".")) console.warn("[Nomini] this build does not handle modifiers:", key.slice(1), bindEl);
                     bindEl.addEventListener(key.slice(1).split(".")[0], (e) => runWithEl(bindEl, () => handle(val, e), null, val));
                 } else {
                     const [main, ...rest] = key.split(".");
@@ -696,12 +701,17 @@
                         } else bindEl[main] = resolvedVal;
                     };
 
-                    watch(() => {
+                    let latest = 0;
+                    const run = watch(() => {
                         const value = val();
+                        const mine = ++latest;
                         if (typeof value?.then === "function")
-                            value.then(write).catch((err) => console.error("[Nomini] failed to run:", val, "\n", err));
+                            value
+                                .then((resolved) => mine === latest && !run?.gone && write(resolved))
+                                .catch((err) => console.error("[Nomini] failed to run:", val, "\n", err));
                         else write(value);
-                    }, bindEl).attr = /^class(name|list)$/i.test(main) ? "class" : main;
+                    }, bindEl);
+                    run.attr = /^class(name|list)$/i.test(main) ? "class" : main;
                 }
             });
 
