@@ -36,16 +36,34 @@
     const getClosestProxy = (el) =>
         el.closest("[nm-data]")?.nmProxy || helpers();
 
-    const runTracked = (fn) => {
-        currentBind = fn;
-        currentBind();
-        currentBind = null;
+    // Runs fn with el as the current element and bind as what tracks the
+    // scope values fn reads (none by default, as for an event handler).
+    const runWithEl = (el, fn, bind = null) => {
+        const prev = [currentEl, currentBind];
+        currentEl = el;
+        currentBind = bind;
+        try {
+            return fn();
+        } finally {
+            [currentEl, currentBind] = prev;
+        }
     };
 
-    const runWithEl = (el, fn) => {
-        currentEl = el;
-        fn();
-        currentEl = null;
+    // Runs fn now and again whenever a scope value it read changes, with el
+    // as the current element each time. Once el has left the document, the
+    // next change drops it instead of running it.
+    const watch = (fn, el = currentEl) => {
+        const run = () => {
+            if (run.active) return;
+            run.active = true;
+            try {
+                runWithEl(el, fn, run);
+            } finally {
+                run.active = false;
+            }
+        };
+        run.el = el;
+        run();
     };
 
     // Important reactivity stuff
@@ -137,7 +155,7 @@
 
             return datasets;
         },
-        $watch: runTracked,
+        $watch: (fn) => watch(fn),
         $dispatch(evt, detail, opts) {
             dispatch(currentEl, evt, { detail, ...opts });
         },
@@ -156,7 +174,7 @@
             const stored = localStorage[key];
             if (stored) this[prop] = JSON.parse(stored);
 
-            runTracked(() => {
+            watch(() => {
                 localStorage[key] = JSON.stringify(this[prop]);
             });
         },
@@ -265,15 +283,10 @@
 
                     const deps = trackedDeps[prop];
 
-                    if (deps) {
-                        // Required to prevent infinite loops (this took 3 hours to debug!)
-                        const thisBind = currentBind;
-                        currentBind = null;
-
-                        deps.forEach((fn) => fn());
-
-                        currentBind = thisBind;
-                    }
+                    deps && [...deps].forEach((run) => {
+                        if (run.el && !run.el.isConnected) deps.delete(run);
+                        else run();
+                    });
 
                     return true;
                 },
@@ -322,7 +335,7 @@
             });
 
             queryAttr(el, "button, input[type='submit']").forEach((submitEl) => {
-                runTracked(() => submitEl.disabled = proxyData._nmFetching);
+                watch(() => submitEl.disabled = proxyData._nmFetching, submitEl);
             });
         });
         // --- END form
@@ -365,16 +378,19 @@
                     bindEl.addEventListener(key.slice(2), () => runWithEl(bindEl, val));
                 } else {
                     const [main, sub] = key.split(".");
-                    runWithEl(bindEl,
-                        () => runTracked(async () => {
-                            const resolvedVal = await val();
+                    const write = (resolvedVal) => {
+                        if (sub) {
+                            if (main === "class") bindEl.classList.toggle(sub, resolvedVal);
+                            else bindEl[main][sub] = resolvedVal;
+                        } else bindEl[main] = resolvedVal;
+                    };
 
-                            if (sub) {
-                                if (main === "class") bindEl.classList.toggle(sub, resolvedVal);
-                                else bindEl[main][sub] = resolvedVal;
-                            } else bindEl[main] = resolvedVal;
-                        })
-                    );
+                    watch(() => {
+                        const value = val();
+                        // Only what val reads before its first await is tracked.
+                        if (typeof value?.then === "function") value.then(write);
+                        else write(value);
+                    }, bindEl);
                 }
             });
 

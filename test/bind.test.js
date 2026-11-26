@@ -230,3 +230,113 @@ describe("helpers", () => {
         expect(page.$("#d").nmProxy.n).toBe(3);
     });
 });
+
+describe("reactivity", () => {
+    // #4
+    it("has written a bind by the time the element's init runs", async () => {
+        const page = await mount(`
+            <div nm-data="{ n: 1, seen: null }">
+                <span id="s" nm-bind="{ textContent: () => n, oninit: () => seen = this.textContent }"></span>
+            </div>
+        `);
+        expect(page.scope("#s").seen).toBe("1");
+    });
+
+    // #4
+    it("writes a bind as the scope changes, without waiting", async () => {
+        const page = await mount(`
+            <div nm-data="{ n: 1 }"><span id="s" nm-bind="{ textContent: () => n }"></span></div>
+        `);
+        page.scope("#s").n = 2;
+        expect(page.$("#s").textContent).toBe("2");
+    });
+
+    // #16
+    it("tracks what a bind reads when it runs again", async () => {
+        const page = await mount(`
+            <div nm-data="{ flag: true, a: 'a', b: 'b' }">
+                <span id="s" nm-bind="{ textContent: () => flag ? a : b }"></span>
+            </div>
+        `);
+        const scope = page.scope("#s");
+        scope.flag = false;
+        scope.b = "b2";
+        expect(page.$("#s").textContent).toBe("b2");
+    });
+
+    // #16
+    it("runs a bind again with its element as the current one", async () => {
+        const page = await mount(`
+            <div nm-data="{ n: 1, got: [] }" nm-bind="{ onchanged: (e) => got = [...got, e.detail] }">
+                <span id="s" nm-bind="{ textContent: () => ($dispatch('changed', n), n) }"></span>
+            </div>
+        `);
+        page.scope("#s").n = 2;
+        expect(page.scope("#s").got).toEqual([1, 2]);
+        expect(page.errors).toEqual([]);
+    });
+
+    // #17
+    it("keeps tracking a bind after it calls $watch", async () => {
+        const page = await mount(`
+            <div nm-data="{ x: 1, y: 'y' }">
+                <span id="s" nm-bind="{ textContent: () => { $watch(() => x); return y } }"></span>
+            </div>
+        `);
+        page.scope("#s").y = "y2";
+        expect(page.$("#s").textContent).toBe("y2");
+    });
+
+    // #2
+    it("drops the binds of an element a swap removed", async () => {
+        const page = await mount(
+            `<div id="d" nm-data="{ n: 1, ran: [] }">
+                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <div id="target"><span nm-bind="{ textContent: () => (ran.push(this.isConnected), n) }"></span></div>
+            </div>`,
+            { server: () => `<div id="target"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+
+        const scope = page.$("#d").nmProxy;
+        scope.ran.length = 0;
+        scope.n = 2;
+        expect(scope.ran).toEqual([]);
+    });
+
+    // #2
+    it("drops the binds of an element removed by other code", async () => {
+        const page = await mount(`
+            <div id="d" nm-data="{ n: 1, ran: 0 }">
+                <span id="s" nm-bind="{ textContent: () => (ran++, n) }"></span>
+            </div>
+        `);
+        const scope = page.$("#d").nmProxy;
+        page.$("#s").remove();
+        scope.n = 2;
+        scope.n = 3;
+        expect(scope.ran).toBe(1);
+    });
+
+    it("does not track what an event handler reads into the bind that sent the event", async () => {
+        const page = await mount(`
+            <div nm-data="{ n: 1, other: 0, runs: 0 }" nm-bind="{ onchanged: () => other }">
+                <span id="s" nm-bind="{ textContent: () => (runs++, $dispatch('changed'), n) }"></span>
+            </div>
+        `);
+        const scope = page.scope("#s");
+        scope.other = 1;
+        expect(scope.runs).toBe(1);
+    });
+
+    it("does not run a watcher again from inside itself", async () => {
+        const page = await mount(`
+            <div id="d" nm-data="{ count: 0 }" nm-bind="{ oninit: () => $watch(() => count = count + 1) }"></div>
+        `);
+        const scope = page.$("#d").nmProxy;
+        expect(scope.count).toBe(1);
+        scope.count = 10;
+        expect(scope.count).toBe(11);
+    });
+});
