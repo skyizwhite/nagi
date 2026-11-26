@@ -107,7 +107,7 @@
         $refs: {},
         // --- END ref
         // --- BEGIN fetch
-        _nmFetching: false,
+        $fetching: false,
         _nmAbort: new AbortController(),
         $get(url, data) {
             this.$fetch(url, "GET", data);
@@ -120,21 +120,27 @@
             const controller = new AbortController();
             const { signal } = controller;
             method = (method || "GET").toUpperCase();
+            url = String(url);
             const reading = /^(GET|HEAD|OPTIONS)$/.test(method);
             const report = (name, detail) => dispatch(el?.isConnected ? el : document, name, { detail });
             let write;
 
             const opts = runWithEl(el, () => {
-                let inner = {};
-                for (let node = el; node?.nodeType === 1 && !node.nmProxy; node = node.parentElement)
-                    inner = { ...node.dataset, ...inner };
-                data = { ...this.$nmData(), ...inner, ...data };
+                let body;
+                if (data instanceof FormData || data instanceof URLSearchParams) body = data;
+                else if (data?.tagName === "FORM") body = new FormData(data);
+                else {
+                    body = new URLSearchParams();
+                    Object.entries(data ?? {}).forEach(([key, value]) =>
+                        [value].flat().forEach((item) => item != null && body.append(key, item)),
+                    );
+                }
 
-                const encodedData = new URLSearchParams(data);
+                const entries = [...body];
                 const opts = { headers: { "nm-request": true }, method, signal };
-                const query = String(encodedData);
+                const query = String(new URLSearchParams(entries.filter(([, value]) => typeof value === "string")));
 
-                if (!/^(GET|HEAD|DELETE)$/.test(method)) opts.body = encodedData;
+                if (!/^(GET|HEAD|DELETE)$/.test(method)) opts.body = body;
                 else if (query) {
                     const hashAt = url.includes("#") ? url.indexOf("#") : url.length;
                     const path = url.slice(0, hashAt);
@@ -142,7 +148,8 @@
                     url = path + joiner + query + url.slice(hashAt);
                 }
 
-                write = !reading && `${method} ${url} ${opts.body ?? ""}`;
+                const sent = entries.map(([key, value]) => [key, typeof value === "string" ? value : `${value.name}:${value.size}`]);
+                write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sent) : ""}`;
                 if (writing.has(write)) return;
 
                 this._nmAbort.abort();
@@ -154,7 +161,7 @@
             this._nmAbort = reading ? controller : new AbortController();
             if (write) writing.add(write);
             pending++;
-            this._nmFetching = true;
+            this.$fetching = true;
 
             fetch(url, opts)
                 .then(async (res) => {
@@ -178,18 +185,8 @@
                 .catch((err) => signal.aborted || report("fetcherr", { err, url }))
                 .finally(() => {
                     writing.delete(write);
-                    if (!--pending) this._nmFetching = false;
+                    if (!--pending) this.$fetching = false;
                 });
-        },
-        $nmData() {
-            const isPrimitive = (x) => x !== Object(x);
-
-            return Object.entries(this).reduce((acc, [k, v]) => {
-                if (!/^[a-z]+$/i.test(k)) return acc;
-                if (isPrimitive(v) || (Array.isArray(v) && v.every(isPrimitive)))
-                    acc[k] = v;
-                return acc;
-            }, {});
         },
         // --- END fetch
         $dataset() {
@@ -496,7 +493,7 @@
 
         queryAttr(baseEl, "button, input[type='submit']").forEach((submitEl) => {
             const proxyData = formProxy(submitEl);
-            if (proxyData) watch(() => submitEl.disabled = proxyData._nmFetching, submitEl);
+            if (proxyData) watch(() => submitEl.disabled = proxyData.$fetching, submitEl);
         });
         // --- END form
 

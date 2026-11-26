@@ -224,7 +224,7 @@ describe("nm-let-* attributes", () => {
     it("is not called to make a request's data", async () => {
         const page = await mount(
             `<div nm-let-count="1" nm-let-add="(n) => count += n">
-                <button id="b" nm-on-click="$post('/x')"></button>
+                <button id="b" nm-on-click="$post('/x', { count })"></button>
             </div>`,
             { server: () => "" },
         );
@@ -313,9 +313,9 @@ describe("finding scopes in the page as it is", () => {
 });
 
 describe("scopes, after the review of nm-scope", () => {
-    it("sends the scope's value over the data-* it started from", async () => {
+    it("sends the scope's current value of a data-* it is passed", async () => {
         const page = await mount(
-            `<div nm-scope data-page="1"><button id="b" nm-on-click="page = '2'; $get('/list')"></button></div>`,
+            `<div nm-scope data-page="1"><button id="b" nm-on-click="page = '2'; $get('/list', { page })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -382,9 +382,9 @@ describe("scopes, after the review of nm-scope", () => {
 });
 
 describe("scopes, after the second review of nm-scope", () => {
-    it("sends a closer element's data-* over the scope's value of the same name", async () => {
+    it("sends a closer element's data-* over the scope's from $dataset()", async () => {
         const page = await mount(
-            `<div nm-scope data-id="0"><button id="b" data-id="5" nm-on-click="$get('/row')"></button></div>`,
+            `<div nm-scope data-id="0"><button id="b" data-id="5" nm-on-click="$get('/row', $dataset())"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();

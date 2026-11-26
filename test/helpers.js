@@ -87,7 +87,10 @@ export const mount = async (html, { server, beforeInit, without = [] } = {}) => 
             url: new URL(url, window.document.baseURI).href,
             method: opts.method ?? "GET",
             headers: Object.fromEntries(new Headers(opts.headers)),
-            body: opts.body === undefined ? undefined : String(opts.body),
+            body:
+                opts.body === undefined ? undefined
+                : opts.body instanceof window.FormData ? [...opts.body]
+                : String(opts.body),
         };
         requests.push(request);
 

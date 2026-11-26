@@ -130,10 +130,10 @@ describe("helpers called with no current element", () => {
         expect(page.$("#d").nmProxy._err).not.toBeNull();
     });
 
-    it("sends the scope's data-* for a request made after an await", async () => {
+    it("gives the scope's data-* from $dataset() after an await", async () => {
         const page = await mount(
             `<div nm-scope="{}" data-from="scope">
-                <button id="b" nm-on-click="await 0; $get('/x')"></button>
+                <button id="b" nm-on-click="await 0; $get('/x', $dataset())"></button>
             </div>`,
             { server: () => "" },
         );

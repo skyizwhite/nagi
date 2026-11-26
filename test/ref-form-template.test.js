@@ -44,11 +44,11 @@ describe("nm-form", () => {
     it("disables the submit buttons while the scope is fetching", async () => {
         const page = await mount(form);
         const scope = page.$("#f").nmProxy;
-        scope._nmFetching = true;
+        scope.$fetching = true;
         await page.settle();
         expect(page.$("#send").disabled).toBe(true);
 
-        scope._nmFetching = false;
+        scope.$fetching = false;
         await page.settle();
         expect(page.$("#send").disabled).toBe(false);
     });

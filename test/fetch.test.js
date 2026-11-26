@@ -36,31 +36,26 @@ describe("requests", () => {
         expect(request.body).toBe("q=a");
     });
 
-    it("sends the scope's letter-only primitive members, and not its functions", async () => {
-        const page = await mount(
-            button(`$get('/x')`, "{ name: 'n', list: [1, 2], obj: { a: 1 }, _hidden: 1, getter() { return 'g' } }"),
-            { server: () => "" },
-        );
+    it("sends none of the scope's values unless they are passed", async () => {
+        const page = await mount(button(`$get('/x')`, "{ name: 'n', list: [1, 2] }"), { server: () => "" });
         page.$("#b").click();
         await page.settle();
-
-        const query = new URL(page.requests[0].url).searchParams;
-        expect(query.get("name")).toBe("n");
-        expect(query.get("list")).toBe("1,2");
-        expect(query.has("getter")).toBe(false);
-        expect(query.has("obj")).toBe(false);
-        expect(query.has("_hidden")).toBe(false);
+        expect(page.requests[0].url).toBe("http://localhost/x");
     });
 
-    it("sends the data-* of the element up to its scope", async () => {
+    it("sends no data-* unless passed, and sends what $dataset() gives when it is", async () => {
         const page = await mount(
-            `<div nm-scope="{}" data-from-scope="s"><button id="b" data-from-button="b" nm-on-click="$get('/x')"></button></div>`,
+            `<div nm-scope="{}" data-from-scope="s">
+                <button id="a" data-from-button="b" nm-on-click="$get('/x')"></button>
+                <button id="b" data-from-button="b" nm-on-click="$get('/y', $dataset())"></button>
+            </div>`,
             { server: () => "" },
         );
+        page.$("#a").click();
         page.$("#b").click();
         await page.settle();
-
-        const query = new URL(page.requests[0].url).searchParams;
+        expect(page.requests[0].url).toBe("http://localhost/x");
+        const query = new URL(page.requests[1].url).searchParams;
         expect(query.get("fromScope")).toBe("s");
         expect(query.get("fromButton")).toBe("b");
     });
@@ -72,17 +67,17 @@ describe("requests", () => {
         expect(new URL(page.requests[0].url).searchParams.get("name")).toBe("call");
     });
 
-    it("sets _nmFetching while a request is out", async () => {
+    it("sets $fetching while a request is out", async () => {
         let answer;
         const page = await mount(button(`$get('/x')`), {
             server: () => new Promise((resolve) => (answer = resolve)),
         });
         page.$("#b").click();
-        expect(page.scope("#b")._nmFetching).toBe(true);
+        expect(page.scope("#b").$fetching).toBe(true);
 
         answer("");
         await page.settle();
-        expect(page.scope("#b")._nmFetching).toBe(false);
+        expect(page.scope("#b").$fetching).toBe(false);
     });
 
     it("aborts the scope's request in flight when it makes another", async () => {
@@ -345,7 +340,7 @@ describe("inner swaps into elements with nm-form, nm-use and nm-ref", () => {
         input.dispatchEvent(new page.window.Event("input"));
         expect(scope.q).toBe("bye");
 
-        scope._nmFetching = true;
+        scope.$fetching = true;
         expect(page.$("#go").disabled).toBe(true);
     });
 
@@ -415,11 +410,11 @@ describe("a request's lifecycle", () => {
         await later(10);
         const scope = page.scope("#b");
         expect(scope._errs).toEqual([]);
-        expect(scope._nmFetching).toBe(true);
+        expect(scope.$fetching).toBe(true);
 
         answers[1]("");
         await page.settle();
-        expect(scope._nmFetching).toBe(false);
+        expect(scope.$fetching).toBe(false);
     });
 
     it("swaps nothing from a request aborted while its body is arriving", async () => {
@@ -467,7 +462,7 @@ describe("a request's lifecycle", () => {
     it("is still fetching until what it answered is swapped in", async () => {
         const page = await mount(
             `<div nm-scope="{ seen: [] }">
-                <button id="b" nm-on-click="$get('/x')" nm-on-init="$watch(() => _nmFetching || seen.push(document.getElementById('target').textContent))"></button>
+                <button id="b" nm-on-click="$get('/x')" nm-on-init="$watch(() => $fetching || seen.push(document.getElementById('target').textContent))"></button>
             </div>
             <div id="target">old</div>`,
             { server: () => `<div id="target">new</div>` },
@@ -489,7 +484,7 @@ describe("a request's lifecycle", () => {
         await page.settle();
         expect(page.scope("#b")._err).toBeNull();
         expect(page.$("#target").textContent).toBe("old");
-        expect(page.scope("#b")._nmFetching).toBe(false);
+        expect(page.scope("#b").$fetching).toBe(false);
     });
 
     it("aborts the request of a scope a swap removes", async () => {
@@ -716,10 +711,10 @@ describe("reads and writes", () => {
         page.$("#search").click();
         answers["/search"]("");
         await later(10);
-        expect(scope._nmFetching).toBe(true);
+        expect(scope.$fetching).toBe(true);
         answers["/order"]("");
         await page.settle();
-        expect(scope._nmFetching).toBe(false);
+        expect(scope.$fetching).toBe(false);
     });
 
     it("lets a write finish when a swap removes its scope", async () => {
