@@ -12,7 +12,7 @@ npm install
 npm test        # or `mise run test`
 ```
 
-Each test loads `nomini.js` into a fresh [happy-dom](https://github.com/capricorn86/happy-dom) window through `mount()` in `test/helpers.js`, which also stands in for the server that `$get`/`$post` talk to.
+Each test loads `nomini.js` into a fresh [happy-dom](https://github.com/capricorn86/happy-dom) window through `mount()` in `test/helpers.js`, which also stands in for the server that `$get`/`$post` talk to. The tests are grouped by feature, one file each (`scope`, `reactivity`, `bind`, `events`, `helpers`, `form`, `template`, `ref`, `request`, `response`, `swap`, `builds`), with `harness.test.js` testing `mount()` and `settle()` themselves and small shared helpers in `test/support.js`.
 
 If you're proposing a major feature, please do it in Issues before opening a PR. This will give us time to review and consider it before any code needs to be written.
 

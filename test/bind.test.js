@@ -1,58 +1,117 @@
 import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
-describe("nm-scope", () => {
-    it("makes a scope from an object literal", async () => {
-        const page = await mount(`<div id="a" nm-scope="{ n: 1 }"></div>`);
-        expect(page.$("#a").nmProxy.n).toBe(1);
-    });
-
-    it("runs the expression with the scope element as this", async () => {
-        const page = await mount(`<div id="a" data-x="hi" nm-scope="{ x: this.dataset.x }"></div>`);
-        expect(page.$("#a").nmProxy.x).toBe("hi");
-    });
-
-    it("logs and falls back to an empty scope when the expression is invalid", async () => {
-        const page = await mount(`<div id="a" nm-scope="{ n: }"></div>`);
-        expect(page.$("#a").nmProxy.n).toBeUndefined();
-        expect(page.errors).toHaveLength(1);
-    });
-
-    it("reads the nearest scope first, and outer scopes for what it lacks", async () => {
+describe("properties", () => {
+    it("sets a sub-property with <prop>.<sub>", async () => {
         const page = await mount(`
-            <div nm-scope="{ outer: 'o', both: 'outer' }">
-                <div nm-scope="{ inner: 'i', both: 'inner' }">
-                    <span id="s" nm-bind-textcontent="outer + ':' + inner + ':' + both"></span>
-                </div>
-            </div>
-        `);
-        expect(page.$("#s").textContent).toBe("o:i:inner");
-    });
-
-    it("skips everything under nm-ignore", async () => {
-        const page = await mount(`
-            <div nm-scope="{ n: 1 }">
-                <div nm-ignore><span id="s" nm-bind-textcontent="n">x</span></div>
-            </div>
+            <div nm-scope="{ c: 'red' }"><span id="s" nm-bind-style.color="c"></span></div>
         `);
         await page.settle();
-        expect(page.$("#s").textContent).toBe("x");
+        expect(page.$("#s").style.color).toBe("red");
+    });
+
+    it("binds an element outside any scope to the helpers alone", async () => {
+        const page = await mount(`<span id="s" nm-bind-textcontent="typeof $get"></span>`);
+        await page.settle();
+        expect(page.$("#s").textContent).toBe("function");
+    });
+
+    it("finds the element's property by its name in lowercase", async () => {
+        const page = await mount(`
+            <div nm-scope="{ n: 3 }"><span id="s" nm-bind-tabindex="n" nm-bind-textcontent="n * 2"></span></div>
+        `);
+        expect(page.$("#s").tabIndex).toBe(3);
+        expect(page.$("#s").textContent).toBe("6");
+    });
+
+    it("logs a name the element has no property for, and binds the rest", async () => {
+        const page = await mount(`
+            <div nm-scope="{ n: 1 }"><span id="s" nm-bind-text-content="n" nm-bind-myprop="n" nm-bind-title="n"></span></div>
+        `);
+        const span = page.$("#s");
+        expect(span.title).toBe("1");
+        expect(span["text-content"]).toBeUndefined();
+        expect(span.myprop).toBeUndefined();
+        expect(page.errors).toHaveLength(2);
+    });
+
+    it("sets a property whose name starts with on, without taking it for an event", async () => {
+        const page = await mount(`<div nm-scope="{}"><span id="s" nm-bind-onclick="() => 1"></span></div>`);
+        expect(typeof page.$("#s").onclick).toBe("function");
+    });
+
+    it("finds a property with capitals in a row", async () => {
+        const page = await mount(`
+            <div nm-scope="{ html: '<b>x</b>' }"><div id="b" nm-bind-innerhtml="html"></div></div>
+        `);
+        expect(page.$("#b").innerHTML).toBe("<b>x</b>");
+    });
+
+    it("logs a property that cannot be written", async () => {
+        const page = await mount(`<div nm-scope><span nm-bind-dataset="{ a: 1 }" nm-bind-tagname="'p'"></span></div>`);
+        expect(page.errors).toHaveLength(2);
     });
 });
 
-describe("nm-bind properties", () => {
-    it("sets a property and keeps it in step with the scope", async () => {
-        const page = await mount(`
-            <div nm-scope="{ n: 1 }"><span id="s" nm-bind-textcontent="n * 10"></span></div>
-        `);
-        await page.settle();
-        expect(page.$("#s").textContent).toBe("10");
-
-        page.scope("#s").n = 2;
-        await page.settle();
-        expect(page.$("#s").textContent).toBe("20");
+describe("values", () => {
+    it("binds undefined for an empty value", async () => {
+        const page = await mount(`<div nm-scope="{}"><span id="s" nm-bind-title=""></span></div>`);
+        expect(page.$("#s").title).toBe("undefined");
+        expect(page.errors).toEqual([]);
     });
 
+    it("takes an expression that ends in a line comment", async () => {
+        const page = await mount(`
+            <div nm-scope="{ n: 1 }"><span id="s" nm-bind-textcontent="n // the count"></span></div>
+        `);
+        expect(page.$("#s").textContent).toBe("1");
+    });
+
+    it("logs an element whose attributes do not make an expression, and binds the rest", async () => {
+        const page = await mount(`
+            <div nm-scope="{ n: 1 }">
+                <span id="bad" nm-bind-textcontent="n +"></span>
+                <span id="s" nm-bind-textcontent="n"></span>
+            </div>
+        `);
+        expect(page.$("#s").textContent).toBe("1");
+        expect(page.errors).toHaveLength(1);
+    });
+
+    it("keeps the other attributes of an element when one holds only spaces or a comment", async () => {
+        const page = await mount(`
+            <div nm-scope="{ n: 0 }"><button id="b" nm-bind-title=" " nm-bind-lang="// later" nm-on-click="n++"></button></div>
+        `);
+        page.$("#b").click();
+        expect(page.scope("#b").n).toBe(1);
+    });
+
+    it("takes a value that ends in a semicolon", async () => {
+        const page = await mount(`<div nm-let-n="1"><span id="s" nm-bind-textcontent="n;"></span></div>`);
+        expect(page.$("#s").textContent).toBe("1");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("takes a value that is only a comment as undefined", async () => {
+        const page = await mount(`<div nm-scope><span id="s" nm-bind-title="// later"></span></div>`);
+        expect(page.$("#s").title).toBe("undefined");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("takes a value whose first line is a comment", async () => {
+        const page = await mount(`<div nm-let-name="'Ann'"><span id="s" nm-bind-textcontent="// label
+            name"></span></div>`);
+        expect(page.$("#s").textContent).toBe("Ann");
+    });
+
+    it("logs a value with more than one statement", async () => {
+        const page = await mount(`<div nm-let-n="1"><span id="s" nm-bind-textcontent="n; n + 1">x</span></div>`);
+        expect(page.$("#s").textContent).toBe("x");
+        expect(page.errors).toHaveLength(1);
+    });
+});
+
+describe("classes", () => {
     it("toggles a class with class.<name>", async () => {
         const page = await mount(`
             <div nm-scope="{ on: false }"><span id="s" nm-bind-class.active="on"></span></div>
@@ -65,418 +124,123 @@ describe("nm-bind properties", () => {
         expect(page.$("#s").classList.contains("active")).toBe(true);
     });
 
-    it("sets a sub-property with <prop>.<sub>", async () => {
+    it("toggles a class name with dots in it", async () => {
+        const page = await mount(`<div nm-scope="{}"><span id="s" nm-bind-class.py-1.5="true"></span></div>`);
+        expect(page.$("#s").classList.contains("py-1.5")).toBe(true);
+    });
+
+    it("toggles the classes of an object, capitals and dots kept", async () => {
         const page = await mount(`
-            <div nm-scope="{ c: 'red' }"><span id="s" nm-bind-style.color="c"></span></div>
+            <div nm-scope="{ on: true }"><span id="s" class="base" nm-bind-class="{ isActive: on, 'py-1.5': !on }"></span></div>
         `);
-        await page.settle();
-        expect(page.$("#s").style.color).toBe("red");
-    });
-
-    it("writes the resolved value of a promise", async () => {
-        const page = await mount(`
-            <div nm-scope="{}"><span id="s" nm-bind-textcontent="(async () => 'later')()"></span></div>
-        `);
-        await page.settle();
-        expect(page.$("#s").textContent).toBe("later");
-    });
-
-    it("binds an element outside any scope to the helpers alone", async () => {
-        const page = await mount(`<span id="s" nm-bind-textcontent="typeof $get"></span>`);
-        await page.settle();
-        expect(page.$("#s").textContent).toBe("function");
-    });
-
-    it("dispatches a non-bubbling init on the element after binding it", async () => {
-        const page = await mount(`
-            <div nm-scope="{ got: [] }" id="d" nm-on-init="got = [...got, 'scope']">
-                <span nm-on-init="got = [...got, 'child']"></span>
-            </div>
-        `);
-        await page.settle();
-        expect(page.$("#d").nmProxy.got).toEqual(["scope", "child"]);
-    });
-});
-
-describe("nm-bind events", () => {
-    it("listens with on<event> and runs the handler with this as the element", async () => {
-        const page = await mount(`
-            <div nm-scope="{ id: null }"><button id="b" nm-on-click="id = this.id + ':' + e.type"></button></div>
-        `);
-        page.$("#b").click();
-        expect(page.scope("#b").id).toBe("b:click");
-    });
-
-    it("listens to custom events", async () => {
-        const page = await mount(`
-            <div nm-scope="{ got: null }"><span id="s" nm-on-ping="got = e.detail"></span></div>
-        `);
-        page.$("#s").dispatchEvent(new page.window.CustomEvent("ping", { detail: 42 }));
-        expect(page.scope("#s").got).toBe(42);
-    });
-
-    it("calls preventDefault with .prevent", async () => {
-        const page = await mount(`
-            <div nm-scope="{}"><form id="f" nm-on-submit.prevent=""></form></div>
-        `);
-        const event = new page.window.Event("submit", { cancelable: true });
-        page.$("#f").dispatchEvent(event);
-        expect(event.defaultPrevented).toBe(true);
-    });
-
-    it("stops propagation with .stop", async () => {
-        const page = await mount(`
-            <div nm-scope="{ hits: 0 }" nm-on-click="hits++">
-                <button id="b" nm-on-click.stop=""></button>
-            </div>
-        `);
-        page.$("#b").click();
-        expect(page.scope("#b").hits).toBe(0);
-    });
-
-    it("runs once with .once", async () => {
-        const page = await mount(`
-            <div nm-scope="{ hits: 0 }"><button id="b" nm-on-click.once="hits++"></button></div>
-        `);
-        page.$("#b").click();
-        page.$("#b").click();
-        expect(page.scope("#b").hits).toBe(1);
-    });
-
-    it("listens on window with .window", async () => {
-        const page = await mount(`
-            <div nm-scope="{ key: null }"><span id="s" nm-on-keydown.window="key = e.key"></span></div>
-        `);
-        page.window.dispatchEvent(new page.window.KeyboardEvent("keydown", { key: "Escape" }));
-        expect(page.scope("#s").key).toBe("Escape");
-    });
-
-    it("runs only the last of quick events with .debounce<ms>", async () => {
-        const page = await mount(`
-            <div nm-scope="{ got: [] }"><input id="i" nm-on-input.debounce30="got = [...got, this.value]"></div>
-        `);
-        const input = page.$("#i");
-        for (const value of ["a", "ab", "abc"]) {
-            input.value = value;
-            input.dispatchEvent(new page.window.Event("input"));
-        }
-        expect(page.scope("#i").got).toEqual([]);
-        await page.settle();
-        expect(page.scope("#i").got).toEqual(["abc"]);
-    });
-});
-
-describe("helpers", () => {
-    it("$dispatch sends a bubbling event from the element", async () => {
-        const page = await mount(`
-            <div nm-scope="{ got: null }" nm-on-hello="got = e.detail">
-                <button id="b" nm-on-click="$dispatch('hello', 'world')"></button>
-            </div>
-        `);
-        page.$("#b").click();
-        expect(page.scope("#b").got).toBe("world");
-    });
-
-    it("$watch reruns a function when what it read changes", async () => {
-        const page = await mount(`
-            <div id="d" nm-scope="{ n: 1, seen: [] }" nm-on-init="$watch(() => seen.push(n))"></div>
-        `);
-        page.$("#d").nmProxy.n = 2;
-        expect(page.$("#d").nmProxy.seen).toEqual([1, 2]);
-    });
-
-    it("$dataset merges data-* from the element up to its scope, nearest first", async () => {
-        const page = await mount(`
-            <div data-a="outside">
-                <div nm-scope="{ got: null }" data-a="scope" data-b="scope">
-                    <p data-b="p">
-                        <button id="b" data-c="button" nm-on-click="got = $dataset()"></button>
-                    </p>
-                </div>
-            </div>
-        `);
-        page.$("#b").click();
-        expect({ ...page.scope("#b").got }).toEqual({ a: "scope", b: "p", c: "button" });
-    });
-
-    it("$persist saves a member to localStorage as it changes", async () => {
-        const page = await mount(`
-            <div id="d" nm-scope="{ n: 1 }" nm-on-init="$persist('n')"></div>
-        `);
-        expect(page.window.localStorage["_nmProp-n"]).toBe("1");
-
-        page.$("#d").nmProxy.n = 5;
-        expect(page.window.localStorage["_nmProp-n"]).toBe("5");
-    });
-
-    it("$persist restores what was saved before the page loaded", async () => {
-        const page = await mount(
-            `<div id="d" nm-scope="{ n: 1 }" nm-on-init="$persist('n')"></div>`,
-            { beforeInit: (window) => (window.localStorage["_nmProp-n"] = "7") },
-        );
-        expect(page.$("#d").nmProxy.n).toBe(7);
-    });
-
-    it("$persist takes the storage key as its second argument", async () => {
-        const page = await mount(
-            `<div id="d" nm-scope="{ n: 1 }" nm-on-init="$persist('n', 'count')"></div>`,
-            { beforeInit: (window) => (window.localStorage.count = "3") },
-        );
-        expect(page.$("#d").nmProxy.n).toBe(3);
-    });
-});
-
-describe("reactivity", () => {
-    it("has written a bind by the time the element's init runs", async () => {
-        const page = await mount(`
-            <div nm-scope="{ n: 1, seen: null }">
-                <span id="s" nm-bind-textcontent="n" nm-on-init="seen = this.textContent"></span>
-            </div>
-        `);
-        expect(page.scope("#s").seen).toBe("1");
-    });
-
-    it("writes a bind as the scope changes, without waiting", async () => {
-        const page = await mount(`
-            <div nm-scope="{ n: 1 }"><span id="s" nm-bind-textcontent="n"></span></div>
-        `);
-        page.scope("#s").n = 2;
-        expect(page.$("#s").textContent).toBe("2");
-    });
-
-    it("tracks what a bind reads when it runs again", async () => {
-        const page = await mount(`
-            <div nm-scope="{ flag: true, a: 'a', b: 'b' }">
-                <span id="s" nm-bind-textcontent="flag ? a : b"></span>
-            </div>
-        `);
-        const scope = page.scope("#s");
-        scope.flag = false;
-        scope.b = "b2";
-        expect(page.$("#s").textContent).toBe("b2");
-    });
-
-    it("runs a bind again with its element as the current one", async () => {
-        const page = await mount(`
-            <div nm-scope="{ n: 1, got: [] }" nm-on-changed="got = [...got, e.detail]">
-                <span id="s" nm-bind-textcontent="($dispatch('changed', n), n)"></span>
-            </div>
-        `);
-        page.scope("#s").n = 2;
-        expect(page.scope("#s").got).toEqual([1, 2]);
-        expect(page.errors).toEqual([]);
-    });
-
-    it("keeps tracking a bind after it calls $watch", async () => {
-        const page = await mount(`
-            <div nm-scope="{ x: 1, y: 'y' }">
-                <span id="s" nm-bind-textcontent="(() => { $watch(() => x); return y })()"></span>
-            </div>
-        `);
-        page.scope("#s").y = "y2";
-        expect(page.$("#s").textContent).toBe("y2");
-    });
-
-    it("drops the binds of an element a swap removed", async () => {
-        const page = await mount(
-            `<div id="d" nm-scope="{ n: 1, ran: [] }">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target"><span nm-bind-textcontent="(ran.push(this.isConnected), n)"></span></div>
-            </div>`,
-            { server: () => `<div id="target"></div>` },
-        );
-        page.$("#b").click();
-        await page.settle();
-
-        const scope = page.$("#d").nmProxy;
-        scope.ran.length = 0;
-        scope.n = 2;
-        expect(scope.ran).toEqual([]);
-    });
-
-    it("runs the binds of an element put back in the document", async () => {
-        const page = await mount(`
-            <div id="d" nm-scope="{ n: 1 }"><span id="s" nm-bind-textcontent="n"></span></div>
-        `);
-        const scope = page.$("#d").nmProxy;
         const span = page.$("#s");
-        span.remove();
+        expect([...span.classList]).toEqual(["base", "isActive"]);
+        page.scope("#s").on = false;
+        expect([...span.classList]).toEqual(["base", "py-1.5"]);
+    });
+
+    it("adds the classes of a string or an array, and takes away the ones it added before", async () => {
+        const page = await mount(`
+            <div nm-scope="{ list: 'a bB' }"><span id="s" class="base" nm-bind-class="list"></span></div>
+        `);
+        const span = page.$("#s");
+        expect([...span.classList]).toEqual(["base", "a", "bB"]);
+        page.scope("#s").list = ["bB", "c"];
+        expect([...span.classList].sort()).toEqual(["bB", "base", "c"]);
+        page.scope("#s").list = null;
+        expect([...span.classList]).toEqual(["base"]);
+    });
+
+    it("leaves a class written in the HTML when the value had it too", async () => {
+        const page = await mount(`
+            <div nm-scope="{ on: true }"><span id="s" class="btn" nm-bind-class="on ? 'btn active' : ''"></span></div>
+        `);
+        const span = page.$("#s");
+        expect([...span.classList]).toEqual(["btn", "active"]);
+        page.scope("#s").on = false;
+        expect([...span.classList]).toEqual(["btn"]);
+    });
+
+    it("splits the keys of a class object on spaces", async () => {
+        const page = await mount(`<div nm-let-on="true"><span id="s" nm-bind-class="{ 'btn primary': on }"></span></div>`);
+        expect([...page.$("#s").classList]).toEqual(["btn", "primary"]);
+    });
+
+    it("keeps a class off while its value is undefined", async () => {
+        const page = await mount(`
+            <div nm-let-sel="undefined" nm-let-n="0"><span id="s" nm-bind-class.active="(n, sel?.on)"></span></div>
+        `);
+        const scope = page.scope("#s");
+        scope.n = 1;
         scope.n = 2;
-        page.$("#d").append(span);
-        expect(span.textContent).toBe("2");
         scope.n = 3;
-        expect(span.textContent).toBe("3");
+        expect(page.$("#s").classList.contains("active")).toBe(false);
     });
 
-    it("drops a $watch set up from an element a swap removed", async () => {
-        const page = await mount(
-            `<div id="d" nm-scope="{ n: 1, seen: [] }">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target"><span nm-on-init="$watch(() => seen.push(n))"></span></div>
-            </div>`,
-            { server: () => `<div id="target"><span nm-on-init="$watch(() => seen.push(n))"></span></div>` },
-        );
-        for (let i = 0; i < 3; i++) {
-            page.$("#b").click();
-            await page.settle();
-        }
-        const scope = page.$("#d").nmProxy;
-        scope.seen.length = 0;
-        scope.n = 2;
-        expect(scope.seen).toEqual([2]);
-    });
-
-    it("drops a $persist set up from an element a swap removed", async () => {
-        const page = await mount(
-            `<div id="d" nm-scope="{ n: 1 }">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target"><span nm-on-init="$persist('n')"></span></div>
-            </div>`,
-            { server: () => `<div id="target"></div>` },
-        );
-        page.$("#b").click();
-        await page.settle();
-        page.$("#d").nmProxy.n = 5;
-        expect(page.window.localStorage["_nmProp-n"]).toBe("1");
-    });
-
-    it("stops a bind that its own run made another bind drop", async () => {
+    it("splits the items of a class array on spaces", async () => {
         const page = await mount(`
-            <div nm-scope="{ x: 0, y: 0, done: false, log: [] }">
-                <span nm-bind-textcontent="(() => {
-                    x;
-                    $watch(() => {
-                        if (y === 1 && !done) { done = true; x = x + 1 }
-                        $watch(() => log.push(y));
-                    });
-                })()"></span>
-            </div>
+            <div nm-let-list="['x', 'a b']"><span id="s" nm-bind-class="list"></span></div>
         `);
-        const scope = page.scope("span");
-        scope.y = 1;
-        scope.log.length = 0;
-        scope.y = 10;
-        expect(scope.log).toEqual([10]);
+        const span = page.$("#s");
+        expect([...span.classList]).toEqual(["x", "a", "b"]);
+        page.scope("#s").list = [];
+        expect([...span.classList]).toEqual([]);
+    });
+});
+
+describe("style and dataset", () => {
+    it("leaves what follows the dot as written", async () => {
+        const page = await mount(`
+            <div nm-scope="{ on: true }"><span id="s" nm-bind-class.ring-2="on" nm-bind-style.background-color="on ? 'red' : ''"></span></div>
+        `);
+        expect(page.$("#s").classList.contains("ring-2")).toBe(true);
+        expect(page.$("#s").style.backgroundColor).toBe("red");
+    });
+
+    it("sets a CSS custom property with style.--name", async () => {
+        const page = await mount(`<div nm-scope="{}"><span id="s" nm-bind-style.--accent="'red'"></span></div>`);
+        expect(page.$("#s").style.getPropertyValue("--accent")).toBe("red");
+    });
+
+    it("sets the data-* attribute named after dataset", async () => {
+        const page = await mount(`
+            <div nm-scope="{ id: 7 }"><span id="s" data-userid="x" nm-bind-dataset.user-id="id"></span></div>
+        `);
+        const span = page.$("#s");
+        expect(span.getAttribute("data-user-id")).toBe("7");
+        expect(span.getAttribute("data-userid")).toBe("x");
+        page.scope("#s").id = null;
+        expect(span.hasAttribute("data-user-id")).toBe(false);
+    });
+
+    it("sets a style by its CSS name, and removes it for null or false", async () => {
+        const page = await mount(`
+            <div nm-scope="{ c: 'red' }"><span id="s" nm-bind-style.background-color="c" nm-bind-style.--accent="c"></span></div>
+        `);
+        const span = page.$("#s");
+        expect(span.style.backgroundColor).toBe("red");
+        page.scope("#s").c = false;
+        expect(span.style.backgroundColor).toBe("");
+        expect(span.style.getPropertyValue("--accent")).toBe("");
+    });
+
+    it("warns about a style name the element's style does not have, and still sets it", async () => {
+        const page = await mount(`<div nm-scope><span id="s" nm-bind-style.--x="'1'" nm-bind-style.backgroundcolor="'red'"></span></div>`);
+        expect(page.warnings).toHaveLength(1);
         expect(page.errors).toEqual([]);
     });
+});
 
-    it("logs a bind that throws and goes on binding the rest", async () => {
+describe("the old nm-bind object", () => {
+    it("ignores the old nm-bind object", async () => {
         const page = await mount(`
-            <div nm-scope="{ n: 1 }">
-                <span id="bad" nm-bind-textcontent="n.missing.x"></span>
-                <span id="s" nm-bind-textcontent="n"></span>
-            </div>
+            <div nm-scope="{ n: 1 }"><span id="s" nm-bind="{ textContent: () => n }">old</span></div>
         `);
-        expect(page.$("#s").textContent).toBe("1");
+        expect(page.$("#s").textContent).toBe("old");
+    });
+
+    it("logs an element still using the old nm-bind object", async () => {
+        const page = await mount(`<div nm-scope="{}"><span nm-bind="{ textContent: () => 1 }"></span></div>`);
         expect(page.errors).toHaveLength(1);
-
-        page.scope("#s").n = 2;
-        expect(page.$("#s").textContent).toBe("2");
-        expect(page.errors).toHaveLength(2);
-    });
-
-    it("runs a bind again when another bind it set off changes what it read", async () => {
-        const page = await mount(`
-            <div nm-scope="{ a: 1, total: 0, label: '' }">
-                <span id="first" nm-bind-textcontent="(() => { const shown = label; total = a + 1; return shown })()"></span>
-                <span id="second" nm-bind-textcontent="(label = 'v' + total)"></span>
-            </div>
-        `);
-        page.scope("#first").a = 5;
-        expect(page.$("#first").textContent).toBe("v6");
-        expect(page.errors).toEqual([]);
-    });
-
-    it("logs a bind that keeps setting itself off and stops it", async () => {
-        const page = await mount(`
-            <div nm-scope="{ a: 0, b: 0 }">
-                <span id="s" nm-bind-textcontent="(a = b + 1)"></span>
-                <span nm-bind-textcontent="(b = a + 1)"></span>
-            </div>
-        `);
-        expect(page.errors.some(([message]) => message.includes("stopped running after 100 times"))).toBe(true);
-    });
-
-    it("logs an async bind that rejects", async () => {
-        const page = await mount(`
-            <div nm-scope="{}"><span nm-bind-textcontent="(async () => { throw new Error('no') })()"></span></div>
-        `);
-        await page.settle();
-        expect(page.errors).toHaveLength(1);
-    });
-
-    it("does not run binds again when a value is set to what it already is", async () => {
-        const page = await mount(`
-            <div nm-scope="{ n: 1, runs: 0 }"><span id="s" nm-bind-textcontent="(runs++, n)"></span></div>
-        `);
-        page.scope("#s").n = 1;
-        expect(page.scope("#s").runs).toBe(1);
-    });
-
-    it("creates a key set to undefined", async () => {
-        const page = await mount(`
-            <div id="d" nm-scope="{}" nm-on-init="$watch(() => 0)"></div>
-        `);
-        const scope = page.$("#d").nmProxy;
-        scope.color = undefined;
-        expect("color" in scope).toBe(true);
-    });
-
-    it("runs binds again when an object is set to itself after changing it", async () => {
-        const page = await mount(`
-            <div nm-scope="{ items: [] }">
-                <button id="b" nm-on-click="items.push(1); items = items"></button>
-                <span id="s" nm-bind-textcontent="items.length"></span>
-            </div>
-        `);
-        page.$("#b").click();
-        expect(page.$("#s").textContent).toBe("1");
-    });
-
-    it("stops running a bind for what it no longer reads", async () => {
-        const page = await mount(`
-            <div nm-scope="{ flag: true, a: 'a', b: 'b', runs: 0 }">
-                <span id="s" nm-bind-textcontent="(runs++, flag ? a : b)"></span>
-            </div>
-        `);
-        const scope = page.scope("#s");
-        scope.flag = false;
-        scope.a = "a2";
-        expect(scope.runs).toBe(2);
-    });
-
-    it("replaces the watchers a bind made when it runs again", async () => {
-        const page = await mount(`
-            <div nm-scope="{ x: 1, y: 1, log: [] }">
-                <span id="s" nm-bind-textcontent="(() => { $watch(() => log.push(x)); return y })()"></span>
-            </div>
-        `);
-        const scope = page.scope("#s");
-        scope.y = 2;
-        scope.y = 3;
-        scope.log.length = 0;
-        scope.x = 2;
-        expect(scope.log).toEqual([2]);
-    });
-
-    it("does not track what an event handler reads into the bind that sent the event", async () => {
-        const page = await mount(`
-            <div nm-scope="{ n: 1, other: 0, runs: 0 }" nm-on-changed="other">
-                <span id="s" nm-bind-textcontent="(runs++, $dispatch('changed'), n)"></span>
-            </div>
-        `);
-        const scope = page.scope("#s");
-        scope.other = 1;
-        expect(scope.runs).toBe(1);
-    });
-
-    it("does not run a watcher again from inside itself", async () => {
-        const page = await mount(`
-            <div id="d" nm-scope="{ count: 0 }" nm-on-init="$watch(() => count = count + 1)"></div>
-        `);
-        const scope = page.$("#d").nmProxy;
-        expect(scope.count).toBe(1);
-        scope.count = 10;
-        expect(scope.count).toBe(11);
     });
 });

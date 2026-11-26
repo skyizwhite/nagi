@@ -1,18 +1,81 @@
 import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
-const button = `<div nm-scope="{}"><button id="b" nm-on-click="$get('/y')"></button></div>`;
-
-describe("settle()", () => {
-    it("fails with the requests still pending once it times out", async () => {
-        const page = await mount(button, { server: () => new Promise(() => {}) });
+describe("$dispatch", () => {
+    it("$dispatch sends a bubbling event from the element", async () => {
+        const page = await mount(`
+            <div nm-scope="{ got: null }" nm-on-hello="got = e.detail">
+                <button id="b" nm-on-click="$dispatch('hello', 'world')"></button>
+            </div>
+        `);
         page.$("#b").click();
-        await expect(page.settle(100)).rejects.toThrow("settle() timed out waiting for: GET http://localhost/y");
+        expect(page.scope("#b").got).toBe("world");
     });
 
-    it("fails when the page fetched with no server", async () => {
-        const page = await mount(button);
+    it("dispatches from the scope's element after an await", async () => {
+        const page = await mount(`
+            <div id="d" nm-scope="{ got: null }" nm-on-ping="got = e.detail">
+                <button id="b" nm-on-click="await 0; $dispatch('ping', 1)"></button>
+            </div>
+        `);
         page.$("#b").click();
-        await expect(page.settle()).rejects.toThrow("fetched with no server: GET http://localhost/y");
+        await page.settle();
+        expect(page.$("#d").nmProxy.got).toBe(1);
+    });
+});
+
+describe("$dataset", () => {
+    it("$dataset merges data-* from the element up to its scope, nearest first", async () => {
+        const page = await mount(`
+            <div data-a="outside">
+                <div nm-scope="{ got: null }" data-a="scope" data-b="scope">
+                    <p data-b="p">
+                        <button id="b" data-c="button" nm-on-click="got = $dataset()"></button>
+                    </p>
+                </div>
+            </div>
+        `);
+        page.$("#b").click();
+        expect({ ...page.scope("#b").got }).toEqual({ a: "scope", b: "p", c: "button" });
+    });
+
+    it("gives the scope's data-* from $dataset() after an await", async () => {
+        const page = await mount(
+            `<div nm-scope="{}" data-from="scope">
+                <button id="b" nm-on-click="await 0; $get('/x', $dataset())"></button>
+            </div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(new URL(page.requests[0].url).searchParams.get("from")).toBe("scope");
+    });
+});
+
+describe("$persist", () => {
+    it("$persist saves a member to localStorage as it changes", async () => {
+        const page = await mount(`
+            <div id="d" nm-scope="{ n: 1 }" nm-on-init="$persist('n')"></div>
+        `);
+        expect(page.window.localStorage["_nmProp-n"]).toBe("1");
+
+        page.$("#d").nmProxy.n = 5;
+        expect(page.window.localStorage["_nmProp-n"]).toBe("5");
+    });
+
+    it("$persist restores what was saved before the page loaded", async () => {
+        const page = await mount(
+            `<div id="d" nm-scope="{ n: 1 }" nm-on-init="$persist('n')"></div>`,
+            { beforeInit: (window) => (window.localStorage["_nmProp-n"] = "7") },
+        );
+        expect(page.$("#d").nmProxy.n).toBe(7);
+    });
+
+    it("$persist takes the storage key as its second argument", async () => {
+        const page = await mount(
+            `<div id="d" nm-scope="{ n: 1 }" nm-on-init="$persist('n', 'count')"></div>`,
+            { beforeInit: (window) => (window.localStorage.count = "3") },
+        );
+        expect(page.$("#d").nmProxy.n).toBe(3);
     });
 });
