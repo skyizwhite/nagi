@@ -26,6 +26,8 @@
         }
     };
 
+    const camel = (name) => name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
+
     const queryAttr = (el, selector) => {
         const elMatch = el.matches(selector) ? [el] : [];
         return [...elMatch, ...el.querySelectorAll(selector)].filter(
@@ -429,26 +431,33 @@
         // --- END form
 
         // --- BEGIN bind
+        queryAttr(baseEl, "[nm-bind]").forEach((el) =>
+            console.error("[Nomini] nm-bind is no longer read, use nm-bind-* and nm-on-*:", el),
+        );
+
         queryAttr(baseEl, "*").forEach((bindEl) => {
             const entries = [...bindEl.attributes].flatMap(({ name, value }) => {
                 const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
                 if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
                 if (!kind) return [];
                 const [main, ...subs] = rest.split(".");
-                const key = [main.replace(/-(\w)/g, (_, c) => c.toUpperCase()), ...subs].join(".");
-                return `${JSON.stringify(key)}: () => (${value || "undefined"}\n)`;
+                const sub = subs.join(".");
+                const key = camel(main) + (sub ? "." + (main === "class" ? sub : camel(sub)) : "");
+                return `${JSON.stringify(key)}: () => (${value.trim() ? value : "undefined"}\n)`;
             });
 
             if (!entries.length) return;
             bindEl.nmBound = true;
 
             const proxyData = getClosestProxy(bindEl);
-            const props = evalExpression(entries.join(","), proxyData, bindEl);
+            const props = Object.assign({}, ...entries.map((entry) => evalExpression(entry, proxyData, bindEl)));
+            const handle = (val, e) => val(e)?.catch?.((err) => console.error("[Nomini] failed to run:", val, "\n", err));
 
             Object.entries(props).forEach(([key, val]) => {
                 if (key.startsWith("@")) {
                     // --- BEGIN events
-                    const [eventName, ...mods] = key.slice(1).split(".");
+                    const [name, ...mods] = key.slice(1).split(".");
+                    const eventName = mods.includes("camel") ? camel(name) : name;
 
                     const debounceMod = mods.find((val) => val.startsWith("debounce"));
                     const delay = +debounceMod?.slice(8);
@@ -458,8 +467,8 @@
                         if (mods.includes("prevent")) e.preventDefault();
                         if (mods.includes("stop")) e.stopPropagation();
 
-                        if (delay) proxyData.$debounce(() => val(e), delay);
-                        else val(e);
+                        if (delay) proxyData.$debounce(() => handle(val, e), delay);
+                        else handle(val, e);
                     }, null, val);
 
                     const listenOn = mods.includes("window") ? window : bindEl;
@@ -471,9 +480,10 @@
                     // --- END events
 
                     // If special event handling isn't enabled just do a normal event listener
-                    bindEl.addEventListener(key.slice(1), (e) => runWithEl(bindEl, () => val(e), null, val));
+                    bindEl.addEventListener(key.slice(1).split(".")[0], (e) => runWithEl(bindEl, () => handle(val, e), null, val));
                 } else {
-                    const [main, sub] = key.split(".");
+                    const [main, ...rest] = key.split(".");
+                    const sub = rest.join(".");
                     const write = (resolvedVal) => {
                         if (sub) {
                             if (main === "class") bindEl.classList.toggle(sub, resolvedVal);

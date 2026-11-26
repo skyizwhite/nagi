@@ -104,3 +104,55 @@ describe("nm-on-* attributes", () => {
         expect(page.$("#d").nmProxy.log).toEqual(["init", "destroy"]);
     });
 });
+
+describe("attribute names and values, after review", () => {
+    it("listens to a camelCase event with .camel", async () => {
+        const page = await mount(`
+            <div nm-data="{ got: 0 }"><span id="s" nm-on-item-added.camel="got++"></span></div>
+        `);
+        page.$("#s").dispatchEvent(new page.window.Event("itemAdded"));
+        expect(page.scope("#s").got).toBe(1);
+    });
+
+    it("turns the key after dataset into camelCase", async () => {
+        const page = await mount(`<div nm-data="{}"><span id="s" nm-bind-dataset.user-id="7"></span></div>`);
+        expect(page.$("#s").dataset.userId).toBe("7");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("toggles a class name with dots in it", async () => {
+        const page = await mount(`<div nm-data="{}"><span id="s" nm-bind-class.py-1.5="true"></span></div>`);
+        expect(page.$("#s").classList.contains("py-1.5")).toBe(true);
+    });
+
+    it("logs a handler that rejects", async () => {
+        const page = await mount(`
+            <div nm-data="{}"><button id="b" nm-on-click="await 0; throw new Error('no')"></button></div>
+        `);
+        page.$("#b").click();
+        await page.settle();
+        expect(page.errors).toHaveLength(1);
+    });
+
+    it("logs an element still using the old nm-bind object", async () => {
+        const page = await mount(`<div nm-data="{}"><span nm-bind="{ textContent: () => 1 }"></span></div>`);
+        expect(page.errors).toHaveLength(1);
+    });
+
+    it("keeps the other attributes of an element when one holds only spaces or a comment", async () => {
+        const page = await mount(`
+            <div nm-data="{ n: 0 }"><button id="b" nm-bind-title=" " nm-bind-lang="// later" nm-on-click="n++"></button></div>
+        `);
+        page.$("#b").click();
+        expect(page.scope("#b").n).toBe(1);
+    });
+
+    it("listens to a modified event by its name in a build without the events block", async () => {
+        const page = await mount(
+            `<div nm-data="{ got: 0 }"><button id="b" nm-on-click.prevent="got++"></button></div>`,
+            { without: ["events"] },
+        );
+        page.$("#b").click();
+        expect(page.scope("#b").got).toBe(1);
+    });
+});
