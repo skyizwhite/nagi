@@ -205,8 +205,12 @@
     });
 
     // --- BEGIN fetch
-    const markGone = (el) =>
+    const drop = (el) => {
+        queryAttr(el, "[nm-bind]").forEach((node) => dispatch(node, "destroy", { bubbles: false }));
         [el, ...el.querySelectorAll("*")].forEach((node) => node.nmRuns?.forEach(kill));
+    };
+
+    const initAll = (nodes) => nodes.forEach((node) => node.nodeType === 1 && init(node));
 
     const swap = (text) => {
         const template = document.createElement("template");
@@ -226,27 +230,29 @@
                 continue;
             }
 
-            queryAttr(target, "[nm-bind]").forEach(
-                (el) => dispatch(el, "destroy", { bubbles: false })
-            );
+            if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) {
+                console.error("[Nomini] Invalid swap strategy: ", strategy);
+                continue;
+            }
 
             // --- BEGIN morph
             cssMorph(fragment);
             // --- END morph
 
+            const kids = [...fragment.childNodes];
+
             if (strategy === "inner") {
-                [...target.children].forEach(markGone);
-                target.replaceChildren(...fragment.childNodes);
-                init(target);
+                [...target.children].forEach(drop);
+                target.replaceChildren(...kids);
+                initAll(kids);
             } else if (strategy === "outer") {
-                markGone(target);
+                drop(target);
                 target.replaceWith(fragment);
                 init(fragment);
-            } else if (/(before|after|prepend|append)/.test(strategy)) {
-                const kids = [...fragment.childNodes];
+            } else {
                 target[strategy](...kids);
-                kids.forEach((n) => n.nodeType === 1 && init(n));
-            } else console.error("[Nomini] Invalid swap strategy: ", strategy);
+                initAll(kids);
+            }
         }
     };
     // --- END fetch
