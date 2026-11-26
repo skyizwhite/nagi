@@ -365,6 +365,7 @@ describe("reactivity", () => {
         `);
         page.scope("#first").a = 5;
         expect(page.$("#first").textContent).toBe("v6");
+        expect(page.errors).toEqual([]);
     });
 
     it("logs a bind that keeps setting itself off and stops it", async () => {
@@ -383,6 +384,14 @@ describe("reactivity", () => {
         `);
         await page.settle();
         expect(page.errors).toHaveLength(1);
+    });
+
+    it("does not run binds again when a value is set to what it already is", async () => {
+        const page = await mount(`
+            <div nm-data="{ n: 1, runs: 0 }"><span id="s" nm-bind="{ textContent: () => (runs++, n) }"></span></div>
+        `);
+        page.scope("#s").n = 1;
+        expect(page.scope("#s").runs).toBe(1);
     });
 
     it("does not track what an event handler reads into the bind that sent the event", async () => {

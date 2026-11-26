@@ -290,6 +290,7 @@
                     return obj[prop];
                 },
                 set(obj, prop, val) {
+                    if (Object.is(obj[prop], val)) return true;
                     obj[prop] = val;
 
                     const deps = trackedDeps[prop];
