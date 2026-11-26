@@ -107,7 +107,7 @@
         $refs: {},
         // --- END ref
         // --- BEGIN fetch
-        _nmFetching: false,
+        $fetching: false,
         _nmAbort: new AbortController(),
         $get(url, data) {
             this.$fetch(url, "GET", data);
@@ -120,21 +120,53 @@
             const controller = new AbortController();
             const { signal } = controller;
             method = (method || "GET").toUpperCase();
+            url = String(url);
             const reading = /^(GET|HEAD|OPTIONS)$/.test(method);
             const report = (name, detail) => dispatch(el?.isConnected ? el : document, name, { detail });
             let write;
 
             const opts = runWithEl(el, () => {
-                let inner = {};
-                for (let node = el; node?.nodeType === 1 && !node.nmProxy; node = node.parentElement)
-                    inner = { ...node.dataset, ...inner };
-                data = { ...this.$nmData(), ...inner, ...data };
+                let body;
+                const isEvent = typeof data?.preventDefault === "function";
+                const isBlob = (value) => typeof value?.arrayBuffer === "function";
+                if (typeof data === "string") body = new URLSearchParams(data);
+                else if (typeof data?.append === "function" && typeof data[Symbol.iterator] === "function") body = data;
+                else if (isEvent || data?.nodeType === 1) {
+                    const node = isEvent ? data.target : data;
+                    const button = node?.closest?.("button, input[type=submit], input[type=image]");
+                    const form = node?.tagName === "FORM" ? node : (button ?? node)?.form ?? node?.closest?.("form");
+                    const submitter = isEvent && data.submitter;
+                    if (form) {
+                        body = new FormData(form, submitter || undefined);
+                        if (button?.name && button !== submitter && button.form === form) body.append(button.name, button.value);
+                    } else {
+                        console.warn("[Nomini] no form to send for:", data);
+                        body = new URLSearchParams();
+                    }
+                } else {
+                    const pairs = Object.entries(data ?? {}).flatMap(([key, value]) =>
+                        [value]
+                            .flat()
+                            .flatMap((item) => (typeof item?.item === "function" && typeof item[Symbol.iterator] === "function" ? [...item] : [item]))
+                            .filter((item) => item != null)
+                            .filter((item) => {
+                                if (item !== Object(item) || isBlob(item) || !String(item).startsWith("[object ")) return true;
+                                console.warn("[Nomini] cannot send:", key, item);
+                            })
+                            .map((item) => [key, isBlob(item) ? item : String(item)]),
+                    );
+                    body = pairs.some(([, value]) => isBlob(value)) ? new FormData() : new URLSearchParams();
+                    pairs.forEach(([key, value]) => body.append(key, value));
+                }
 
-                const encodedData = new URLSearchParams(data);
+                const entries = [...body];
                 const opts = { headers: { "nm-request": true }, method, signal };
-                const query = String(encodedData);
+                const reads = /^(GET|HEAD|DELETE)$/.test(method);
+                if (reads && entries.some(([, value]) => typeof value !== "string"))
+                    console.warn("[Nomini] files are not sent with", method, url);
+                const query = String(new URLSearchParams(entries.filter(([, value]) => typeof value === "string")));
 
-                if (!/^(GET|HEAD|DELETE)$/.test(method)) opts.body = encodedData;
+                if (!/^(GET|HEAD|DELETE)$/.test(method)) opts.body = body;
                 else if (query) {
                     const hashAt = url.includes("#") ? url.indexOf("#") : url.length;
                     const path = url.slice(0, hashAt);
@@ -142,7 +174,11 @@
                     url = path + joiner + query + url.slice(hashAt);
                 }
 
-                write = !reading && `${method} ${url} ${opts.body ?? ""}`;
+                const sent = entries.map(([key, value]) => [
+                    key,
+                    typeof value === "string" ? value : value.size || value.name ? `\0file${idOf(value)}` : "\0empty",
+                ]);
+                write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sent) : ""}`;
                 if (writing.has(write)) return;
 
                 this._nmAbort.abort();
@@ -154,7 +190,7 @@
             this._nmAbort = reading ? controller : new AbortController();
             if (write) writing.add(write);
             pending++;
-            this._nmFetching = true;
+            this.$fetching = true;
 
             fetch(url, opts)
                 .then(async (res) => {
@@ -178,18 +214,8 @@
                 .catch((err) => signal.aborted || report("fetcherr", { err, url }))
                 .finally(() => {
                     writing.delete(write);
-                    if (!--pending) this._nmFetching = false;
+                    if (!--pending) this.$fetching = false;
                 });
-        },
-        $nmData() {
-            const isPrimitive = (x) => x !== Object(x);
-
-            return Object.entries(this).reduce((acc, [k, v]) => {
-                if (!/^[a-z]+$/i.test(k)) return acc;
-                if (isPrimitive(v) || (Array.isArray(v) && v.every(isPrimitive)))
-                    acc[k] = v;
-                return acc;
-            }, {});
         },
         // --- END fetch
         $dataset() {
@@ -236,6 +262,13 @@
     });
 
     // --- BEGIN fetch
+    const fileIds = new WeakMap();
+    let fileCount = 0;
+    const idOf = (file) => {
+        if (!fileIds.has(file)) fileIds.set(file, ++fileCount);
+        return fileIds.get(file);
+    };
+
     const drop = (el) => {
         queryAttr(el, "*").forEach((node) => node.nmBound && dispatch(node, "destroy", { bubbles: false }));
         // --- BEGIN ref
@@ -353,8 +386,11 @@
 
 
         // --- BEGIN data
-        const reserved = (key, el) =>
-            /^(\$|_nm|__proto__$)/i.test(key) && console.error("[Nomini] this name is nomini's own:", key, el);
+        const reserved = (key, el) => {
+            if (!/^(\$|_nm|__proto__$)/i.test(key)) return false;
+            console.error("[Nomini] this name is nomini's own:", key, el);
+            return true;
+        };
 
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
             acceptNode: (node) => (node.hasAttribute("nm-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
@@ -496,7 +532,7 @@
 
         queryAttr(baseEl, "button, input[type='submit']").forEach((submitEl) => {
             const proxyData = formProxy(submitEl);
-            if (proxyData) watch(() => submitEl.disabled = proxyData._nmFetching, submitEl);
+            if (proxyData) watch(() => submitEl.disabled = proxyData.$fetching, submitEl);
         });
         // --- END form
 
