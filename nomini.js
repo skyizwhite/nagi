@@ -207,6 +207,13 @@
             return datasets;
         },
         $watch: (fn) => watch(fn),
+        $on(name, fn, opts) {
+            const el = currentEl ?? this._nmEl;
+            const listener = (e) => runWithEl(el, () =>
+                fn(e)?.catch?.((err) => console.error("[Nomini] failed to run:", fn, "\n", err)), null, fn);
+            el.addEventListener(name, listener, opts);
+            (el.nmCleanup ||= []).push(() => el.removeEventListener(name, listener, opts));
+        },
         $dispatch(evt, detail, opts) {
             dispatch(currentEl ?? this._nmEl ?? document, evt, { detail, ...opts });
         },
@@ -493,8 +500,19 @@
                 } else {
                     const [main, ...rest] = key.split(".");
                     const sub = rest.join(".");
+                    let added = new Set();
                     const write = (resolvedVal) => {
-                        if (sub) {
+                        if (main === "class" && !sub) {
+                            const v = resolvedVal;
+                            const next = new Set(
+                                typeof v === "string" ? v.split(/\s+/).filter(Boolean)
+                                    : Array.isArray(v) ? v.filter(Boolean)
+                                    : Object.keys(v ?? {}).filter((name) => v[name]),
+                            );
+                            added.forEach((name) => next.has(name) || bindEl.classList.remove(name));
+                            next.forEach((name) => bindEl.classList.add(name));
+                            added = next;
+                        } else if (sub) {
                             if (main === "class") bindEl.classList.toggle(sub, resolvedVal);
                             else if (sub.startsWith("--")) bindEl[main].setProperty(sub, resolvedVal);
                             else bindEl[main][sub] = resolvedVal;

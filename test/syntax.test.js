@@ -172,3 +172,73 @@ describe("attribute names and values, after review", () => {
         expect(page.scope("#b").got).toBe(1);
     });
 });
+
+describe("names that keep their case, in values", () => {
+    it("toggles the classes of an object, capitals and dots kept", async () => {
+        const page = await mount(`
+            <div nm-data="{ on: true }"><span id="s" class="base" nm-bind-class="{ isActive: on, 'py-1.5': !on }"></span></div>
+        `);
+        const span = page.$("#s");
+        expect([...span.classList]).toEqual(["base", "isActive"]);
+        page.scope("#s").on = false;
+        expect([...span.classList]).toEqual(["base", "py-1.5"]);
+    });
+
+    it("adds the classes of a string or an array, and takes away the ones it added before", async () => {
+        const page = await mount(`
+            <div nm-data="{ list: 'a bB' }"><span id="s" class="base" nm-bind-class="list"></span></div>
+        `);
+        const span = page.$("#s");
+        expect([...span.classList]).toEqual(["base", "a", "bB"]);
+        page.scope("#s").list = ["bB", "c"];
+        expect([...span.classList].sort()).toEqual(["bB", "base", "c"]);
+        page.scope("#s").list = null;
+        expect([...span.classList]).toEqual(["base"]);
+    });
+
+    it("listens with $on to an event with capitals or dots in its name", async () => {
+        const page = await mount(`
+            <div nm-data="{ got: [] }">
+                <span id="s" nm-on-init="$on('itemAdded', (e) => got.push(e.type)); $on('show.bs.modal', () => got.push(this.id))"></span>
+            </div>
+        `);
+        const span = page.$("#s");
+        span.dispatchEvent(new page.window.Event("itemAdded"));
+        span.dispatchEvent(new page.window.Event("show.bs.modal"));
+        expect(page.scope("#s").got).toEqual(["itemAdded", "s"]);
+    });
+
+    it("runs a $on handler with its element as the current one", async () => {
+        const page = await mount(`
+            <div nm-data="{ got: null }" nm-on-hello="got = e.detail">
+                <span id="s" nm-on-init="$on('ping', () => $dispatch('hello', 'from span'))"></span>
+            </div>
+        `);
+        page.$("#s").dispatchEvent(new page.window.Event("ping"));
+        expect(page.scope("#s").got).toBe("from span");
+    });
+
+    it("logs a $on handler that rejects", async () => {
+        const page = await mount(`
+            <div nm-data="{}"><span id="s" nm-on-init="$on('ping', async () => { throw new Error('no') })"></span></div>
+        `);
+        page.$("#s").dispatchEvent(new page.window.Event("ping"));
+        await page.settle();
+        expect(page.errors).toHaveLength(1);
+    });
+
+    it("takes $on listeners off an element a swap removes", async () => {
+        const page = await mount(
+            `<div id="d" nm-data="{ hits: 0 }">
+                <button id="b" nm-on-click="$get('/x')"></button>
+                <div id="target"><span id="s" nm-on-init="$on('ping', () => hits++)"></span></div>
+            </div>`,
+            { server: () => `<div id="target"></div>` },
+        );
+        const span = page.$("#s");
+        page.$("#b").click();
+        await page.settle();
+        span.dispatchEvent(new page.window.Event("ping"));
+        expect(page.$("#d").nmProxy.hits).toBe(0);
+    });
+});
