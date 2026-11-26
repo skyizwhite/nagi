@@ -86,6 +86,7 @@ export const mount = async (html, { server, beforeInit } = {}) => {
 
     const requests = [];
     const pending = new Set();
+    const unserved = [];
 
     window.TextDecoderStream = TextDecoderStream;
     window.fetch = (url, opts = {}) => {
@@ -113,7 +114,10 @@ export const mount = async (html, { server, beforeInit } = {}) => {
             signal?.addEventListener("abort", abort, { once: true });
 
             new Promise((answered) => {
-                if (!server) throw new Error(`No server for ${request.method} ${request.url}`);
+                if (!server) {
+                    unserved.push(request);
+                    throw new Error(`No server for ${request.method} ${request.url}`);
+                }
                 answered(server(request));
             })
                 .then((answer) => {
@@ -155,9 +159,16 @@ export const mount = async (html, { server, beforeInit } = {}) => {
          * end (or aborted), and the window's timers (nomini's swap timer,
          * debounces) have run. A fetch still pending after `timeout` ms, such
          * as one whose server never answers or whose body nomini never reads,
-         * fails the wait with the requests it was waiting for.
+         * fails the wait with the requests it was waiting for. So does a
+         * fetch made by a page mounted with no `server`.
          */
-        settle: (timeout = 1000) => settle(window, pending, timeout),
+        settle: async (timeout = 1000) => {
+            await settle(window, pending, timeout);
+            if (unserved.length) {
+                const asked = unserved.map((r) => `${r.method} ${r.url}`);
+                throw new Error(`fetched with no server: ${asked.join(", ")}`);
+            }
+        },
     };
 };
 
