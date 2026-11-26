@@ -66,7 +66,7 @@
             if (run.active) return (run.dirty = true);
             run.active = true;
             try {
-                for (let i = 0; i < 100 && (i === 0 || run.dirty); i++) {
+                for (let i = 0; i < 100 && !run.gone && (i === 0 || run.dirty); i++) {
                     run.dirty = false;
                     unlink(run);
                     try {
@@ -75,7 +75,8 @@
                         console.error("[Nomini] failed to run:", fn, "\n", err);
                     }
                 }
-                if (run.dirty) console.error("[Nomini] stopped running after 100 times:", fn);
+                if (run.gone) unlink(run);
+                else if (run.dirty) console.error("[Nomini] stopped running after 100 times:", fn);
             } finally {
                 run.active = false;
             }
@@ -87,8 +88,6 @@
         currentBind?.children.push(run);
         run();
     };
-
-    const scopeOf = (el) => el?.closest("[nm-data]");
 
     // Important reactivity stuff
     let currentBind = null;
@@ -179,7 +178,7 @@
 
             return datasets;
         },
-        $watch: (fn) => watch(fn, currentEl, scopeOf(currentEl)),
+        $watch: (fn) => watch(fn),
         $dispatch(evt, detail, opts) {
             dispatch(currentEl, evt, { detail, ...opts });
         },
@@ -200,7 +199,7 @@
 
             watch(() => {
                 localStorage[key] = JSON.stringify(this[prop]);
-            }, currentEl, scopeOf(currentEl));
+            });
         },
         // --- END helpers
     });

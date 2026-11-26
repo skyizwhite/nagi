@@ -313,21 +313,25 @@ describe("reactivity", () => {
         expect(span.textContent).toBe("3");
     });
 
-    it("keeps a $watch set up from an element a swap removed while its scope stays", async () => {
+    it("drops a $watch set up from an element a swap removed", async () => {
         const page = await mount(
             `<div id="d" nm-data="{ n: 1, seen: [] }">
                 <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
                 <div id="target"><span nm-bind="{ oninit: () => $watch(() => seen.push(n)) }"></span></div>
             </div>`,
-            { server: () => `<div id="target"></div>` },
+            { server: () => `<div id="target"><span nm-bind="{ oninit: () => $watch(() => seen.push(n)) }"></span></div>` },
         );
-        page.$("#b").click();
-        await page.settle();
-        page.$("#d").nmProxy.n = 2;
-        expect(page.$("#d").nmProxy.seen).toEqual([1, 2]);
+        for (let i = 0; i < 3; i++) {
+            page.$("#b").click();
+            await page.settle();
+        }
+        const scope = page.$("#d").nmProxy;
+        scope.seen.length = 0;
+        scope.n = 2;
+        expect(scope.seen).toEqual([2]);
     });
 
-    it("keeps a $persist set up from an element a swap removed while its scope stays", async () => {
+    it("drops a $persist set up from an element a swap removed", async () => {
         const page = await mount(
             `<div id="d" nm-data="{ n: 1 }">
                 <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
@@ -338,7 +342,27 @@ describe("reactivity", () => {
         page.$("#b").click();
         await page.settle();
         page.$("#d").nmProxy.n = 5;
-        expect(page.window.localStorage["_nmProp-n"]).toBe("5");
+        expect(page.window.localStorage["_nmProp-n"]).toBe("1");
+    });
+
+    it("stops a bind that its own run made another bind drop", async () => {
+        const page = await mount(`
+            <div nm-data="{ x: 0, y: 0, done: false, log: [] }">
+                <span nm-bind="{ textContent: () => {
+                    x;
+                    $watch(() => {
+                        if (y === 1 && !done) { done = true; x = x + 1 }
+                        $watch(() => log.push(y));
+                    });
+                } }"></span>
+            </div>
+        `);
+        const scope = page.scope("span");
+        scope.y = 1;
+        scope.log.length = 0;
+        scope.y = 10;
+        expect(scope.log).toEqual([10]);
+        expect(page.errors).toEqual([]);
     });
 
     it("logs a bind that throws and goes on binding the rest", async () => {
