@@ -358,38 +358,34 @@
         const define = (obj, key, value) =>
             Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
 
+        const baseOf = (dataEl) => {
+            const base = dataEl.getAttribute("nm-scope")?.trim();
+            const made = base ? evaluate(base, {}, dataEl) : {};
+            try {
+                if (made !== null && typeof made === "object" && typeof made.then !== "function") {
+                    const descriptors = Object.getOwnPropertyDescriptors(made);
+                    Object.values(descriptors).forEach((d) => {
+                        d.configurable = true;
+                        if ("value" in d) d.writable = true;
+                    });
+                    return Object.create(Object.getPrototypeOf(made), descriptors);
+                }
+                if (made !== failed) console.error("[Nomini] nm-scope must give an object:", base, dataEl);
+            } catch (err) {
+                console.error("[Nomini] failed to read the object of nm-scope:", base, dataEl, "\n", err);
+            }
+            return {};
+        };
+
         const makeScope = (dataEl) => {
             const attrs = [...dataEl.attributes];
-            if (!attrs.some(({ name }) => /^nm-(data$|data-|fn-)/.test(name))) return;
+            if (dataEl.hasAttribute("nm-data"))
+                console.error("[Nomini] nm-data is no longer read, use nm-scope:", dataEl);
+            if (!attrs.some(({ name }) => /^nm-(scope$|let-)/.test(name))) return;
 
-            const base = dataEl.getAttribute("nm-data")?.trim();
-            const made = base ? evaluate(base, {}, dataEl) : {};
-            const isObject = made !== null && typeof made === "object" && typeof made.then !== "function";
-            if (!isObject && made !== failed) console.error("[Nomini] nm-data must give an object:", base, dataEl);
-            const source = isObject ? made : {};
-            const descriptors = Object.getOwnPropertyDescriptors(source);
-            Object.values(descriptors).forEach((d) => {
-                d.configurable = true;
-                if ("value" in d) d.writable = true;
-            });
-            const rawData = Object.create(Object.getPrototypeOf(source), descriptors);
+            const rawData = baseOf(dataEl);
             Object.entries({ ...helpers(), _nmEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
-
-            const keep = (_, parsed, context) =>
-                typeof parsed === "number" && context?.source !== undefined && String(parsed) !== context.source
-                    ? context.source
-                    : parsed;
-
-            attrs.forEach(({ name, value }) => {
-                const key = name.match(/^nm-data-(.+)$/)?.[1];
-                if (!key || reserved(key, dataEl)) return;
-                try {
-                    const parsed = JSON.parse(value, keep);
-                    define(rawData, key, typeof parsed === "number" && String(parsed) !== value.trim() ? value : parsed);
-                } catch {
-                    define(rawData, key, value);
-                }
-            });
+            Object.entries(dataEl.dataset).forEach(([key, value]) => reserved(key, dataEl) || define(rawData, key, value));
 
             const trackedDeps = new Map();
 
@@ -419,7 +415,7 @@
             dataEl.nmProxy = proxyData;
 
             attrs.forEach(({ name, value }) => {
-                const key = name.match(/^nm-fn-(.+)$/)?.[1];
+                const key = name.match(/^nm-let-(.+)$/)?.[1];
                 if (!key || reserved(key, dataEl)) return;
                 const result = runWithEl(dataEl, () => evaluate(value, proxyData, dataEl));
                 if (result !== failed) define(rawData, key, result);
@@ -430,9 +426,11 @@
         let dataEl = baseEl.closest("[nm-ignore]") ? null : baseEl;
         while (dataEl) {
             let parent = dataEl.parentElement;
+            const before = dataEl.previousElementSibling;
             seen.add(dataEl);
             makeScope(dataEl);
-            if (dataEl !== baseEl && !baseEl.contains(dataEl)) {
+            const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
+            if (dataEl !== baseEl && (moved || !baseEl.contains(dataEl))) {
                 while (parent && parent !== baseEl && !baseEl.contains(parent)) parent = parent.parentElement;
                 if (!parent) break;
                 walker.currentNode = parent;
