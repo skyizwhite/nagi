@@ -3,6 +3,17 @@ First off, thank you for taking the time to contribute to Nomini! Contributions 
 
 All in all, this is a pretty small project, with loosely defined contributing guidelines. If you're editing the source of Nomini, that can be found in `nomini.js`. Otherwise, the website is in `www/`.
 
+## Tests
+Tools are managed with [mise](https://mise.jdx.dev). To run the tests:
+
+```sh
+mise install
+npm install
+npm test        # or `mise run test`
+```
+
+Each test loads `nomini.js` into a fresh [happy-dom](https://github.com/capricorn86/happy-dom) window through `mount()` in `test/helpers.js`, which also stands in for the server that `$get`/`$post` talk to.
+
 If you're proposing a major feature, please do it in Issues before opening a PR. This will give us time to review and consider it before any code needs to be written.
 
 ## AI Policy
