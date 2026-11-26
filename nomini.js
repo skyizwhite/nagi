@@ -126,7 +126,7 @@
                 else if (query) {
                     const hashAt = url.includes("#") ? url.indexOf("#") : url.length;
                     const path = url.slice(0, hashAt);
-                    const joiner = !path.includes("?") ? "?" : path.endsWith("?") ? "" : "&";
+                    const joiner = !path.includes("?") ? "?" : /[?&]$/.test(path) ? "" : "&";
                     url = path + joiner + query + url.slice(hashAt);
                 }
 
@@ -189,14 +189,15 @@
         $dispatch(evt, detail, opts) {
             dispatch(currentEl ?? this._nmEl ?? document, evt, { detail, ...opts });
         },
-        $debounce(fn, ms) {
+        $debounce(fn, ms, abortable = false) {
             const el = currentEl ?? this._nmEl;
+            const signal = abortable && runWithEl(el, () => this._nmAbort?.signal);
             const timers = ((el ?? document).nmTimers ||= new Map());
             const key = currentHandler ?? currentBind;
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);
-                runWithEl(el, fn);
+                if (!signal?.aborted) runWithEl(el, fn);
             }, ms));
         },
         // --- BEGIN helpers
@@ -452,7 +453,7 @@
                     // --- END events
 
                     // If special event handling isn't enabled just do a normal event listener
-                    bindEl.addEventListener(key.slice(2), () => runWithEl(bindEl, val));
+                    bindEl.addEventListener(key.slice(2), () => runWithEl(bindEl, val, null, val));
                 } else {
                     const [main, sub] = key.split(".");
                     const write = (resolvedVal) => {

@@ -324,3 +324,43 @@ describe("request URLs as written", () => {
         expect(page.errors).toEqual([]);
     });
 });
+
+describe("abortable debounces, core-build keys and trailing &", () => {
+    it("drops a debounce asked to be abortable when a request starts in its scope", async () => {
+        const page = await mount(
+            `<div nm-data="{ got: [] }">
+                <input id="i" nm-bind="{ oninput: () => $debounce(() => got = [...got, 'search'], 20, true) }">
+                <button id="b" nm-bind="{ onclick: () => $get('/reset') }"></button>
+            </div>`,
+            { server: () => "" },
+        );
+        page.$("#i").dispatchEvent(new page.window.Event("input"));
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#i").got).toEqual([]);
+    });
+
+    it("keeps a timer for each handler of an element in the core build", async () => {
+        const page = await mount(
+            `<div nm-data="{ got: [] }">
+                <input id="i" nm-bind="{ oninput: () => $debounce(() => got.push('input'), 20), onping: () => $debounce(() => got.push('ping'), 20) }">
+            </div>`,
+            { without: ["template", "form", "fetch", "morph", "helpers", "events"] },
+        );
+        const input = page.$("#i");
+        input.dispatchEvent(new page.window.Event("input"));
+        input.dispatchEvent(new page.window.Event("ping"));
+        await page.settle();
+        expect([...page.scope("#i").got].sort()).toEqual(["input", "ping"]);
+    });
+
+    it("adds no second & to a URL that ends in &", async () => {
+        const page = await mount(
+            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x?a=1&', { b: 2 }) }"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.requests[0].url).toBe("http://localhost/x?a=1&b=2");
+    });
+});
