@@ -106,11 +106,27 @@ describe("nm-on-* attributes", () => {
 });
 
 describe("attribute names and values, after review", () => {
-    it("listens to a camelCase event with .camel", async () => {
+    it("finds a property with capitals in a row however the name is split", async () => {
         const page = await mount(`
-            <div nm-data="{ got: 0 }"><span id="s" nm-on-item-added.camel="got++"></span></div>
+            <div nm-data="{ html: '<b>x</b>' }">
+                <div id="a" nm-bind-inner-html="html"></div>
+                <div id="b" nm-bind-innerhtml="html"></div>
+            </div>
         `);
-        page.$("#s").dispatchEvent(new page.window.Event("itemAdded"));
+        expect(page.$("#a").innerHTML).toBe("<b>x</b>");
+        expect(page.$("#b").innerHTML).toBe("<b>x</b>");
+    });
+
+    it("sets a CSS custom property with style.--name", async () => {
+        const page = await mount(`<div nm-data="{}"><span id="s" nm-bind-style.--accent="'red'"></span></div>`);
+        expect(page.$("#s").style.getPropertyValue("--accent")).toBe("red");
+    });
+
+    it("listens to a kebab-case event as written", async () => {
+        const page = await mount(`
+            <div nm-data="{ got: 0 }"><span id="s" nm-on-item-added="got++"></span></div>
+        `);
+        page.$("#s").dispatchEvent(new page.window.Event("item-added"));
         expect(page.scope("#s").got).toBe(1);
     });
 

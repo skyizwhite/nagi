@@ -28,6 +28,14 @@
 
     const camel = (name) => name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
 
+    const propOf = (obj, name) => {
+        const flat = name.replace(/-/g, "");
+        for (let o = obj; o; o = Object.getPrototypeOf(o))
+            for (const key of Object.getOwnPropertyNames(o))
+                if (key.toLowerCase() === flat) return key;
+        return camel(name);
+    };
+
     const queryAttr = (el, selector) => {
         const elMatch = el.matches(selector) ? [el] : [];
         return [...elMatch, ...el.querySelectorAll(selector)].filter(
@@ -440,9 +448,11 @@
                 const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
                 if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
                 if (!kind) return [];
-                const [main, ...subs] = rest.split(".");
+                const [first, ...subs] = rest.split(".");
+                const main = propOf(bindEl, first);
                 const sub = subs.join(".");
-                const key = camel(main) + (sub ? "." + (main === "class" ? sub : camel(sub)) : "");
+                const keep = main === "class" || sub.startsWith("--");
+                const key = main + (sub ? "." + (keep ? sub : propOf(bindEl[main], sub)) : "");
                 return `${JSON.stringify(key)}: () => (${value.trim() ? value : "undefined"}\n)`;
             });
 
@@ -456,8 +466,7 @@
             Object.entries(props).forEach(([key, val]) => {
                 if (key.startsWith("@")) {
                     // --- BEGIN events
-                    const [name, ...mods] = key.slice(1).split(".");
-                    const eventName = mods.includes("camel") ? camel(name) : name;
+                    const [eventName, ...mods] = key.slice(1).split(".");
 
                     const debounceMod = mods.find((val) => val.startsWith("debounce"));
                     const delay = +debounceMod?.slice(8);
@@ -487,6 +496,7 @@
                     const write = (resolvedVal) => {
                         if (sub) {
                             if (main === "class") bindEl.classList.toggle(sub, resolvedVal);
+                            else if (sub.startsWith("--")) bindEl[main].setProperty(sub, resolvedVal);
                             else bindEl[main][sub] = resolvedVal;
                         } else bindEl[main] = resolvedVal;
                     };
