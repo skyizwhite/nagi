@@ -204,7 +204,9 @@
 
             return datasets;
         },
-        $watch: (fn) => watch(fn),
+        $watch: (fn) => {
+            watch(fn);
+        },
         $dispatch(evt, detail, opts) {
             dispatch(currentEl ?? this._nmEl ?? document, evt, { detail, ...opts });
         },
@@ -620,7 +622,7 @@
                         if (typeof value?.then === "function")
                             value.then(write).catch((err) => console.error("[Nomini] failed to run:", val, "\n", err));
                         else write(value);
-                    }, bindEl).attr = main;
+                    }, bindEl).attr = /^class(name|list)$/i.test(main) ? "class" : main;
                 }
             });
 

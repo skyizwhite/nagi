@@ -113,6 +113,20 @@ describe("#59 #33 cssMorph", () => {
         expect([...page.$("#target").classList].sort()).toEqual(["active", "card", "expanded"]);
     });
 
+    it("puts back a className bind after an outer swap", async () => {
+        const page = await mount(
+            `<div nm-let-cls="'card open'">
+                <button id="b" nm-on-click="$get('/x')"></button>
+                <div id="target" class="card" nm-bind-classname="cls"></div>
+            </div>`,
+            { server: () => `<div id="target" class="card" nm-bind-classname="cls"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        await frame();
+        expect(page.$("#target").className).toBe("card open");
+    });
+
     it("still settles the class of an outer swap's target from the old to the new", async () => {
         const page = await mount(
             `<div nm-scope><button id="b" nm-on-click="$get('/x')"></button><div id="target" class="old"></div></div>`,
