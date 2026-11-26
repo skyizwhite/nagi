@@ -130,10 +130,13 @@ describe("what a request sends, after review", () => {
         expect(page.requests[0].body).toEqual([["q", "hi"]]);
     });
 
-    it("logs an element that is in no form, and sends nothing", async () => {
-        const page = await send(`$post('/x', this)`);
-        expect(page.requests).toHaveLength(0);
-        expect(page.errors).toHaveLength(1);
+    it("warns about an element or event in no form, and sends no data", async () => {
+        const page = await send(`$post('/x', this); $get('/y', e)`);
+        expect(page.requests.map((r) => [r.url, r.body])).toEqual([
+            ["http://localhost/x", ""],
+            ["http://localhost/y", undefined],
+        ]);
+        expect(page.warnings).toHaveLength(2);
     });
 
     it("sends the submitter of a submit event it is passed", async () => {
@@ -161,5 +164,52 @@ describe("what a request sends, after review", () => {
         expect(page.requests).toHaveLength(2);
         answers.forEach((answer) => answer(""));
         await page.settle();
+    });
+});
+
+describe("what a request sends, after the second review", () => {
+    it("sends objects that turn into text, such as a Date or a URL, as their text", async () => {
+        const page = await send(`$get('/x', { at: new URL('/p', location.href), n: { toString: () => 'n1' } })`);
+        expect(page.requests[0].url).toBe("http://localhost/x?at=http%3A%2F%2Flocalhost%2Fp&n=n1");
+        expect(page.warnings).toEqual([]);
+    });
+
+    it("skips a second submit of a form with an empty file input", async () => {
+        const answers = [];
+        const page = await mount(
+            `<form id="f" nm-scope nm-on-submit.prevent="$post('/save', this)"><input name="t" value="x"><input type="file" name="doc"></form>`,
+            { server: () => new Promise((resolve) => answers.push(resolve)) },
+        );
+        const submit = () => page.$("#f").dispatchEvent(new page.window.Event("submit", { cancelable: true }));
+        submit();
+        submit();
+        expect(page.requests).toHaveLength(1);
+        answers.forEach((answer) => answer(""));
+        await page.settle();
+    });
+
+    it("sends the name and value of the button a click came from", async () => {
+        const page = await mount(
+            `<form nm-scope><input name="q" value="hi">
+                <button id="b" type="button" name="action" value="delete" nm-on-click="$post('/x', e)"><span id="inner">Del</span></button>
+            </form>`,
+            { server: () => "" },
+        );
+        page.$("#inner").click();
+        await page.settle();
+        expect(page.requests[0].body).toEqual([["q", "hi"], ["action", "delete"]]);
+    });
+
+    it("warns about files given to a GET", async () => {
+        const page = await mount(`<div id="d" nm-scope></div>`, { server: () => "" });
+        page.$("#d").nmProxy.$get("/x", { q: "a", doc: new page.window.File(["1"], "a.txt") });
+        await page.settle();
+        expect(page.requests[0].url).toBe("http://localhost/x?q=a");
+        expect(page.warnings).toHaveLength(1);
+    });
+
+    it("reads a string as a query", async () => {
+        const page = await send(`$get('/x', 'a=1&b=2')`);
+        expect(page.requests[0].url).toBe("http://localhost/x?a=1&b=2");
     });
 });

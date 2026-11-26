@@ -129,12 +129,20 @@
                 let body;
                 const isEvent = typeof data?.preventDefault === "function";
                 const isBlob = (value) => typeof value?.arrayBuffer === "function";
-                if (typeof data?.append === "function" && typeof data[Symbol.iterator] === "function") body = data;
+                if (typeof data === "string") body = new URLSearchParams(data);
+                else if (typeof data?.append === "function" && typeof data[Symbol.iterator] === "function") body = data;
                 else if (isEvent || data?.nodeType === 1) {
                     const node = isEvent ? data.target : data;
-                    const form = node?.tagName === "FORM" ? node : node?.form ?? node?.closest?.("form");
-                    if (!form) return console.error("[Nomini] no form to send for:", data), refused;
-                    body = new FormData(form, (isEvent && data.submitter) || undefined);
+                    const button = node?.closest?.("button, input[type=submit], input[type=image]");
+                    const form = node?.tagName === "FORM" ? node : (button ?? node)?.form ?? node?.closest?.("form");
+                    const submitter = isEvent && data.submitter;
+                    if (form) {
+                        body = new FormData(form, submitter || undefined);
+                        if (button?.name && button !== submitter && button.form === form) body.append(button.name, button.value);
+                    } else {
+                        console.warn("[Nomini] no form to send for:", data);
+                        body = new URLSearchParams();
+                    }
                 } else {
                     const pairs = Object.entries(data ?? {}).flatMap(([key, value]) =>
                         [value]
@@ -142,7 +150,7 @@
                             .flatMap((item) => (typeof item?.item === "function" && typeof item[Symbol.iterator] === "function" ? [...item] : [item]))
                             .filter((item) => item != null)
                             .filter((item) => {
-                                if (item !== Object(item) || isBlob(item)) return true;
+                                if (item !== Object(item) || isBlob(item) || !String(item).startsWith("[object ")) return true;
                                 console.warn("[Nomini] cannot send:", key, item);
                             })
                             .map((item) => [key, isBlob(item) ? item : String(item)]),
@@ -153,6 +161,9 @@
 
                 const entries = [...body];
                 const opts = { headers: { "nm-request": true }, method, signal };
+                const reads = /^(GET|HEAD|DELETE)$/.test(method);
+                if (reads && entries.some(([, value]) => typeof value !== "string"))
+                    console.warn("[Nomini] files are not sent with", method, url);
                 const query = String(new URLSearchParams(entries.filter(([, value]) => typeof value === "string")));
 
                 if (!/^(GET|HEAD|DELETE)$/.test(method)) opts.body = body;
@@ -163,7 +174,10 @@
                     url = path + joiner + query + url.slice(hashAt);
                 }
 
-                const sent = entries.map(([key, value]) => [key, typeof value === "string" ? value : `\0file${idOf(value)}`]);
+                const sent = entries.map(([key, value]) => [
+                    key,
+                    typeof value === "string" ? value : value.size || value.name ? `\0file${idOf(value)}` : "\0empty",
+                ]);
                 write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sent) : ""}`;
                 if (writing.has(write)) return;
 
@@ -171,7 +185,6 @@
                 return opts;
             });
 
-            if (opts === refused) return;
             if (!opts) return report("fetchskip", { method, url });
 
             this._nmAbort = reading ? controller : new AbortController();
@@ -249,7 +262,6 @@
     });
 
     // --- BEGIN fetch
-    const refused = Symbol();
     const fileIds = new WeakMap();
     let fileCount = 0;
     const idOf = (file) => {
