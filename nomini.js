@@ -109,52 +109,51 @@
         },
         $fetch(url, method, data) {
             const el = currentEl;
+            const controller = new AbortController();
+            const { signal } = controller;
 
-            runWithEl(el, () => {
+            const opts = runWithEl(el, () => {
                 this._nmAbort.abort();
-                const controller = (this._nmAbort = new AbortController());
-                const { signal } = controller;
-                this._nmFetching = true;
-
-                const opts = {
-                    headers: { "nm-request": true },
-                    method,
-                    signal,
-                };
 
                 data = { ...this.$nmData(), ...this.$dataset(), ...data };
 
                 const encodedData = new URLSearchParams(data);
                 const query = String(encodedData);
+                const opts = { headers: { "nm-request": true }, method, signal };
 
                 if (/GET|DELETE/.test(method)) {
                     if (query) url += (url.includes("?") ? "&" : "?") + query;
                 } else opts.body = encodedData;
 
-                fetch(url, opts)
-                    .then(async (res) => {
-                        if (!res.ok) {
-                            throw new Error(`${res.statusText}: ${await res.text()}`);
-                        }
-
-                        if (!res.body) return;
-
-                        const stream = res.body.pipeThrough(new TextDecoderStream()).getReader();
-                        let buf = "";
-
-                        while (true) {
-                            const { done, value } = await stream.read();
-                            if (done) break;
-                            buf += value;
-                        }
-
-                        if (!signal.aborted) swap(buf);
-                    })
-                    .catch((err) => signal.aborted || dispatch(el, "fetcherr", { detail: { err, url } }))
-                    .finally(() => {
-                        if (this._nmAbort === controller) this._nmFetching = false;
-                    });
+                return opts;
             });
+
+            this._nmAbort = controller;
+            this._nmFetching = true;
+
+            fetch(url, opts)
+                .then(async (res) => {
+                    if (!res.ok) {
+                        throw new Error(`${res.statusText}: ${await res.text()}`);
+                    }
+
+                    if (!res.body) return;
+
+                    const stream = res.body.pipeThrough(new TextDecoderStream()).getReader();
+                    let buf = "";
+
+                    while (true) {
+                        const { done, value } = await stream.read();
+                        if (done) break;
+                        buf += value;
+                    }
+
+                    if (!signal.aborted) swap(buf);
+                })
+                .catch((err) => signal.aborted || dispatch(el, "fetcherr", { detail: { err, url } }))
+                .finally(() => {
+                    if (this._nmAbort === controller) this._nmFetching = false;
+                });
         },
         $nmData() {
             const isPrimitive = (x) => x !== Object(x);
@@ -186,7 +185,7 @@
         },
         $debounce(fn, ms, abortable = true) {
             const el = currentEl;
-            const signal = this._nmAbort?.signal;
+            const signal = runWithEl(el, () => this._nmAbort?.signal);
             clearTimeout(el.nmTimer);
             el.nmTimer = setTimeout(() => {
                 if (!(abortable && signal?.aborted)) runWithEl(el, fn)

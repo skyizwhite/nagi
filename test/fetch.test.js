@@ -522,6 +522,31 @@ describe("a request's lifecycle", () => {
         expect(page.$("#late").textContent).toBe("old");
     });
 
+    it("does not rerun a watcher that read the abort signal when it makes a request", async () => {
+        const page = await mount(
+            `<div nm-data="{ q: 'a' }">
+                <span nm-bind="{ oninit: () => $watch(() => { q; $debounce(() => 0, 10); $get('/s') }) }"></span>
+            </div>`,
+            { server: () => "" },
+        );
+        await page.settle();
+        expect(page.requests).toHaveLength(1);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("does not rerun a watcher that debounces a request when the request is made", async () => {
+        const page = await mount(
+            `<div nm-data="{ q: 'a' }">
+                <span nm-bind="{ oninit: () => $watch(() => { q; $debounce(() => $get('/s'), 10) }) }"></span>
+            </div>`,
+            { server: () => "" },
+        );
+        await page.settle();
+        await later(50);
+        await page.settle();
+        expect(page.requests).toHaveLength(1);
+    });
+
     it("does not track what a request reads into the watcher that made it", async () => {
         const page = await mount(
             `<div nm-data="{ q: 'a' }">
