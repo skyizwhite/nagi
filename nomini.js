@@ -120,14 +120,15 @@
 
                 const encodedData = new URLSearchParams(data);
                 const opts = { headers: { "nm-request": true }, method, signal };
-                const target = new URL(url, location.href);
-
                 const query = String(encodedData);
 
                 if (!/^(GET|HEAD|DELETE)$/.test(method)) opts.body = encodedData;
-                else if (query) target.search += (target.search.length > 1 ? "&" : "") + query;
-
-                url = target.href;
+                else if (query) {
+                    const hashAt = url.includes("#") ? url.indexOf("#") : url.length;
+                    const path = url.slice(0, hashAt);
+                    const joiner = !path.includes("?") ? "?" : path.endsWith("?") ? "" : "&";
+                    url = path + joiner + query + url.slice(hashAt);
+                }
 
                 this._nmAbort.abort();
                 return opts;

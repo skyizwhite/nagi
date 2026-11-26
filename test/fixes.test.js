@@ -298,3 +298,29 @@ describe("debounces and URLs, after review", () => {
         expect(page.requests[0].url).toBe("http://localhost/x?a=1");
     });
 });
+
+describe("request URLs as written", () => {
+    it("leaves a relative URL for the document's base to resolve", async () => {
+        const page = await mount(
+            `<base href="/api/">
+            <div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('items', { a: 1 }) }"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.requests[0].url).toBe("http://localhost/api/items?a=1");
+    });
+
+    it("sends fetcherr for a URL that cannot be fetched", async () => {
+        const page = await mount(
+            `<div nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail }">
+                <button id="b" nm-bind="{ onclick: () => $get('http://[bad', { a: 1 }) }"></button>
+            </div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#b")._err.url).toBe("http://[bad?a=1");
+        expect(page.errors).toEqual([]);
+    });
+});

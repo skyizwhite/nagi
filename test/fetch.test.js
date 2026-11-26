@@ -148,7 +148,7 @@ describe("requests", () => {
         page.$("#b").click();
         await page.settle();
 
-        expect(page.scope("#b")._err.url).toBe("http://localhost/x?q=1");
+        expect(page.scope("#b")._err.url).toBe("/x?q=1");
         expect(page.$("#target").textContent).toBe("old");
     });
 });
