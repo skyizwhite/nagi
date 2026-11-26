@@ -311,3 +311,72 @@ describe("finding scopes in the page as it is", () => {
         expect(page.$("#s").textContent).toBe("1");
     });
 });
+
+describe("scopes, after the review of nm-scope", () => {
+    it("sends the scope's value over the data-* it started from", async () => {
+        const page = await mount(
+            `<div nm-scope data-page="1"><button id="b" nm-on-click="page = '2'; $get('/list')"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(new URL(page.requests[0].url).searchParams.get("page")).toBe("2");
+    });
+
+    it("tells the watchers started before an nm-let-* what it sets", async () => {
+        const page = await mount(
+            `<div id="d" nm-let-start="$persist('n')" nm-let-n="1"></div>`,
+            { beforeInit: (window) => (window.localStorage["_nmProp-n"] = "5") },
+        );
+        expect(page.$("#d").nmProxy.n).toBe(1);
+        expect(page.window.localStorage["_nmProp-n"]).toBe("1");
+    });
+
+    it("logs an nm-scope object made from a built-in class, and makes an empty scope", async () => {
+        const page = await mount(
+            `<div id="a" nm-scope="new Store()"></div><div id="b" nm-scope="new Map()"></div>`,
+            { beforeInit: (window) => (window.Store = class extends window.Map {}) },
+        );
+        expect(page.$("#a").nmProxy.get).toBeUndefined();
+        expect(page.errors).toHaveLength(2);
+    });
+
+    it("goes on after a scope takes its element's parent out of the page", async () => {
+        const page = await mount(
+            `<section id="w"><div nm-scope="(document.getElementById('w').replaceWith(document.createElement('section')), {})"></div></section>
+            <div nm-let-x="1"><span id="s" nm-bind-textcontent="x"></span></div>`,
+        );
+        expect(page.$("#s").textContent).toBe("1");
+    });
+
+    it("defines a name for an nm-let-* with no value", async () => {
+        const page = await mount(`<div id="d" nm-let-selected><button id="b" nm-on-click="selected = 1"></button></div>`);
+        page.$("#b").click();
+        expect(page.$("#d").nmProxy.selected).toBe(1);
+        expect(page.window.selected).toBeUndefined();
+        expect(page.errors).toEqual([]);
+    });
+
+    it("leaves the scope and binds of an element a factory moves in", async () => {
+        const page = await mount(
+            `<div id="cart" nm-let-items="1"><button id="b" nm-on-click="items++"></button><span id="s" nm-bind-textcontent="items"></span></div>
+            <div nm-scope><button id="load" nm-on-click="$get('/x')"></button></div>
+            <div id="target"></div>`,
+            {
+                server: () => `<div id="target" nm-scope="take(this)"></div>`,
+                beforeInit: (window) =>
+                    (window.take = (el) => {
+                        el.append(el.ownerDocument.getElementById("cart"));
+                        return {};
+                    }),
+            },
+        );
+        const scope = page.$("#cart").nmProxy;
+        page.$("#load").click();
+        await page.settle();
+        expect(page.$("#cart").nmProxy).toBe(scope);
+        page.$("#b").click();
+        expect(scope.items).toBe(2);
+        expect(page.$("#s").textContent).toBe("2");
+    });
+});

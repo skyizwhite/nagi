@@ -130,7 +130,7 @@
             let write;
 
             const opts = runWithEl(el, () => {
-                data = { ...this.$nmData(), ...this.$dataset(), ...data };
+                data = { ...this.$dataset(), ...this.$nmData(), ...data };
 
                 const encodedData = new URLSearchParams(data);
                 const opts = { headers: { "nm-request": true }, method, signal };
@@ -362,7 +362,11 @@
             const base = dataEl.getAttribute("nm-scope")?.trim();
             const made = base ? evaluate(base, {}, dataEl) : {};
             try {
-                if (made !== null && typeof made === "object" && typeof made.then !== "function") {
+                const builtIn = (obj) => {
+                    for (let p = Object.getPrototypeOf(obj); p && Object.getPrototypeOf(p); p = Object.getPrototypeOf(p))
+                        if (/\[native code\]/.test(Function.prototype.toString.call(p.constructor))) return true;
+                };
+                if (made !== null && typeof made === "object" && typeof made.then !== "function" && !builtIn(made)) {
                     const descriptors = Object.getOwnPropertyDescriptors(made);
                     Object.values(descriptors).forEach((d) => {
                         d.configurable = true;
@@ -378,6 +382,7 @@
         };
 
         const makeScope = (dataEl) => {
+            if (dataEl.nmProxy) return;
             const attrs = [...dataEl.attributes];
             if (dataEl.hasAttribute("nm-data"))
                 console.error("[Nomini] nm-data is no longer read, use nm-scope:", dataEl);
@@ -417,8 +422,8 @@
             attrs.forEach(({ name, value }) => {
                 const key = name.match(/^nm-let-(.+)$/)?.[1];
                 if (!key || reserved(key, dataEl)) return;
-                const result = runWithEl(dataEl, () => evaluate(value, proxyData, dataEl));
-                if (result !== failed) define(rawData, key, result);
+                const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, dataEl)) : undefined;
+                if (result !== failed && !Reflect.set(proxyData, key, result)) define(rawData, key, result);
             });
         };
 
@@ -432,8 +437,7 @@
             const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
             if (dataEl !== baseEl && (moved || !baseEl.contains(dataEl))) {
                 while (parent && parent !== baseEl && !baseEl.contains(parent)) parent = parent.parentElement;
-                if (!parent) break;
-                walker.currentNode = parent;
+                walker.currentNode = parent || baseEl;
             } else walker.currentNode = dataEl;
             do dataEl = walker.nextNode();
             while (dataEl && seen.has(dataEl));
@@ -500,6 +504,7 @@
         );
 
         queryAttr(baseEl, "*").forEach((bindEl) => {
+            if (bindEl.nmBound) return;
             const entries = [...bindEl.attributes].flatMap(({ name, value }) => {
                 const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
                 if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
