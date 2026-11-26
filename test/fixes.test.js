@@ -251,3 +251,50 @@ describe("replacing a request", () => {
         expect(page.$("#target").textContent).toBe("new");
     });
 });
+
+describe("debounces and URLs, after review", () => {
+    it("keeps a timer for each watcher of an element", async () => {
+        const page = await mount(`
+            <div nm-data="{ got: [] }">
+                <span id="s" nm-bind="{ oninit: () => {
+                    $watch(() => $debounce(() => got.push('a'), 10));
+                    $watch(() => $debounce(() => got.push('b'), 10));
+                } }"></span>
+            </div>
+        `);
+        await page.settle();
+        expect([...page.scope("#s").got].sort()).toEqual(["a", "b"]);
+    });
+
+    it("debounces a request with no scope after an await", async () => {
+        const page = await mount(
+            `<button id="b" nm-bind="{ onclick: async () => { await 0; $debounce(() => $get('/s'), 10) } }"></button>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.requests).toHaveLength(1);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("leaves the query a URL already has as it is", async () => {
+        const page = await mount(
+            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/items?expand&path=/a/b', { q: 1 }) }"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.requests[0].url).toBe("http://localhost/items?expand&path=/a/b&q=1");
+    });
+
+    it("takes a request with no method as a GET", async () => {
+        const page = await mount(
+            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $fetch('/x', undefined, { a: 1 }) }"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.requests[0].method).toBe("GET");
+        expect(page.requests[0].url).toBe("http://localhost/x?a=1");
+    });
+});

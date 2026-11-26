@@ -113,7 +113,7 @@
             const el = currentEl ?? this._nmEl;
             const controller = new AbortController();
             const { signal } = controller;
-            method = method.toUpperCase();
+            method = (method || "GET").toUpperCase();
 
             const opts = runWithEl(el, () => {
                 data = { ...this.$nmData(), ...this.$dataset(), ...data };
@@ -122,9 +122,10 @@
                 const opts = { headers: { "nm-request": true }, method, signal };
                 const target = new URL(url, location.href);
 
-                if (/^(GET|HEAD|DELETE)$/.test(method))
-                    encodedData.forEach((value, key) => target.searchParams.append(key, value));
-                else opts.body = encodedData;
+                const query = String(encodedData);
+
+                if (!/^(GET|HEAD|DELETE)$/.test(method)) opts.body = encodedData;
+                else if (query) target.search += (target.search.length > 1 ? "&" : "") + query;
 
                 url = target.href;
 
@@ -175,7 +176,7 @@
             let datasets = {};
             let el = currentEl ?? this._nmEl;
 
-            while (el) {
+            while (el?.nodeType === 1) {
                 datasets = { ...el.dataset, ...datasets };
                 if (el.hasAttribute("nm-data")) break;
                 el = el.parentElement;
@@ -188,9 +189,9 @@
             dispatch(currentEl ?? this._nmEl ?? document, evt, { detail, ...opts });
         },
         $debounce(fn, ms) {
-            const el = currentEl ?? this._nmEl ?? document;
-            const timers = (el.nmTimers ||= new Map());
-            const key = currentHandler;
+            const el = currentEl ?? this._nmEl;
+            const timers = ((el ?? document).nmTimers ||= new Map());
+            const key = currentHandler ?? currentBind;
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);
