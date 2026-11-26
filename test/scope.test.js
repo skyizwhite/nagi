@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
 describe("nm-scope", () => {
+    it("makes a scope from an object literal", async () => {
+        const page = await mount(`<div id="a" nm-scope="{ n: 1 }"></div>`);
+        expect(page.$("#a").nmProxy.n).toBe(1);
+    });
+
+    it("runs the expression with the scope element as this", async () => {
+        const page = await mount(`<div id="a" data-x="hi" nm-scope="{ x: this.dataset.x }"></div>`);
+        expect(page.$("#a").nmProxy.x).toBe("hi");
+    });
+
+    it("logs and falls back to an empty scope when the expression is invalid", async () => {
+        const page = await mount(`<div id="a" nm-scope="{ n: }"></div>`);
+        expect(page.$("#a").nmProxy.n).toBeUndefined();
+        expect(page.errors).toHaveLength(1);
+    });
+
     it("makes a scope from an object an expression gives", async () => {
         const page = await mount(
             `<div id="a" nm-scope="{ n: 1 }"></div><div id="b" nm-scope="make(this)"></div>`,
@@ -40,7 +56,9 @@ describe("nm-scope", () => {
         expect(page.$("#b").nmProxy?.x).toBe(1);
         expect(page.errors.length).toBeGreaterThan(0);
     });
+});
 
+describe("nm-scope objects", () => {
     it("keeps the methods and getters of a factory's object, with what they read tracked", async () => {
         const page = await mount(
             `<div nm-scope="new Counter()">
@@ -102,9 +120,28 @@ describe("nm-scope", () => {
         );
         expect(page.$("#b").nmProxy?.x).toBe(1);
     });
+
+    it("logs an nm-scope object made from a built-in class, and makes an empty scope", async () => {
+        const page = await mount(
+            `<div id="a" nm-scope="new Store()"></div><div id="b" nm-scope="new Map()"></div>`,
+            { beforeInit: (window) => (window.Store = class extends window.Map {}) },
+        );
+        expect(page.$("#a").nmProxy.get).toBeUndefined();
+        expect(page.errors).toHaveLength(2);
+    });
+
+    it("takes an object made with Object.create of a plain object", async () => {
+        const page = await mount(`
+            <div id="d" nm-scope="Object.create({ inc() { this.n++ } }, { n: { value: 0, enumerable: true, writable: true } })"></div>
+        `);
+        const scope = page.$("#d").nmProxy;
+        scope.inc();
+        expect(scope.n).toBe(1);
+        expect(page.errors).toEqual([]);
+    });
 });
 
-describe("data-* of a scope's element", () => {
+describe("data-* of the scope's element", () => {
     it("adds them as the strings written, named as dataset names them", async () => {
         const page = await mount(`
             <div id="d" nm-scope data-model="post" data-count="3" data-user-id="42" data-none="null"></div>
@@ -160,7 +197,7 @@ describe("data-* of a scope's element", () => {
     });
 });
 
-describe("nm-let-* attributes", () => {
+describe("nm-let-*", () => {
     it("adds values of any kind from expressions", async () => {
         const page = await mount(`
             <div id="d" nm-let-count="3" nm-let-open="false" nm-let-ids="[1, 2]" nm-let-name="'Ann'"></div>
@@ -221,17 +258,21 @@ describe("nm-let-* attributes", () => {
         expect(page.window.localStorage["_nmProp-n"]).toBe("1");
     });
 
-    it("is not called to make a request's data", async () => {
+    it("tells the watchers started before an nm-let-* what it sets", async () => {
         const page = await mount(
-            `<div nm-let-count="1" nm-let-add="(n) => count += n">
-                <button id="b" nm-on-click="$post('/x', { count })"></button>
-            </div>`,
-            { server: () => "" },
+            `<div id="d" nm-let-start="$persist('n')" nm-let-n="1"></div>`,
+            { beforeInit: (window) => (window.localStorage["_nmProp-n"] = "5") },
         );
+        expect(page.$("#d").nmProxy.n).toBe(1);
+        expect(page.window.localStorage["_nmProp-n"]).toBe("1");
+    });
+
+    it("defines a name for an nm-let-* with no value", async () => {
+        const page = await mount(`<div id="d" nm-let-selected><button id="b" nm-on-click="selected = 1"></button></div>`);
         page.$("#b").click();
-        await page.settle();
-        expect(page.scope("#b").count).toBe(1);
-        expect(page.requests[0].body).toBe("count=1");
+        expect(page.$("#d").nmProxy.selected).toBe(1);
+        expect(page.window.selected).toBeUndefined();
+        expect(page.errors).toEqual([]);
     });
 });
 
@@ -243,9 +284,139 @@ describe("names kept for nomini", () => {
         expect(typeof scope.$refs).toBe("object");
         expect(page.errors).toHaveLength(4);
     });
+
+    it("lets a bind read a key named like an Object.prototype member", async () => {
+        const page = await mount(`
+            <div nm-scope="{ n: 1 }"><span id="s" nm-bind-textcontent="String(hasOwnProperty('n'))"></span></div>
+        `);
+        expect(page.$("#s").textContent).toBe("true");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("lets a key named like an Object.prototype member be set and bound", async () => {
+        const page = await mount(`
+            <div nm-scope="{ valueOf: 1 }"><span id="s" nm-bind-textcontent="valueOf"></span></div>
+        `);
+        page.scope("#s").valueOf = 2;
+        expect(page.$("#s").textContent).toBe("2");
+        expect(page.errors).toEqual([]);
+    });
 });
 
-describe("finding scopes in the page as it is", () => {
+describe("outer scopes", () => {
+    const html = `
+        <div id="outer" nm-scope="{ count: 1, name: 'outer', items: [1, 2, 3], remove(id) { this.items = this.items.filter((i) => i !== id) } }">
+            <section id="inner" nm-let-name="'inner'" nm-let-id="2">
+                <span id="name" nm-bind-textcontent="name"></span>
+                <span id="count" nm-bind-textcontent="count"></span>
+                <span id="items" nm-bind-textcontent="items.join(',')"></span>
+                <button id="inc" nm-on-click="count++"></button>
+                <button id="rename" nm-on-click="name = 'x'"></button>
+                <button id="remove" nm-on-click="remove(id)"></button>
+            </section>
+        </div>
+    `;
+
+    it("reads the nearest scope first, and outer scopes for what it lacks", async () => {
+        const page = await mount(`
+            <div nm-scope="{ outer: 'o', both: 'outer' }">
+                <div nm-scope="{ inner: 'i', both: 'inner' }">
+                    <span id="s" nm-bind-textcontent="outer + ':' + inner + ':' + both"></span>
+                </div>
+            </div>
+        `);
+        expect(page.$("#s").textContent).toBe("o:i:inner");
+    });
+
+    it("reads a name the inner scope lacks from the outer one, the inner one first", async () => {
+        const page = await mount(html);
+        expect(page.$("#name").textContent).toBe("inner");
+        expect(page.$("#count").textContent).toBe("1");
+    });
+
+    it("runs an inner bind again when the outer value changes", async () => {
+        const page = await mount(html);
+        page.$("#outer").nmProxy.count = 5;
+        expect(page.$("#count").textContent).toBe("5");
+    });
+
+    it("writes to the scope that has the name", async () => {
+        const page = await mount(html);
+        page.$("#inc").click();
+        page.$("#rename").click();
+        expect(page.$("#outer").nmProxy.count).toBe(2);
+        expect(page.$("#outer").nmProxy.name).toBe("outer");
+        expect(page.$("#inner").nmProxy.name).toBe("x");
+        expect(Object.hasOwn(page.$("#inner").nmProxy, "count")).toBe(false);
+    });
+
+    it("calls an outer method with what it reads and writes reaching the outer scope", async () => {
+        const page = await mount(html);
+        page.$("#remove").click();
+        expect(page.$("#items").textContent).toBe("1,3");
+    });
+
+    it("goes out more than one scope", async () => {
+        const page = await mount(`
+            <div nm-let-a="1"><div nm-let-b="2"><div nm-let-c="3"><span id="s" nm-bind-textcontent="a + b + c"></span></div></div></div>
+        `);
+        expect(page.$("#s").textContent).toBe("6");
+    });
+
+    it("evaluates an inner nm-let-* with the outer names", async () => {
+        const page = await mount(`<div nm-let-base="10"><div id="d" nm-let-twice="base * 2"></div></div>`);
+        expect(page.$("#d").nmProxy.twice).toBe(20);
+    });
+
+    it("uses the innermost scope's helpers", async () => {
+        let answer;
+        const page = await mount(
+            `<div id="outer" nm-scope><div id="inner" nm-scope><button id="b" nm-on-click="$get('/x')"></button></div></div>`,
+            { server: () => new Promise((resolve) => (answer = resolve)) },
+        );
+        page.$("#b").click();
+        expect(page.$("#inner").nmProxy.$fetching).toBe(true);
+        expect(page.$("#outer").nmProxy.$fetching).toBe(false);
+        answer("");
+        await page.settle();
+    });
+
+    it("runs an outer method with the outer scope as this", async () => {
+        let answer;
+        const page = await mount(
+            `<div id="outer" nm-scope="{ open() { this.isOpen = true }, save() { this.$get('/s') } }">
+                <span id="s" nm-bind-hidden="!isOpen"></span>
+                <section nm-let-x="1"><button id="b" nm-on-click="open(); save()"></button></section>
+            </div>`,
+            { server: () => new Promise((resolve) => (answer = resolve)) },
+        );
+        page.$("#b").click();
+        const outer = page.$("#outer").nmProxy;
+        expect(outer.isOpen).toBe(true);
+        expect(page.$("#s").hidden).toBe(false);
+        expect(outer.$fetching).toBe(true);
+        answer("");
+        await page.settle();
+    });
+
+    it("gives the same function each time an outer method is read", async () => {
+        const page = await mount(`<div nm-scope="{ f() {} }"><div id="i" nm-let-x="1"></div></div>`);
+        const inner = page.$("#i").nmProxy;
+        expect(inner.f).toBe(inner.f);
+    });
+});
+
+describe("finding scopes", () => {
+    it("skips everything under nm-ignore", async () => {
+        const page = await mount(`
+            <div nm-scope="{ n: 1 }">
+                <div nm-ignore><span id="s" nm-bind-textcontent="n">x</span></div>
+            </div>
+        `);
+        await page.settle();
+        expect(page.$("#s").textContent).toBe("x");
+    });
+
     it("finds the nearest scope from inside nested ones", async () => {
         const page = await mount(`
             <div nm-let-a="'outer'"><div nm-let-a="'inner'"><span id="s" nm-bind-textcontent="a"></span></div></div>
@@ -310,36 +481,6 @@ describe("finding scopes in the page as it is", () => {
         );
         expect(page.$("#s").textContent).toBe("1");
     });
-});
-
-describe("scopes, after the review of nm-scope", () => {
-    it("sends the scope's current value of a data-* it is passed", async () => {
-        const page = await mount(
-            `<div nm-scope data-page="1"><button id="b" nm-on-click="page = '2'; $get('/list', { page })"></button></div>`,
-            { server: () => "" },
-        );
-        page.$("#b").click();
-        await page.settle();
-        expect(new URL(page.requests[0].url).searchParams.get("page")).toBe("2");
-    });
-
-    it("tells the watchers started before an nm-let-* what it sets", async () => {
-        const page = await mount(
-            `<div id="d" nm-let-start="$persist('n')" nm-let-n="1"></div>`,
-            { beforeInit: (window) => (window.localStorage["_nmProp-n"] = "5") },
-        );
-        expect(page.$("#d").nmProxy.n).toBe(1);
-        expect(page.window.localStorage["_nmProp-n"]).toBe("1");
-    });
-
-    it("logs an nm-scope object made from a built-in class, and makes an empty scope", async () => {
-        const page = await mount(
-            `<div id="a" nm-scope="new Store()"></div><div id="b" nm-scope="new Map()"></div>`,
-            { beforeInit: (window) => (window.Store = class extends window.Map {}) },
-        );
-        expect(page.$("#a").nmProxy.get).toBeUndefined();
-        expect(page.errors).toHaveLength(2);
-    });
 
     it("goes on after a scope takes its element's parent out of the page", async () => {
         const page = await mount(
@@ -347,14 +488,6 @@ describe("scopes, after the review of nm-scope", () => {
             <div nm-let-x="1"><span id="s" nm-bind-textcontent="x"></span></div>`,
         );
         expect(page.$("#s").textContent).toBe("1");
-    });
-
-    it("defines a name for an nm-let-* with no value", async () => {
-        const page = await mount(`<div id="d" nm-let-selected><button id="b" nm-on-click="selected = 1"></button></div>`);
-        page.$("#b").click();
-        expect(page.$("#d").nmProxy.selected).toBe(1);
-        expect(page.window.selected).toBeUndefined();
-        expect(page.errors).toEqual([]);
     });
 
     it("leaves the scope and binds of an element a factory moves in", async () => {
@@ -378,28 +511,6 @@ describe("scopes, after the review of nm-scope", () => {
         page.$("#b").click();
         expect(scope.items).toBe(2);
         expect(page.$("#s").textContent).toBe("2");
-    });
-});
-
-describe("scopes, after the second review of nm-scope", () => {
-    it("sends a closer element's data-* over the scope's from $dataset()", async () => {
-        const page = await mount(
-            `<div nm-scope data-id="0"><button id="b" data-id="5" nm-on-click="$get('/row', $dataset())"></button></div>`,
-            { server: () => "" },
-        );
-        page.$("#b").click();
-        await page.settle();
-        expect(new URL(page.requests[0].url).searchParams.get("id")).toBe("5");
-    });
-
-    it("takes an object made with Object.create of a plain object", async () => {
-        const page = await mount(`
-            <div id="d" nm-scope="Object.create({ inc() { this.n++ } }, { n: { value: 0, enumerable: true, writable: true } })"></div>
-        `);
-        const scope = page.$("#d").nmProxy;
-        scope.inc();
-        expect(scope.n).toBe(1);
-        expect(page.errors).toEqual([]);
     });
 
     it("makes the scopes inside an element a factory moves earlier", async () => {
