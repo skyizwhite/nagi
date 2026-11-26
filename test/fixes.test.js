@@ -32,6 +32,20 @@ describe("nm-form radios", () => {
     });
 });
 
+describe("nm-form radio groups with nothing checked", () => {
+    it("still defines the group's key", async () => {
+        const page = await mount(`
+            <form nm-data="{}" nm-form>
+                <input type="radio" name="c" value="a">
+                <input type="radio" name="c" value="b">
+                <span id="s" nm-bind="{ textContent: () => c ?? 'none' }"></span>
+            </form>
+        `);
+        expect(page.$("#s").textContent).toBe("none");
+        expect(page.errors).toEqual([]);
+    });
+});
+
 describe("builds without blocks", () => {
     it("debounces in the core build, which has no fetch block", async () => {
         const page = await mount(

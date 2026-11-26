@@ -379,7 +379,10 @@
                 if (inputType === "checkbox")
                     res = inputEl.checked;
                 else if (inputType === "radio") {
-                    if (!inputEl.checked) return;
+                    if (!inputEl.checked) {
+                        if (!(inputEl.name in proxyData)) proxyData[inputEl.name] = undefined;
+                        return;
+                    }
                     res = inputEl.value;
                 }
                 else if (inputType === "file")
