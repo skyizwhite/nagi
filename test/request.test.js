@@ -4,13 +4,13 @@ import { later } from "./support.js";
 
 describe("what is sent", () => {
     const button = (call, scope = "{}") => `
-        <div id="d" nm-scope="${scope}"><button id="b" nm-on-click="${call}"></button></div>
+        <div id="d" n-scope="${scope}"><button id="b" n-on-click="${call}"></button></div>
         <div id="target">old</div>
     `;
 
     const send = async (call, html = "", options = {}) => {
         const page = await mount(
-            `<div nm-scope>${html}<button id="b" nm-on-click="${call}"></button></div>`,
+            `<div n-scope>${html}<button id="b" n-on-click="${call}"></button></div>`,
             { server: () => "", ...options },
         );
         page.$("#b").click();
@@ -18,7 +18,7 @@ describe("what is sent", () => {
         return page;
     };
 
-    it("$get sends the data in the query string with the nm-request header", async () => {
+    it("$get sends the data in the query string with the n-request header", async () => {
         const page = await mount(button(`$get('/x', { q: 'a b' })`), { server: () => "" });
         page.$("#b").click();
         await page.settle();
@@ -26,7 +26,7 @@ describe("what is sent", () => {
         const [request] = page.requests;
         expect(request.method).toBe("GET");
         expect(request.url).toBe("http://localhost/x?q=a+b");
-        expect(request.headers["nm-request"]).toBe("true");
+        expect(request.headers["n-request"]).toBe("true");
     });
 
     it("$post sends the data as a urlencoded body", async () => {
@@ -49,9 +49,9 @@ describe("what is sent", () => {
 
     it("sends no data-* unless passed, and sends what $dataset() gives when it is", async () => {
         const page = await mount(
-            `<div nm-scope="{}" data-from-scope="s">
-                <button id="a" data-from-button="b" nm-on-click="$get('/x')"></button>
-                <button id="b" data-from-button="b" nm-on-click="$get('/y', $dataset())"></button>
+            `<div n-scope="{}" data-from-scope="s">
+                <button id="a" data-from-button="b" n-on-click="$get('/x')"></button>
+                <button id="b" data-from-button="b" n-on-click="$get('/y', $dataset())"></button>
             </div>`,
             { server: () => "" },
         );
@@ -73,8 +73,8 @@ describe("what is sent", () => {
 
     it("is not called to make a request's data", async () => {
         const page = await mount(
-            `<div nm-let-count="1" nm-let-add="(n) => count += n">
-                <button id="b" nm-on-click="$post('/x', { count })"></button>
+            `<div n-let-count="1" n-let-add="(n) => count += n">
+                <button id="b" n-on-click="$post('/x', { count })"></button>
             </div>`,
             { server: () => "" },
         );
@@ -86,7 +86,7 @@ describe("what is sent", () => {
 
     it("sends the scope's current value of a data-* it is passed", async () => {
         const page = await mount(
-            `<div nm-scope data-page="1"><button id="b" nm-on-click="page = '2'; $get('/list', { page })"></button></div>`,
+            `<div n-scope data-page="1"><button id="b" n-on-click="page = '2'; $get('/list', { page })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -96,7 +96,7 @@ describe("what is sent", () => {
 
     it("sends a closer element's data-* over the scope's from $dataset()", async () => {
         const page = await mount(
-            `<div nm-scope data-id="0"><button id="b" data-id="5" nm-on-click="$get('/row', $dataset())"></button></div>`,
+            `<div n-scope data-id="0"><button id="b" data-id="5" n-on-click="$get('/row', $dataset())"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -111,7 +111,7 @@ describe("what is sent", () => {
 
     it("sends the fields of a form element as FormData", async () => {
         const page = await mount(
-            `<form id="f" nm-scope nm-on-submit.prevent="$post('/save', this)">
+            `<form id="f" n-scope n-on-submit.prevent="$post('/save', this)">
                 <input name="title" value="Hi">
                 <input name="tag" value="a"><input name="tag" value="b">
             </form>`,
@@ -123,11 +123,11 @@ describe("what is sent", () => {
     });
 
     it("sends a file in FormData", async () => {
-        const page = await mount(`<div id="f" nm-scope></div>`, { server: () => "" });
+        const page = await mount(`<div id="f" n-scope></div>`, { server: () => "" });
         const file = new page.window.File(["hello"], "a.txt", { type: "text/plain" });
         const data = new page.window.FormData();
         data.append("doc", file);
-        page.$("#f").nmProxy.$post("/upload", data);
+        page.$("#f").nagiProxy.$post("/upload", data);
         await page.settle();
         const [[name, sent]] = page.requests[0].body;
         expect(name).toBe("doc");
@@ -150,11 +150,11 @@ describe("what is sent", () => {
     });
 
     it("sends files inside an object as FormData, a FileList as its files", async () => {
-        const page = await mount(`<div id="d" nm-scope></div>`, { server: () => "" });
+        const page = await mount(`<div id="d" n-scope></div>`, { server: () => "" });
         const window = page.window;
         const a = new window.File(["1"], "a.txt");
         const b = new window.File(["2"], "b.txt");
-        page.$("#d").nmProxy.$post("/up", { title: "x", doc: a, docs: [b] });
+        page.$("#d").nagiProxy.$post("/up", { title: "x", doc: a, docs: [b] });
         await page.settle();
         expect(page.requests[0].body.map(([k, v]) => [k, typeof v === "string" ? v : v.name])).toEqual([
             ["title", "x"],
@@ -171,7 +171,7 @@ describe("what is sent", () => {
 
     it("sends the form an element is in when the element is passed", async () => {
         const page = await mount(
-            `<form nm-scope><input name="q" value="hi"><button id="b" type="button" nm-on-click="$post('/x', this)"></button></form>`,
+            `<form n-scope><input name="q" value="hi"><button id="b" type="button" n-on-click="$post('/x', this)"></button></form>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -190,7 +190,7 @@ describe("what is sent", () => {
 
     it("sends the submitter of a submit event it is passed", async () => {
         const page = await mount(
-            `<form id="f" nm-scope nm-on-submit.prevent="$post('/x', e)">
+            `<form id="f" n-scope n-on-submit.prevent="$post('/x', e)">
                 <input name="q" value="hi">
                 <button id="del" name="action" value="delete">Delete</button>
             </form>`,
@@ -210,8 +210,8 @@ describe("what is sent", () => {
 
     it("sends the name and value of the button a click came from", async () => {
         const page = await mount(
-            `<form nm-scope><input name="q" value="hi">
-                <button id="b" type="button" name="action" value="delete" nm-on-click="$post('/x', e)"><span id="inner">Del</span></button>
+            `<form n-scope><input name="q" value="hi">
+                <button id="b" type="button" name="action" value="delete" n-on-click="$post('/x', e)"><span id="inner">Del</span></button>
             </form>`,
             { server: () => "" },
         );
@@ -221,8 +221,8 @@ describe("what is sent", () => {
     });
 
     it("warns about files given to a GET", async () => {
-        const page = await mount(`<div id="d" nm-scope></div>`, { server: () => "" });
-        page.$("#d").nmProxy.$get("/x", { q: "a", doc: new page.window.File(["1"], "a.txt") });
+        const page = await mount(`<div id="d" n-scope></div>`, { server: () => "" });
+        page.$("#d").nagiProxy.$get("/x", { q: "a", doc: new page.window.File(["1"], "a.txt") });
         await page.settle();
         expect(page.requests[0].url).toBe("http://localhost/x?q=a");
         expect(page.warnings).toHaveLength(1);
@@ -236,13 +236,13 @@ describe("what is sent", () => {
 
 describe("URLs and methods", () => {
     const button = (call, scope = "{}") => `
-        <div id="d" nm-scope="${scope}"><button id="b" nm-on-click="${call}"></button></div>
+        <div id="d" n-scope="${scope}"><button id="b" n-on-click="${call}"></button></div>
         <div id="target">old</div>
     `;
 
     const send = async (call, html = "", options = {}) => {
         const page = await mount(
-            `<div nm-scope>${html}<button id="b" nm-on-click="${call}"></button></div>`,
+            `<div n-scope>${html}<button id="b" n-on-click="${call}"></button></div>`,
             { server: () => "", ...options },
         );
         page.$("#b").click();
@@ -259,7 +259,7 @@ describe("URLs and methods", () => {
 
     it("adds no ? when there is nothing to send", async () => {
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$get('/x')"></button></div>`,
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/x')"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -269,7 +269,7 @@ describe("URLs and methods", () => {
 
     it("adds no & to a URL with a query when there is nothing to send", async () => {
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$get('/x?a=1')"></button></div>`,
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/x?a=1')"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -279,7 +279,7 @@ describe("URLs and methods", () => {
 
     it("puts the query before a #fragment", async () => {
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$get('/x#top', { a: 1 })"></button></div>`,
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/x#top', { a: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -289,7 +289,7 @@ describe("URLs and methods", () => {
 
     it("adds no & to a URL that ends in ?", async () => {
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$get('/x?', { a: 1 })"></button></div>`,
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/x?', { a: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -299,7 +299,7 @@ describe("URLs and methods", () => {
 
     it("adds no second & to a URL that ends in &", async () => {
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$get('/x?a=1&', { b: 2 })"></button></div>`,
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/x?a=1&', { b: 2 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -309,7 +309,7 @@ describe("URLs and methods", () => {
 
     it("leaves the query a URL already has as it is", async () => {
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$get('/items?expand&path=/a/b', { q: 1 })"></button></div>`,
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/items?expand&path=/a/b', { q: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -320,7 +320,7 @@ describe("URLs and methods", () => {
     it("leaves a relative URL for the document's base to resolve", async () => {
         const page = await mount(
             `<base href="/api/">
-            <div nm-scope="{}"><button id="b" nm-on-click="$get('items', { a: 1 })"></button></div>`,
+            <div n-scope="{}"><button id="b" n-on-click="$get('items', { a: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -335,7 +335,7 @@ describe("URLs and methods", () => {
 
     it("puts the data in the query for a lowercase get", async () => {
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$fetch('/x', 'get', { a: 1 })"></button></div>`,
+            `<div n-scope="{}"><button id="b" n-on-click="$fetch('/x', 'get', { a: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -348,7 +348,7 @@ describe("URLs and methods", () => {
 
     it("takes a request with no method as a GET", async () => {
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$fetch('/x', undefined, { a: 1 })"></button></div>`,
+            `<div n-scope="{}"><button id="b" n-on-click="$fetch('/x', undefined, { a: 1 })"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -361,10 +361,10 @@ describe("URLs and methods", () => {
 describe("reads and writes", () => {
     const mountWrites = (answers) =>
         mount(
-            `<div nm-scope="{}">
-                <button id="order" nm-on-click="$post('/order')"></button>
-                <button id="del" nm-on-click="$fetch('/item', 'DELETE')"></button>
-                <button id="search" nm-on-click="$get('/search')"></button>
+            `<div n-scope="{}">
+                <button id="order" n-on-click="$post('/order')"></button>
+                <button id="del" n-on-click="$fetch('/item', 'DELETE')"></button>
+                <button id="search" n-on-click="$get('/search')"></button>
             </div>
             <div id="done">old</div><div id="results">old</div>`,
             {
@@ -378,7 +378,7 @@ describe("reads and writes", () => {
     it("aborts the scope's request in flight when it makes another", async () => {
         const answers = [];
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$get('/x')"></button></div>
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/x')"></button></div>
             <div id="target">old</div>`,
             { server: () => new Promise((resolve) => answers.push(resolve)) },
         );
@@ -436,9 +436,9 @@ describe("reads and writes", () => {
     it("takes OPTIONS as a read, aborted by a newer request", async () => {
         const signals = [];
         const page = await mount(
-            `<div nm-scope="{}">
-                <button id="o" nm-on-click="$fetch('/x', 'OPTIONS')"></button>
-                <button id="g" nm-on-click="$get('/y')"></button>
+            `<div n-scope="{}">
+                <button id="o" n-on-click="$fetch('/x', 'OPTIONS')"></button>
+                <button id="g" n-on-click="$get('/y')"></button>
             </div>`,
             { server: () => "" },
         );
@@ -456,8 +456,8 @@ describe("reads and writes", () => {
     it("lets a write finish when a swap removes its scope", async () => {
         let answer;
         const page = await mount(
-            `<div nm-scope="{}"><button id="outer" nm-on-click="$get('/outer')"></button></div>
-            <div id="target" nm-scope="{}"><button id="order" nm-on-click="$post('/order')"></button></div>
+            `<div n-scope="{}"><button id="outer" n-on-click="$get('/outer')"></button></div>
+            <div id="target" n-scope="{}"><button id="order" n-on-click="$post('/order')"></button></div>
             <div id="done">old</div>`,
             {
                 server: ({ url }) =>
@@ -474,9 +474,9 @@ describe("reads and writes", () => {
 
     it("drops an abortable debounce when a write starts", async () => {
         const page = await mount(
-            `<div nm-scope="{ got: [] }">
-                <input id="i" nm-on-input="$debounce(() => got = [...got, 'search'], 20, true)">
-                <button id="b" nm-on-click="$post('/order')"></button>
+            `<div n-scope="{ got: [] }">
+                <input id="i" n-on-input="$debounce(() => got = [...got, 'search'], 20, true)">
+                <button id="b" n-on-click="$post('/order')"></button>
             </div>`,
             { server: () => "" },
         );
@@ -489,8 +489,8 @@ describe("reads and writes", () => {
     it("keeps the request in flight when building the next one throws", async () => {
         let answer;
         const page = await mount(
-            `<div nm-scope="{}">
-                <button id="first" nm-on-click="$get('/x')"></button>
+            `<div n-scope="{}">
+                <button id="first" n-on-click="$get('/x')"></button>
                 <div id="target">old</div>
             </div>`,
             { server: () => new Promise((resolve) => (answer = resolve)) },
@@ -508,10 +508,10 @@ describe("reads and writes", () => {
 describe("dedupe", () => {
     const mountWrites = (answers) =>
         mount(
-            `<div nm-scope="{}">
-                <button id="order" nm-on-click="$post('/order')"></button>
-                <button id="del" nm-on-click="$fetch('/item', 'DELETE')"></button>
-                <button id="search" nm-on-click="$get('/search')"></button>
+            `<div n-scope="{}">
+                <button id="order" n-on-click="$post('/order')"></button>
+                <button id="del" n-on-click="$fetch('/item', 'DELETE')"></button>
+                <button id="search" n-on-click="$get('/search')"></button>
             </div>
             <div id="done">old</div><div id="results">old</div>`,
             {
@@ -556,9 +556,9 @@ describe("dedupe", () => {
     it("sends a write with other data while one is out", async () => {
         let answer;
         const page = await mount(
-            `<div nm-scope="{}">
-                <button id="a" nm-on-click="$post('/save', { v: 1 })"></button>
-                <button id="b" nm-on-click="$post('/save', { v: 2 })"></button>
+            `<div n-scope="{}">
+                <button id="a" n-on-click="$post('/save', { v: 1 })"></button>
+                <button id="b" n-on-click="$post('/save', { v: 2 })"></button>
             </div>`,
             { server: () => new Promise((resolve) => (answer = resolve)) },
         );
@@ -570,8 +570,8 @@ describe("dedupe", () => {
     it("sends fetchskip from the element for a write it did not send", async () => {
         const answers = {};
         const page = await mount(
-            `<div nm-scope="{ _skipped: [] }" nm-on-fetchskip="_skipped = [..._skipped, e.detail]">
-                <button id="order" nm-on-click="$post('/order')"></button>
+            `<div n-scope="{ _skipped: [] }" n-on-fetchskip="_skipped = [..._skipped, e.detail]">
+                <button id="order" n-on-click="$post('/order')"></button>
             </div>`,
             { server: () => new Promise((resolve) => (answers.order = resolve)) },
         );
@@ -583,9 +583,9 @@ describe("dedupe", () => {
     it("tells FormData writes with different fields apart", async () => {
         let answers = [];
         const page = await mount(
-            `<div nm-scope>
-                <button id="a" nm-on-click="const f = new FormData(); f.append('v', '1'); $post('/save', f)"></button>
-                <button id="b" nm-on-click="const f = new FormData(); f.append('v', '2'); $post('/save', f)"></button>
+            `<div n-scope>
+                <button id="a" n-on-click="const f = new FormData(); f.append('v', '1'); $post('/save', f)"></button>
+                <button id="b" n-on-click="const f = new FormData(); f.append('v', '2'); $post('/save', f)"></button>
             </div>`,
             { server: () => new Promise((resolve) => answers.push(resolve)) },
         );
@@ -599,10 +599,10 @@ describe("dedupe", () => {
 
     it("tells apart two files of the same name and size", async () => {
         const answers = [];
-        const page = await mount(`<div id="d" nm-scope></div>`, {
+        const page = await mount(`<div id="d" n-scope></div>`, {
             server: () => new Promise((resolve) => answers.push(resolve)),
         });
-        const scope = page.$("#d").nmProxy;
+        const scope = page.$("#d").nagiProxy;
         scope.$post("/up", { doc: new page.window.File(["1"], "photo.jpg") });
         scope.$post("/up", { doc: new page.window.File(["2"], "photo.jpg") });
         expect(page.requests).toHaveLength(2);
@@ -613,7 +613,7 @@ describe("dedupe", () => {
     it("skips a second submit of a form with an empty file input", async () => {
         const answers = [];
         const page = await mount(
-            `<form id="f" nm-scope nm-on-submit.prevent="$post('/save', this)"><input name="t" value="x"><input type="file" name="doc"></form>`,
+            `<form id="f" n-scope n-on-submit.prevent="$post('/save', this)"><input name="t" value="x"><input type="file" name="doc"></form>`,
             { server: () => new Promise((resolve) => answers.push(resolve)) },
         );
         const submit = () => page.$("#f").dispatchEvent(new page.window.Event("submit", { cancelable: true }));
@@ -626,7 +626,7 @@ describe("dedupe", () => {
 
     it("sends the same write again when it is false", async () => {
         const { page, answers } = await mountWaiting(
-            `<div nm-scope><button id="b" nm-on-click="$post('/cart/add', { id: 1 }, { dedupe: false })"></button></div>`,
+            `<div n-scope><button id="b" n-on-click="$post('/cart/add', { id: 1 }, { dedupe: false })"></button></div>`,
         );
         page.$("#b").click();
         page.$("#b").click();
@@ -637,7 +637,7 @@ describe("dedupe", () => {
 
     it("takes options as the fourth argument of $fetch", async () => {
         const { page, answers } = await mountWaiting(
-            `<div nm-scope><button id="b" nm-on-click="$fetch('/x', 'PUT', { a: 1 }, { dedupe: false })"></button></div>`,
+            `<div n-scope><button id="b" n-on-click="$fetch('/x', 'PUT', { a: 1 }, { dedupe: false })"></button></div>`,
         );
         page.$("#b").click();
         page.$("#b").click();
@@ -655,8 +655,8 @@ describe("timeout", () => {
 
     it("aborts a request that takes too long, sends fetcherr, and lets the write be sent again", async () => {
         const { page, answers } = await mountWaiting(
-            `<div nm-scope="{ _errs: [] }" nm-on-fetcherr="_errs = [..._errs, e.detail.err.name]">
-                <button id="b" nm-on-click="$post('/order', { a: 1 }, { timeout: 20 })"></button>
+            `<div n-scope="{ _errs: [] }" n-on-fetcherr="_errs = [..._errs, e.detail.err.name]">
+                <button id="b" n-on-click="$post('/order', { a: 1 }, { timeout: 20 })"></button>
             </div>`,
         );
         page.$("#b").click();
@@ -672,7 +672,7 @@ describe("timeout", () => {
 
     it("leaves a request that answers in time alone", async () => {
         const page = await mount(
-            `<div nm-scope="{ _err: null }" nm-on-fetcherr="_err = e.detail"><button id="b" nm-on-click="$get('/x', null, { timeout: 1000 })"></button></div>
+            `<div n-scope="{ _err: null }" n-on-fetcherr="_err = e.detail"><button id="b" n-on-click="$get('/x', null, { timeout: 1000 })"></button></div>
             <div id="target">old</div>`,
             { server: () => `<div id="target">new</div>` },
         );
@@ -684,8 +684,8 @@ describe("timeout", () => {
 
     it("sets no timeout for Infinity or a negative value", async () => {
         const page = await mount(
-            `<div nm-scope="{ _errs: [] }" nm-on-fetcherr="_errs = [..._errs, e.detail.err.name]">
-                <button id="b" nm-on-click="$get('/a', null, { timeout: Infinity }); $post('/b', null, { timeout: -1 })"></button>
+            `<div n-scope="{ _errs: [] }" n-on-fetcherr="_errs = [..._errs, e.detail.err.name]">
+                <button id="b" n-on-click="$get('/a', null, { timeout: Infinity }); $post('/b', null, { timeout: -1 })"></button>
             </div>`,
             { server: () => later(20).then(() => "") },
         );
@@ -703,10 +703,10 @@ describe("$abort", () => {
 
     it("aborts every request of the scope, reads and writes, with no fetcherr", async () => {
         const { page, answers } = await mountWaiting(
-            `<div nm-scope="{ _err: null }" nm-on-fetcherr="_err = e.detail">
-                <button id="r" nm-on-click="$get('/read')"></button>
-                <button id="w" nm-on-click="$post('/write')"></button>
-                <button id="stop" nm-on-click="$abort()"></button>
+            `<div n-scope="{ _err: null }" n-on-fetcherr="_err = e.detail">
+                <button id="r" n-on-click="$get('/read')"></button>
+                <button id="w" n-on-click="$post('/write')"></button>
+                <button id="stop" n-on-click="$abort()"></button>
             </div>
             <div id="target">old</div>`,
         );
@@ -725,10 +725,10 @@ describe("$abort", () => {
 
     it("runs abortable debounces scheduled after $abort", async () => {
         const { page, answers } = await mountWaiting(
-            `<div nm-scope="{ got: 0 }">
-                <button id="r" nm-on-click="$get('/read')"></button>
-                <button id="stop" nm-on-click="$abort()"></button>
-                <input id="i" nm-on-input="$debounce(() => got++, 10, true)">
+            `<div n-scope="{ got: 0 }">
+                <button id="r" n-on-click="$get('/read')"></button>
+                <button id="stop" n-on-click="$abort()"></button>
+                <input id="i" n-on-input="$debounce(() => got++, 10, true)">
             </div>`,
         );
         page.$("#r").click();
@@ -742,9 +742,9 @@ describe("$abort", () => {
 
     it("drops the abortable debounces waiting when $abort is called", async () => {
         const page = await mount(`
-            <div nm-scope="{ got: 0 }">
-                <input id="i" nm-on-input="$debounce(() => got++, 10, true)">
-                <button id="stop" nm-on-click="$abort()"></button>
+            <div n-scope="{ got: 0 }">
+                <input id="i" n-on-input="$debounce(() => got++, 10, true)">
+                <button id="stop" n-on-click="$abort()"></button>
             </div>
         `);
         page.$("#i").dispatchEvent(new page.window.Event("input"));
@@ -755,9 +755,9 @@ describe("$abort", () => {
 
     it("runs abortable debounces scheduled after a read timed out", async () => {
         const { page, answers } = await mountWaiting(
-            `<div nm-scope="{ got: 0 }">
-                <button id="r" nm-on-click="$get('/read', null, { timeout: 10 })"></button>
-                <input id="i" nm-on-input="$debounce(() => got++, 10, true)">
+            `<div n-scope="{ got: 0 }">
+                <button id="r" n-on-click="$get('/read', null, { timeout: 10 })"></button>
+                <input id="i" n-on-input="$debounce(() => got++, 10, true)">
             </div>`,
         );
         page.$("#r").click();
@@ -772,16 +772,16 @@ describe("$abort", () => {
 
 describe("$fetching", () => {
     const button = (call, scope = "{}") => `
-        <div id="d" nm-scope="${scope}"><button id="b" nm-on-click="${call}"></button></div>
+        <div id="d" n-scope="${scope}"><button id="b" n-on-click="${call}"></button></div>
         <div id="target">old</div>
     `;
 
     const mountWrites = (answers) =>
         mount(
-            `<div nm-scope="{}">
-                <button id="order" nm-on-click="$post('/order')"></button>
-                <button id="del" nm-on-click="$fetch('/item', 'DELETE')"></button>
-                <button id="search" nm-on-click="$get('/search')"></button>
+            `<div n-scope="{}">
+                <button id="order" n-on-click="$post('/order')"></button>
+                <button id="del" n-on-click="$fetch('/item', 'DELETE')"></button>
+                <button id="search" n-on-click="$get('/search')"></button>
             </div>
             <div id="done">old</div><div id="results">old</div>`,
             {
@@ -808,9 +808,9 @@ describe("$fetching", () => {
     it("is true while a request is out, and can be bound", async () => {
         let answer;
         const page = await mount(
-            `<div nm-scope>
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <span id="s" nm-bind-hidden="!$fetching"></span>
+            `<div n-scope>
+                <button id="b" n-on-click="$get('/x')"></button>
+                <span id="s" n-bind-hidden="!$fetching"></span>
             </div>`,
             { server: () => new Promise((resolve) => (answer = resolve)) },
         );
@@ -838,8 +838,8 @@ describe("$fetching", () => {
 
     it("is still fetching until what it answered is swapped in", async () => {
         const page = await mount(
-            `<div nm-scope="{ seen: [] }">
-                <button id="b" nm-on-click="$get('/x')" nm-on-init="$watch(() => $fetching || seen.push(document.getElementById('target').textContent))"></button>
+            `<div n-scope="{ seen: [] }">
+                <button id="b" n-on-click="$get('/x')" n-on-init="$watch(() => $fetching || seen.push(document.getElementById('target').textContent))"></button>
             </div>
             <div id="target">old</div>`,
             { server: () => `<div id="target">new</div>` },
@@ -858,8 +858,8 @@ describe("elements outside any scope", () => {
 
     it("share one state for requests", async () => {
         const { page, answers } = await mountWaiting(`
-            <button id="a" nm-on-click="$post('/order')"></button>
-            <button id="b" nm-on-click="$post('/order')"></button>
+            <button id="a" n-on-click="$post('/order')"></button>
+            <button id="b" n-on-click="$post('/order')"></button>
         `);
         page.$("#a").click();
         page.$("#b").click();
@@ -871,7 +871,7 @@ describe("elements outside any scope", () => {
     it("does not let reads of elements outside any scope abort each other", async () => {
         const signals = [];
         const page = await mount(
-            `<button id="a" nm-on-click="$get('/a')"></button><button id="b" nm-on-click="$get('/b')"></button>`,
+            `<button id="a" n-on-click="$get('/a')"></button><button id="b" n-on-click="$get('/b')"></button>`,
             { server: () => "" },
         );
         const fetch = page.window.fetch;
@@ -889,7 +889,7 @@ describe("elements outside any scope", () => {
 describe("options", () => {
     it("takes null options as none", async () => {
         const page = await mount(
-            `<div nm-scope><button id="b" nm-on-click="$post('/x', { a: 1 }, null)"></button></div>`,
+            `<div n-scope><button id="b" n-on-click="$post('/x', { a: 1 }, null)"></button></div>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -902,8 +902,8 @@ describe("options", () => {
 describe("tracking", () => {
     it("does not rerun a watcher that read the abort signal when it makes a request", async () => {
         const page = await mount(
-            `<div nm-scope="{ q: 'a' }">
-                <span nm-on-init="$watch(() => { q; $debounce(() => 0, 10); $get('/s') })"></span>
+            `<div n-scope="{ q: 'a' }">
+                <span n-on-init="$watch(() => { q; $debounce(() => 0, 10); $get('/s') })"></span>
             </div>`,
             { server: () => "" },
         );
@@ -914,8 +914,8 @@ describe("tracking", () => {
 
     it("does not rerun a watcher that debounces a request when the request is made", async () => {
         const page = await mount(
-            `<div nm-scope="{ q: 'a' }">
-                <span nm-on-init="$watch(() => { q; $debounce(() => $get('/s'), 10) })"></span>
+            `<div n-scope="{ q: 'a' }">
+                <span n-on-init="$watch(() => { q; $debounce(() => $get('/s'), 10) })"></span>
             </div>`,
             { server: () => "" },
         );
@@ -927,8 +927,8 @@ describe("tracking", () => {
 
     it("does not track what a request reads into the watcher that made it", async () => {
         const page = await mount(
-            `<div nm-scope="{ q: 'a' }">
-                <span nm-on-init="$watch(() => $get('/s', { q }))"></span>
+            `<div n-scope="{ q: 'a' }">
+                <span n-on-init="$watch(() => $get('/s', { q }))"></span>
             </div>`,
             { server: () => "" },
         );
@@ -942,13 +942,13 @@ describe("tracking", () => {
 describe("after an await", () => {
     it("sends fetcherr from the scope's element for a request made after an await", async () => {
         const page = await mount(
-            `<div id="d" nm-scope="{ _err: null }" nm-on-fetcherr="_err = e.detail.err">
-                <button id="b" nm-on-click="await 0; $get('/x')"></button>
+            `<div id="d" n-scope="{ _err: null }" n-on-fetcherr="_err = e.detail.err">
+                <button id="b" n-on-click="await 0; $get('/x')"></button>
             </div>`,
             { server: () => ({ status: 500, body: "no" }) },
         );
         page.$("#b").click();
         await page.settle();
-        expect(page.$("#d").nmProxy._err).not.toBeNull();
+        expect(page.$("#d").nagiProxy._err).not.toBeNull();
     });
 });

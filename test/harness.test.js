@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
 describe("settle()", () => {
-    const asking = `<div nm-scope="{}"><button id="b" nm-on-click="$get('/y')"></button></div>`;
+    const asking = `<div n-scope="{}"><button id="b" n-on-click="$get('/y')"></button></div>`;
 
     const swap = async (answer, html = `<div id="target" class="t"><span>old</span></div>`) => {
         const page = await mount(button(`$get('/x')`) .replace(`<div id="target">old</div>`, html), {
@@ -14,7 +14,7 @@ describe("settle()", () => {
     };
 
     const button = (call, scope = "{}") => `
-        <div id="d" nm-scope="${scope}"><button id="b" nm-on-click="${call}"></button></div>
+        <div id="d" n-scope="${scope}"><button id="b" n-on-click="${call}"></button></div>
         <div id="target">old</div>
     `;
 

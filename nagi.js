@@ -1,6 +1,8 @@
-// Nomini v0.3.1
+// Nagi v0.1.0
+// Forked from Nomini (https://github.com/nonnorm/nomini)
 // Inspired by aidenybai/dababy
 // Copyright (c) 2025 nonnorm
+// Copyright (c) 2026 Akira Tempaku
 // Licensed under the MIT License.
 
 (() => {
@@ -24,7 +26,7 @@
         try {
             return new Function("__data", `with(__data) {return (${expression}\n)}`).call(thisArg, data);
         } catch (err) {
-            console.error("[Nomini] failed to evaluate:", expression, "\n", err);
+            console.error("[Nagi] failed to evaluate:", expression, "\n", err);
             return failed;
         }
     };
@@ -32,13 +34,13 @@
     const queryAttr = (el, selector) => {
         const elMatch = el.matches(selector) ? [el] : [];
         return [...elMatch, ...el.querySelectorAll(selector)].filter(
-            (val) => !val.closest("[nm-ignore]"),
+            (val) => !val.closest("[n-ignore]"),
         );
     };
 
     const pageWriting = new Set();
     const getClosestProxy = (el) => {
-        for (; el; el = el.parentElement) if (el.nmProxy) return el.nmProxy;
+        for (; el; el = el.parentElement) if (el.nagiProxy) return el.nagiProxy;
         return helpers(0, pageWriting);
     };
 
@@ -63,7 +65,7 @@
 
     const kill = (run) => {
         run.gone = true;
-        run.owner?.nmRuns.delete(run);
+        run.owner?.nagiRuns.delete(run);
         unlink(run);
     };
 
@@ -81,11 +83,11 @@
                     try {
                         runWithEl(el, fn, run);
                     } catch (err) {
-                        console.error("[Nomini] failed to run:", fn, "\n", err);
+                        console.error("[Nagi] failed to run:", fn, "\n", err);
                     }
                 }
                 if (run.gone) unlink(run);
-                else if (run.dirty) console.error("[Nomini] stopped running after 100 times:", fn);
+                else if (run.dirty) console.error("[Nagi] stopped running after 100 times:", fn);
             } finally {
                 run.active = false;
             }
@@ -93,7 +95,7 @@
         run.owner = owner;
         run.deps = new Set();
         run.children = [];
-        owner && (owner.nmRuns ||= new Set()).add(run);
+        owner && (owner.nagiRuns ||= new Set()).add(run);
         run.key = currentBind ? `${currentBind.key}.${currentBind.children.length}` : `run${++runCount}`;
         currentBind?.children.push(run);
         run();
@@ -112,7 +114,7 @@
         // --- END ref
         // --- BEGIN fetch
         $fetching: false,
-        _nmAbort: new AbortController(),
+        _nagiAbort: new AbortController(),
         $get(url, data, options) {
             this.$fetch(url, "GET", data, options);
         },
@@ -121,12 +123,12 @@
         },
         $abort() {
             controllers.forEach((controller) => controller.abort());
-            this._nmAbort.abort();
-            this._nmAbort = new AbortController();
+            this._nagiAbort.abort();
+            this._nagiAbort = new AbortController();
         },
         $fetch(url, method, data, options) {
             options ??= {};
-            const el = currentEl ?? this._nmEl;
+            const el = currentEl ?? this._nagiEl;
             const controller = new AbortController();
             const { signal } = controller;
             method = (method || "GET").toUpperCase();
@@ -151,7 +153,7 @@
                         body = new FormData(form, submitter || undefined);
                         if (button?.name && button !== submitter && button.form === form) body.append(button.name, button.value);
                     } else {
-                        console.warn("[Nomini] no form to send for:", data);
+                        console.warn("[Nagi] no form to send for:", data);
                         body = new URLSearchParams();
                     }
                 } else {
@@ -162,7 +164,7 @@
                             .filter((item) => item != null)
                             .filter((item) => {
                                 if (item !== Object(item) || isBlob(item) || !String(item).startsWith("[object ")) return true;
-                                console.warn("[Nomini] cannot send:", key, item);
+                                console.warn("[Nagi] cannot send:", key, item);
                             })
                             .map((item) => [key, isBlob(item) ? item : String(item)]),
                     );
@@ -171,10 +173,10 @@
                 }
 
                 const entries = [...body];
-                const opts = { headers: { "nm-request": true }, method, signal };
+                const opts = { headers: { "n-request": true }, method, signal };
                 const reads = /^(GET|HEAD|DELETE)$/.test(method);
                 if (reads && entries.some(([, value]) => typeof value !== "string"))
-                    console.warn("[Nomini] files are not sent with", method, url);
+                    console.warn("[Nagi] files are not sent with", method, url);
                 const query = String(new URLSearchParams(entries.filter(([, value]) => typeof value === "string")));
 
                 if (!/^(GET|HEAD|DELETE)$/.test(method)) opts.body = body;
@@ -192,13 +194,13 @@
                 write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sent) : ""}`;
                 if (options.dedupe !== false && writing.has(write)) return;
 
-                this._nmAbort.abort();
+                this._nagiAbort.abort();
                 return opts;
             });
 
             if (!opts) return report("fetchskip", { method, url });
 
-            this._nmAbort = reading ? controller : new AbortController();
+            this._nagiAbort = reading ? controller : new AbortController();
             const deduped = write && options.dedupe !== false;
             if (deduped) writing.add(write);
             controllers.add(controller);
@@ -207,14 +209,14 @@
             const timer = Number.isFinite(timeout) && timeout > 0 && setTimeout(() => {
                 timedOut = true;
                 controller.abort();
-                if (this._nmAbort === controller) this._nmAbort = new AbortController();
+                if (this._nagiAbort === controller) this._nagiAbort = new AbortController();
             }, Math.min(timeout, 2147483647));
             pending++;
             this.$fetching = true;
 
             fetch(url, opts)
                 .then(async (res) => {
-                    const redirect = res.headers.get("nm-redirect");
+                    const redirect = res.headers.get("n-redirect");
                     if (redirect) {
                         res.body?.cancel();
                         if (!signal.aborted && report("fetchredirect", { url: redirect }, true)) location.assign(redirect);
@@ -239,12 +241,12 @@
                         swapped = [...template.content.children].some((child) => child.id && document.getElementById(child.id));
                     }
 
-                    const replace = res.headers.get("nm-replace-url");
+                    const replace = res.headers.get("n-replace-url");
                     if (replace) {
                         try {
                             history.replaceState(history.state, "", replace);
                         } catch (err) {
-                            console.warn("[Nomini] cannot replace the URL with", replace, err);
+                            console.warn("[Nagi] cannot replace the URL with", replace, err);
                         }
                     }
                     if (swapped) swap(buf);
@@ -266,11 +268,11 @@
         // --- END fetch
         $dataset() {
             let datasets = {};
-            let el = currentEl ?? this._nmEl;
+            let el = currentEl ?? this._nagiEl;
 
             while (el?.nodeType === 1) {
                 datasets = { ...el.dataset, ...datasets };
-                if (el.nmProxy) break;
+                if (el.nagiProxy) break;
                 el = el.parentElement;
             }
 
@@ -280,13 +282,13 @@
             watch(fn);
         },
         $dispatch(evt, detail, opts) {
-            dispatch(currentEl ?? this._nmEl ?? document, evt, { detail, ...opts });
+            dispatch(currentEl ?? this._nagiEl ?? document, evt, { detail, ...opts });
         },
         $debounce(fn, ms, abortable = false) {
-            const el = currentEl ?? this._nmEl;
-            const signal = abortable && runWithEl(el, () => this._nmAbort?.signal);
-            const timers = ((el ?? document).nmTimers ||= new Map());
-            const key = currentHandler ?? currentBind?.key ?? fn.nmSource ?? String(fn);
+            const el = currentEl ?? this._nagiEl;
+            const signal = abortable && runWithEl(el, () => this._nagiAbort?.signal);
+            const timers = ((el ?? document).nagiTimers ||= new Map());
+            const key = currentHandler ?? currentBind?.key ?? fn.nagiSource ?? String(fn);
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);
@@ -295,7 +297,7 @@
         },
         // --- BEGIN helpers
         $persist(prop, key) {
-            key = key || `_nmProp-${prop}`;
+            key = key || `_nagiProp-${prop}`;
 
             const stored = localStorage[key];
             if (stored) this[prop] = JSON.parse(stored);
@@ -316,20 +318,20 @@
     };
 
     const drop = (el) => {
-        queryAttr(el, "*").forEach((node) => node.nmBound && dispatch(node, "destroy", { bubbles: false }));
+        queryAttr(el, "*").forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
         // --- BEGIN ref
-        queryAttr(el, "[nm-ref]").forEach((node) => {
+        queryAttr(el, "[n-ref]").forEach((node) => {
             const refs = getClosestProxy(node).$refs;
-            const name = node.getAttribute("nm-ref");
+            const name = node.getAttribute("n-ref");
             if (refs[name] === node) delete refs[name];
         });
         // --- END ref
         [el, ...el.querySelectorAll("*")].forEach((node) => {
-            node.nmProxy?._nmAbort.abort();
-            node.nmRuns?.forEach(kill);
-            node.nmCleanup?.forEach((clean) => clean());
-            node.nmTimers?.forEach(clearTimeout);
-            node.nmTimers?.clear();
+            node.nagiProxy?._nagiAbort.abort();
+            node.nagiRuns?.forEach(kill);
+            node.nagiCleanup?.forEach((clean) => clean());
+            node.nagiTimers?.forEach(clearTimeout);
+            node.nagiTimers?.clear();
         });
     };
 
@@ -341,20 +343,20 @@
 
         for (const fragment of [...template.content.children]) {
             if (!fragment.id) {
-                console.warn("[Nomini] Fragment is missing an id: ", fragment);
+                console.warn("[Nagi] Fragment is missing an id: ", fragment);
                 continue;
             }
 
-            const strategy = fragment.getAttribute("nm-swap") || "outer";
+            const strategy = fragment.getAttribute("n-swap") || "outer";
             const target = document.getElementById(fragment.id);
 
             if (!target) {
-                console.warn("[Nomini] Swap target not found: #", fragment.id);
+                console.warn("[Nagi] Swap target not found: #", fragment.id);
                 continue;
             }
 
             if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) {
-                console.error("[Nomini] Invalid swap strategy: ", strategy);
+                console.error("[Nagi] Invalid swap strategy: ", strategy);
                 continue;
             }
 
@@ -368,7 +370,7 @@
                 [...target.children].forEach(drop);
                 target.replaceChildren(...kids);
                 // --- BEGIN template
-                if (target.hasAttribute("nm-use")) use(target);
+                if (target.hasAttribute("n-use")) use(target);
                 // --- END template
                 initAll([...target.childNodes]);
             } else if (strategy === "outer") {
@@ -407,7 +409,7 @@
                 apply(oldValues);
                 requestAnimationFrame(() => {
                     apply(settled);
-                    newEl.nmRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
+                    newEl.nagiRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
                 });
             });
     };
@@ -415,38 +417,38 @@
 
     // --- BEGIN template
     const use = (useEl) => {
-        const id = useEl.getAttribute("nm-use");
+        const id = useEl.getAttribute("n-use");
         const template = document.getElementById(id);
         if (template) {
             const templateFrag = template.content.cloneNode(true);
             const slot = templateFrag.querySelector("slot:not([name])");
             if (slot) slot.replaceWith(...useEl.childNodes);
             useEl.replaceChildren(templateFrag);
-        } else console.error("[Nomini] No template with id: #", id);
+        } else console.error("[Nagi] No template with id: #", id);
     };
     // --- END template
 
     const init = (baseEl) => {
         // --- BEGIN template
-        queryAttr(baseEl, "[nm-use]").forEach(use);
+        queryAttr(baseEl, "[n-use]").forEach(use);
         // --- END template
 
 
         // --- BEGIN data
         const reserved = (key, el) => {
-            if (!/^(\$|_nm|__proto__$)/i.test(key)) return false;
-            console.error("[Nomini] this name is nomini's own:", key, el);
+            if (!/^(\$|_nagi|__proto__$)/i.test(key)) return false;
+            console.error("[Nagi] this name is Nagi's own:", key, el);
             return true;
         };
 
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
-            acceptNode: (node) => (node.hasAttribute("nm-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+            acceptNode: (node) => (node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
         });
         const define = (obj, key, value) =>
             Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
 
         const baseOf = (dataEl) => {
-            const base = dataEl.getAttribute("nm-scope")?.trim();
+            const base = dataEl.getAttribute("n-scope")?.trim();
             const made = base ? evaluate(base, {}, dataEl) : {};
             try {
                 const builtIn = (obj) => {
@@ -462,32 +464,30 @@
                     });
                     return Object.create(Object.getPrototypeOf(made), descriptors);
                 }
-                if (made !== failed) console.error("[Nomini] nm-scope must give an object:", base, dataEl);
+                if (made !== failed) console.error("[Nagi] n-scope must give an object:", base, dataEl);
             } catch (err) {
-                console.error("[Nomini] failed to read the object of nm-scope:", base, dataEl, "\n", err);
+                console.error("[Nagi] failed to read the object of n-scope:", base, dataEl, "\n", err);
             }
             return {};
         };
 
         const makeScope = (dataEl) => {
-            if (dataEl.nmProxy) return;
+            if (dataEl.nagiProxy) return;
             const attrs = [...dataEl.attributes];
-            if (dataEl.hasAttribute("nm-data"))
-                console.error("[Nomini] nm-data is no longer read, use nm-scope:", dataEl);
-            if (!attrs.some(({ name }) => /^nm-(scope$|let-)/.test(name))) return;
+            if (!attrs.some(({ name }) => /^n-(scope$|let-)/.test(name))) return;
 
             const rawData = baseOf(dataEl);
-            Object.entries({ ...helpers(), _nmEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
+            Object.entries({ ...helpers(), _nagiEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
             Object.entries(dataEl.dataset).forEach(([key, value]) => reserved(key, dataEl) || define(rawData, key, value));
 
             const trackedDeps = new Map();
 
             let outer = null;
-            for (let node = dataEl.parentElement; node && !outer; node = node.parentElement) outer = node.nmProxy ?? null;
+            for (let node = dataEl.parentElement; node && !outer; node = node.parentElement) outer = node.nagiProxy ?? null;
             const fromOuter = (obj, prop) => !(prop in obj) && !!outer && prop in outer;
             const bound = new WeakMap();
             const bindToOuter = (fn) => {
-                if (!bound.has(fn)) bound.set(fn, Object.assign(fn.bind(outer), { nmSource: fn.nmSource ?? String(fn) }));
+                if (!bound.has(fn)) bound.set(fn, Object.assign(fn.bind(outer), { nagiSource: fn.nagiSource ?? String(fn) }));
                 return bound.get(fn);
             };
 
@@ -522,11 +522,11 @@
                 },
             });
 
-            dataEl.nmProxy = proxyData;
-            dataEl.nmRaw = rawData;
+            dataEl.nagiProxy = proxyData;
+            dataEl.nagiRaw = rawData;
 
             attrs.forEach(({ name, value }) => {
-                const key = name.match(/^nm-let-(.+)$/)?.[1];
+                const key = name.match(/^n-let-(.+)$/)?.[1];
                 if (!key || reserved(key, dataEl)) return;
                 const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, dataEl)) : undefined;
                 if (result === failed) return;
@@ -535,7 +535,7 @@
         };
 
         const seen = new Set();
-        let dataEl = baseEl.closest("[nm-ignore]") ? null : baseEl;
+        let dataEl = baseEl.closest("[n-ignore]") ? null : baseEl;
         while (dataEl) {
             const parent = dataEl.parentElement;
             const before = dataEl.previousElementSibling;
@@ -549,9 +549,9 @@
         // --- END data
 
         // --- BEGIN ref
-        queryAttr(baseEl, "[nm-ref]").forEach((el) => {
+        queryAttr(baseEl, "[n-ref]").forEach((el) => {
             const proxyData = getClosestProxy(el);
-            const refName = el.getAttribute("nm-ref");
+            const refName = el.getAttribute("n-ref");
 
             proxyData.$refs[refName] = el;
         });
@@ -559,7 +559,7 @@
 
         // --- BEGIN form
         const formProxy = (el) => {
-            const form = el.closest("[nm-form]");
+            const form = el.closest("[n-form]");
             return form && getClosestProxy(form);
         };
 
@@ -567,10 +567,10 @@
             const proxyData = formProxy(inputEl);
             if (!proxyData) return;
 
-            let scopeEl = inputEl.closest("[nm-form]");
-            while (scopeEl && !scopeEl.nmRaw) scopeEl = scopeEl.parentElement;
-            if (scopeEl && !(inputEl.name in scopeEl.nmRaw))
-                Object.defineProperty(scopeEl.nmRaw, inputEl.name, { writable: true, enumerable: true, configurable: true });
+            let scopeEl = inputEl.closest("[n-form]");
+            while (scopeEl && !scopeEl.nagiRaw) scopeEl = scopeEl.parentElement;
+            if (scopeEl && !(inputEl.name in scopeEl.nagiRaw))
+                Object.defineProperty(scopeEl.nagiRaw, inputEl.name, { writable: true, enumerable: true, configurable: true });
 
             const inputType = inputEl.type;
 
@@ -608,10 +608,6 @@
         // --- END form
 
         // --- BEGIN bind
-        queryAttr(baseEl, "[nm-bind]").forEach((el) =>
-            console.error("[Nomini] nm-bind is no longer read, use nm-bind-* and nm-on-*:", el),
-        );
-
         const propOf = (obj, name) => {
             for (let o = obj; o; o = Object.getPrototypeOf(o))
                 for (const key of Object.getOwnPropertyNames(o))
@@ -627,12 +623,12 @@
         };
 
         queryAttr(baseEl, "*").forEach((bindEl) => {
-            if (bindEl.nmBound) return;
+            if (bindEl.nagiBound) return;
             const entries = [...bindEl.attributes].flatMap(({ name, value }) => {
-                const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
+                const [, kind, rest] = name.match(/^n-(bind|on)-(.+)$/) || [];
                 if (kind === "on") {
                     if (/^\s*(async\s+)?(\([^)]*\)|[\w$]+)\s*=>/.test(value))
-                        console.warn("[Nomini] nm-on-* runs statements, and this only makes a function:", name, bindEl);
+                        console.warn("[Nagi] n-on-* runs statements, and this only makes a function:", name, bindEl);
                     return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
                 }
                 if (!kind) return [];
@@ -641,15 +637,15 @@
                 const main = first === "class" ? first : propOf(bindEl, first);
                 const inner = !sub || /^(class|style|dataset)$/.test(main) ? sub : propOf(bindEl[main], sub);
                 if (!main || inner === undefined) {
-                    console.error("[Nomini] no such property:", name, bindEl);
+                    console.error("[Nagi] no such property:", name, bindEl);
                     return [];
                 }
                 const keyed = sub && /^(class|style|dataset)$/.test(main);
                 const camelSub = sub.replace(/-(\w)/g, (_, c) => c.toUpperCase());
                 if (main === "style" && sub && !sub.startsWith("--") && !(sub in bindEl.style) && !(camelSub in bindEl.style))
-                    console.warn("[Nomini] the style has no such property:", name, bindEl);
+                    console.warn("[Nagi] the style has no such property:", name, bindEl);
                 if (!keyed && !(sub ? writable(bindEl[main], inner) : writable(bindEl, main))) {
-                    console.error("[Nomini] cannot write:", name, bindEl);
+                    console.error("[Nagi] cannot write:", name, bindEl);
                     return [];
                 }
                 const key = main + (sub ? "." + inner : "");
@@ -659,18 +655,18 @@
             });
 
             if (!entries.length) return;
-            bindEl.nmBound = true;
+            bindEl.nagiBound = true;
 
             const proxyData = getClosestProxy(bindEl);
             const props = Object.assign({}, ...entries.map((entry) => evaluate(`{${entry}}`, proxyData, bindEl)));
-            const handle = (val, e) => val(e)?.catch?.((err) => console.error("[Nomini] failed to run:", val, "\n", err));
+            const handle = (val, e) => val(e)?.catch?.((err) => console.error("[Nagi] failed to run:", val, "\n", err));
 
             Object.entries(props).forEach(([key, val]) => {
                 if (key.startsWith("@")) {
                     // --- BEGIN events
                     const [eventName, ...mods] = key.slice(1).split(".");
                     const unknown = mods.filter((mod) => !/^(prevent|stop|once|window|debounce\d+)$/.test(mod));
-                    if (unknown.length) console.warn("[Nomini] unknown modifiers:", unknown, bindEl);
+                    if (unknown.length) console.warn("[Nagi] unknown modifiers:", unknown, bindEl);
 
                     const debounceMod = mods.find((val) => val.startsWith("debounce"));
                     const delay = +debounceMod?.slice(8);
@@ -687,13 +683,13 @@
                     const listenOn = mods.includes("window") ? window : bindEl;
                     listenOn.addEventListener(eventName, listener, { once: mods.includes("once") });
                     if (listenOn === window)
-                        (bindEl.nmCleanup ||= []).push(() => window.removeEventListener(eventName, listener));
+                        (bindEl.nagiCleanup ||= []).push(() => window.removeEventListener(eventName, listener));
 
                     return;
                     // --- END events
 
                     // If special event handling isn't enabled just do a normal event listener
-                    if (key.includes(".")) console.warn("[Nomini] this build does not handle modifiers:", key.slice(1), bindEl);
+                    if (key.includes(".")) console.warn("[Nagi] this build does not handle modifiers:", key.slice(1), bindEl);
                     bindEl.addEventListener(key.slice(1).split(".")[0], (e) => runWithEl(bindEl, () => handle(val, e), null, val));
                 } else {
                     const [main, ...rest] = key.split(".");
@@ -732,7 +728,7 @@
                         if (typeof value?.then === "function")
                             value
                                 .then((resolved) => mine === latest && !run?.gone && write(resolved))
-                                .catch((err) => console.error("[Nomini] failed to run:", val, "\n", err));
+                                .catch((err) => console.error("[Nagi] failed to run:", val, "\n", err));
                         else write(value);
                     }, bindEl);
                     run.attr = /^class(name|list)$/i.test(main) ? "class" : main;

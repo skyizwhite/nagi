@@ -1,11 +1,11 @@
 #!/bin/sh
 
-# Nomini Devourer: removes code you don't need
-# Current available blocks to remove (as of v0.3.0):
+# Nagi Devourer: removes code you don't need
+# Current available blocks to remove:
 # data, bind, ref, fetch, morph, form, template, events, helpers
-# Ex: ./scripts/devour.sh template form > nomini-custom.js
+# Ex: ./scripts/devour.sh template form > nagi-custom.js
 
-file="nomini.js"
+file="nagi.js"
 sed_script=""
 
 for block in "$@"; do

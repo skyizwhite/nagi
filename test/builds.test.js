@@ -4,7 +4,7 @@ import { mount } from "./helpers.js";
 describe("builds without blocks", () => {
     it("debounces in the core build, which has no fetch block", async () => {
         const page = await mount(
-            `<div nm-scope="{ got: [] }"><input id="i" nm-on-input="$debounce(() => got = [...got, this.value], 30)"></div>`,
+            `<div n-scope="{ got: [] }"><input id="i" n-on-input="$debounce(() => got = [...got, this.value], 30)"></div>`,
             { without: ["template", "form", "fetch", "morph", "helpers", "events"] },
         );
         const input = page.$("#i");
@@ -17,8 +17,8 @@ describe("builds without blocks", () => {
 
     it("keeps a timer for each handler of an element in the core build", async () => {
         const page = await mount(
-            `<div nm-scope="{ got: [] }">
-                <input id="i" nm-on-input="$debounce(() => got.push('input'), 20)" nm-on-ping="$debounce(() => got.push('ping'), 20)">
+            `<div n-scope="{ got: [] }">
+                <input id="i" n-on-input="$debounce(() => got.push('input'), 20)" n-on-ping="$debounce(() => got.push('ping'), 20)">
             </div>`,
             { without: ["template", "form", "fetch", "morph", "helpers", "events"] },
         );
@@ -31,7 +31,7 @@ describe("builds without blocks", () => {
 
     it("passes the event to a handler in a build without the events block", async () => {
         const page = await mount(
-            `<div nm-scope="{ got: null }"><input id="i" nm-on-input="got = e.type"></div>`,
+            `<div n-scope="{ got: null }"><input id="i" n-on-input="got = e.type"></div>`,
             { without: ["events"] },
         );
         page.$("#i").dispatchEvent(new page.window.Event("input"));
@@ -40,7 +40,7 @@ describe("builds without blocks", () => {
 
     it("listens to a modified event by its name in a build without the events block", async () => {
         const page = await mount(
-            `<div nm-scope="{ got: 0 }"><button id="b" nm-on-click.prevent="got++"></button></div>`,
+            `<div n-scope="{ got: 0 }"><button id="b" n-on-click.prevent="got++"></button></div>`,
             { without: ["events"] },
         );
         page.$("#b").click();
@@ -48,7 +48,7 @@ describe("builds without blocks", () => {
     });
 
     it("warns that modifiers are not handled", async () => {
-        const page = await mount(`<div nm-scope><form nm-on-submit.prevent="0"></form></div>`, { without: ["events"] });
+        const page = await mount(`<div n-scope><form n-on-submit.prevent="0"></form></div>`, { without: ["events"] });
         expect(page.warnings).toHaveLength(1);
     });
 });
