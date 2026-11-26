@@ -29,12 +29,6 @@
         }
     };
 
-    const propOf = (obj, name) => {
-        for (let o = obj; o; o = Object.getPrototypeOf(o))
-            for (const key of Object.getOwnPropertyNames(o))
-                if (key.toLowerCase() === name) return key;
-    };
-
     const queryAttr = (el, selector) => {
         const elMatch = el.matches(selector) ? [el] : [];
         return [...elMatch, ...el.querySelectorAll(selector)].filter(
@@ -281,11 +275,12 @@
                 continue;
             }
 
-            // --- BEGIN morph
-            cssMorph(fragment);
-            // --- END morph
-
             const kids = [...fragment.childNodes];
+
+            // --- BEGIN morph
+            if (strategy === "outer") cssMorph(fragment);
+            else kids.forEach((kid) => kid.nodeType === 1 && cssMorph(kid));
+            // --- END morph
 
             if (strategy === "inner") {
                 [...target.children].forEach(drop);
@@ -318,8 +313,11 @@
             if (oldEl && oldEl.tagName === newEl.tagName) {
                 const newElCopy = newEl.cloneNode();
 
+                const settled = attributesToSettle.filter(
+                    (attr) => ![...newEl.attributes].some(({ name }) => name.startsWith("nm-bind-" + attr)),
+                );
                 const morph = (src) =>
-                    attributesToSettle.forEach((attr) => {
+                    settled.forEach((attr) => {
                         const attrVal = src.getAttribute(attr);
                         if (attrVal) newEl.setAttribute(attr, attrVal);
                         else newEl.removeAttribute(attr);
@@ -504,11 +502,29 @@
             console.error("[Nomini] nm-bind is no longer read, use nm-bind-* and nm-on-*:", el),
         );
 
+        const propOf = (obj, name) => {
+            for (let o = obj; o; o = Object.getPrototypeOf(o))
+                for (const key of Object.getOwnPropertyNames(o))
+                    if (key.toLowerCase() === name) return key;
+        };
+
+        const writable = (obj, key) => {
+            for (let o = obj; o; o = Object.getPrototypeOf(o)) {
+                const found = Object.getOwnPropertyDescriptor(o, key);
+                if (found) return !!(found.set || found.writable);
+            }
+            return true;
+        };
+
         queryAttr(baseEl, "*").forEach((bindEl) => {
             if (bindEl.nmBound) return;
             const entries = [...bindEl.attributes].flatMap(({ name, value }) => {
                 const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
-                if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
+                if (kind === "on") {
+                    if (/^\s*(async\s+)?(\([^)]*\)|[\w$]+)\s*=>/.test(value))
+                        console.warn("[Nomini] nm-on-* runs statements, and this only makes a function:", name, bindEl);
+                    return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
+                }
                 if (!kind) return [];
                 const [first, ...subs] = rest.split(".");
                 const sub = subs.join(".");
@@ -518,8 +534,14 @@
                     console.error("[Nomini] no such property:", name, bindEl);
                     return [];
                 }
+                const keyed = sub && /^(class|style|dataset)$/.test(main);
+                const unknownStyle = main === "style" && sub && !sub.startsWith("--") && !(sub in bindEl.style);
+                if (unknownStyle || (!keyed && !(sub ? writable(bindEl[main], inner) : writable(bindEl, main)))) {
+                    console.error("[Nomini] cannot write:", name, bindEl);
+                    return [];
+                }
                 const key = main + (sub ? "." + inner : "");
-                return `${JSON.stringify(key)}: () => (${value.trim() ? value : "undefined"}\n)`;
+                return `${JSON.stringify(key)}: () => { return ${value.trim()}\n}`;
             });
 
             if (!entries.length) return;
@@ -532,7 +554,11 @@
             Object.entries(props).forEach(([key, val]) => {
                 if (key.startsWith("@")) {
                     // --- BEGIN events
-                    const [eventName, ...mods] = key.slice(1).split(".");
+                    const parts = key.slice(1).split(".");
+                    const mods = [];
+                    while (parts.length > 1 && /^(prevent|stop|once|window|debounce\d+)$/.test(parts.at(-1)))
+                        mods.unshift(parts.pop());
+                    const eventName = parts.join(".");
 
                     const debounceMod = mods.find((val) => val.startsWith("debounce"));
                     const delay = +debounceMod?.slice(8);
@@ -555,7 +581,10 @@
                     // --- END events
 
                     // If special event handling isn't enabled just do a normal event listener
-                    bindEl.addEventListener(key.slice(1).split(".")[0], (e) => runWithEl(bindEl, () => handle(val, e), null, val));
+                    bindEl.addEventListener(
+                        key.slice(1).replace(/(\.(prevent|stop|once|window|debounce\d+))+$/, ""),
+                        (e) => runWithEl(bindEl, () => handle(val, e), null, val),
+                    );
                 } else {
                     const [main, ...rest] = key.split(".");
                     const sub = rest.join(".");
@@ -565,7 +594,7 @@
                             const v = resolvedVal;
                             const next = new Set(
                                 typeof v === "string" ? v.split(/\s+/).filter(Boolean)
-                                    : Array.isArray(v) ? v.filter(Boolean)
+                                    : Array.isArray(v) ? v.filter(Boolean).flatMap((item) => String(item).split(/\s+/)).filter(Boolean)
                                     : Object.keys(v ?? {}).filter((name) => v[name]),
                             );
                             const mine = new Set();
@@ -577,7 +606,7 @@
                             added = mine;
                         } else if (sub) {
                             const unset = resolvedVal == null || resolvedVal === false;
-                            if (main === "class") bindEl.classList.toggle(sub, resolvedVal);
+                            if (main === "class") bindEl.classList.toggle(sub, !!resolvedVal);
                             else if (main === "style")
                                 unset ? bindEl.style.removeProperty(sub) : bindEl.style.setProperty(sub, resolvedVal);
                             else if (main === "dataset")
