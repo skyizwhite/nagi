@@ -241,3 +241,43 @@ describe("nm-data, after the third review", () => {
         expect(page.errors).toHaveLength(1);
     });
 });
+
+describe("nm-data, after the fourth review", () => {
+    it("owns a $persist started from nm-fn-* by the scope's element", async () => {
+        const page = await mount(
+            `<div id="d" nm-data="{ n: 1 }">
+                <button id="b" nm-on-click="$get('/x')"></button>
+                <div id="target" nm-data-n="1" nm-fn-start="$persist('n')"></div>
+            </div>`,
+            { server: () => `<div id="target"></div>` },
+        );
+        const old = page.$("#target").nmProxy;
+        page.$("#b").click();
+        await page.settle();
+        old.n = 9;
+        expect(page.window.localStorage["_nmProp-n"]).toBe("1");
+    });
+
+    it("makes the scopes in what a factory adds, and none for what it takes away", async () => {
+        const page = await mount(
+            `<div nm-data="build(this)"><div id="gone" nm-fn-x="window.ran = true"></div></div>`,
+            {
+                beforeInit: (window) =>
+                    (window.build = (el) => {
+                        el.innerHTML = `<div nm-data-a="inner"><span id="s" nm-bind-textcontent="a"></span></div>`;
+                        return { a: "outer" };
+                    }),
+            },
+        );
+        expect(page.$("#s").textContent).toBe("inner");
+        expect(page.window.ran).toBeUndefined();
+    });
+
+    it("sets an nm-data-* over a getter of the factory's object", async () => {
+        const page = await mount(
+            `<div id="d" nm-data="new C()" nm-data-mode="b"></div>`,
+            { beforeInit: (window) => (window.C = class { get mode() { return "a"; } }) },
+        );
+        expect(page.$("#d").nmProxy.mode).toBe("b");
+    });
+});

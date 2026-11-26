@@ -339,17 +339,20 @@
         queryAttr(baseEl, "[nm-use]").forEach(use);
         // --- END template
 
-        const marked = queryAttr(baseEl, "*").filter((el) =>
-            [...el.attributes].some(({ name }) => name.startsWith("nm-")),
-        );
 
         // --- BEGIN data
         const reserved = (key, el) =>
             /^(\$|_nm|__proto__$)/i.test(key) && console.error("[Nomini] this name is nomini's own:", key, el);
 
-        marked.forEach((dataEl) => {
+        const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
+            acceptNode: (node) => (node.hasAttribute("nm-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+        });
+        const define = (obj, key, value) =>
+            Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
+
+        for (let dataEl = baseEl.closest("[nm-ignore]") ? null : baseEl; dataEl; dataEl = walker.nextNode()) {
             const attrs = [...dataEl.attributes];
-            if (!attrs.some(({ name }) => /^nm-(data$|data-|fn-)/.test(name))) return;
+            if (!attrs.some(({ name }) => /^nm-(data$|data-|fn-)/.test(name))) continue;
 
             const base = dataEl.getAttribute("nm-data")?.trim();
             const made = base ? evaluate(base, {}, dataEl) : {};
@@ -373,9 +376,9 @@
                 const key = name.match(/^nm-data-(.+)$/)?.[1];
                 if (!key || reserved(key, dataEl)) return;
                 try {
-                    rawData[key] = JSON.parse(value, keep);
+                    define(rawData, key, JSON.parse(value, keep));
                 } catch {
-                    rawData[key] = value;
+                    define(rawData, key, value);
                 }
             });
 
@@ -409,10 +412,10 @@
             attrs.forEach(({ name, value }) => {
                 const key = name.match(/^nm-fn-(.+)$/)?.[1];
                 if (!key || reserved(key, dataEl)) return;
-                const result = evaluate(value, proxyData, dataEl);
-                if (result !== failed) rawData[key] = result;
+                const result = runWithEl(dataEl, () => evaluate(value, proxyData, dataEl));
+                if (result !== failed) define(rawData, key, result);
             });
-        });
+        }
         // --- END data
 
         // --- BEGIN ref
