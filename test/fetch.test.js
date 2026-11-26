@@ -604,7 +604,7 @@ describe("reads and writes", () => {
         expect(page.$("#done").textContent).toBe("deleted");
     });
 
-    it("sends no second write while one is out, and sends one after it", async () => {
+    it("sends no second write like the one out, and sends one after it", async () => {
         const answers = {};
         const page = await mountWrites(answers);
         page.$("#order").click();
@@ -617,6 +617,84 @@ describe("reads and writes", () => {
         expect(page.requests.filter((r) => r.method === "POST")).toHaveLength(2);
         answers["/order"]("");
         await page.settle();
+    });
+
+    it("sends a different write while one is out", async () => {
+        const answers = {};
+        const page = await mountWrites(answers);
+        page.$("#order").click();
+        page.$("#del").click();
+        expect(page.requests.map((r) => r.method)).toEqual(["POST", "DELETE"]);
+        answers["/order"]("");
+        answers["/item"]("");
+        await page.settle();
+    });
+
+    it("sends a write with other data while one is out", async () => {
+        let answer;
+        const page = await mount(
+            `<div nm-data="{}">
+                <button id="a" nm-bind="{ onclick: () => $post('/save', { v: 1 }) }"></button>
+                <button id="b" nm-bind="{ onclick: () => $post('/save', { v: 2 }) }"></button>
+            </div>`,
+            { server: () => new Promise((resolve) => (answer = resolve)) },
+        );
+        page.$("#a").click();
+        page.$("#b").click();
+        expect(page.requests.map((r) => r.body)).toEqual(["v=1", "v=2"]);
+    });
+
+    it("sends fetchskip from the element for a write it did not send", async () => {
+        const answers = {};
+        const page = await mount(
+            `<div nm-data="{ _skipped: [] }" nm-bind="{ onfetchskip: (e) => _skipped = [..._skipped, e.detail] }">
+                <button id="order" nm-bind="{ onclick: () => $post('/order') }"></button>
+            </div>`,
+            { server: () => new Promise((resolve) => (answers.order = resolve)) },
+        );
+        page.$("#order").click();
+        page.$("#order").click();
+        expect(page.scope("#order")._skipped).toEqual([{ method: "POST", url: "/order" }]);
+    });
+
+    it("takes OPTIONS as a read, aborted by a newer request", async () => {
+        const signals = [];
+        const page = await mount(
+            `<div nm-data="{}">
+                <button id="o" nm-bind="{ onclick: () => $fetch('/x', 'OPTIONS') }"></button>
+                <button id="g" nm-bind="{ onclick: () => $get('/y') }"></button>
+            </div>`,
+            { server: () => "" },
+        );
+        const fetch = page.window.fetch;
+        page.window.fetch = (url, opts) => {
+            signals.push(opts.signal);
+            return fetch(url, opts);
+        };
+        page.$("#o").click();
+        page.$("#g").click();
+        expect(signals[0].aborted).toBe(true);
+        await page.settle();
+    });
+
+    it("sends fetcherr to document when the element that asked is gone", async () => {
+        let answer;
+        const page = await mount(
+            `<div nm-data="{}"><button id="outer" nm-bind="{ onclick: () => $get('/outer') }"></button></div>
+            <div id="target" nm-data="{}"><button id="order" nm-bind="{ onclick: () => $post('/order') }"></button></div>`,
+            {
+                server: ({ url }) =>
+                    url.endsWith("/order") ? new Promise((resolve) => (answer = resolve)) : `<div id="target"></div>`,
+            },
+        );
+        const errs = [];
+        page.document.addEventListener("fetcherr", (e) => errs.push(e.detail.url));
+        page.$("#order").click();
+        page.$("#outer").click();
+        await later(10);
+        answer({ status: 500, body: "no" });
+        await page.settle();
+        expect(errs).toEqual(["/order"]);
     });
 
     it("aborts a read when a write starts", async () => {
