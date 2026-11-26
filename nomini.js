@@ -12,6 +12,14 @@
 
     const failed = Symbol();
 
+    const isData = (obj, prop) => {
+        for (let o = obj; o; o = Object.getPrototypeOf(o)) {
+            const found = Object.getOwnPropertyDescriptor(o, prop);
+            if (found) return "value" in found;
+        }
+        return true;
+    };
+
     const evaluate = (expression, data, thisArg) => {
         try {
             return new Function("__data", `with(__data) {return (${expression}\n)}`).call(thisArg, data);
@@ -350,9 +358,9 @@
         const define = (obj, key, value) =>
             Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
 
-        for (let dataEl = baseEl.closest("[nm-ignore]") ? null : baseEl; dataEl; dataEl = walker.nextNode()) {
+        const makeScope = (dataEl) => {
             const attrs = [...dataEl.attributes];
-            if (!attrs.some(({ name }) => /^nm-(data$|data-|fn-)/.test(name))) continue;
+            if (!attrs.some(({ name }) => /^nm-(data$|data-|fn-)/.test(name))) return;
 
             const base = dataEl.getAttribute("nm-data")?.trim();
             const made = base ? evaluate(base, {}, dataEl) : {};
@@ -365,7 +373,7 @@
                 if ("value" in d) d.writable = true;
             });
             const rawData = Object.create(Object.getPrototypeOf(source), descriptors);
-            Object.assign(rawData, helpers(), { _nmEl: dataEl });
+            Object.entries({ ...helpers(), _nmEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
 
             const keep = (_, parsed, context) =>
                 typeof parsed === "number" && context?.source !== undefined && String(parsed) !== context.source
@@ -376,7 +384,8 @@
                 const key = name.match(/^nm-data-(.+)$/)?.[1];
                 if (!key || reserved(key, dataEl)) return;
                 try {
-                    define(rawData, key, JSON.parse(value, keep));
+                    const parsed = JSON.parse(value, keep);
+                    define(rawData, key, typeof parsed === "number" && String(parsed) !== value.trim() ? value : parsed);
                 } catch {
                     define(rawData, key, value);
                 }
@@ -396,7 +405,7 @@
                     return Reflect.get(obj, prop, receiver);
                 },
                 set(obj, prop, val, receiver) {
-                    if (prop in obj && val !== Object(val) && Object.is(obj[prop], val)) return true;
+                    if (prop in obj && val !== Object(val) && isData(obj, prop) && Object.is(obj[prop], val)) return true;
                     if (!Reflect.set(obj, prop, val, receiver)) return false;
 
                     const deps = trackedDeps.get(prop);
@@ -415,6 +424,21 @@
                 const result = runWithEl(dataEl, () => evaluate(value, proxyData, dataEl));
                 if (result !== failed) define(rawData, key, result);
             });
+        };
+
+        const seen = new Set();
+        let dataEl = baseEl.closest("[nm-ignore]") ? null : baseEl;
+        while (dataEl) {
+            let parent = dataEl.parentElement;
+            seen.add(dataEl);
+            makeScope(dataEl);
+            if (dataEl !== baseEl && !baseEl.contains(dataEl)) {
+                while (parent && parent !== baseEl && !baseEl.contains(parent)) parent = parent.parentElement;
+                if (!parent) break;
+                walker.currentNode = parent;
+            } else walker.currentNode = dataEl;
+            do dataEl = walker.nextNode();
+            while (dataEl && seen.has(dataEl));
         }
         // --- END data
 

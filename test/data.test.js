@@ -281,3 +281,48 @@ describe("nm-data, after the fourth review", () => {
         expect(page.$("#d").nmProxy.mode).toBe("b");
     });
 });
+
+describe("nm-data, after the fifth review", () => {
+    it("keeps a top-level number-like value as written even without the reviver's source", async () => {
+        const page = await mount(`<div id="d" nm-data-version="1.10"></div>`, {
+            beforeInit: (window) => {
+                const parse = window.JSON.parse;
+                window.JSON.parse = (text, reviver) => parse(text, reviver && ((k, v) => reviver(k, v)));
+            },
+        });
+        expect(page.$("#d").nmProxy.version).toBe("1.10");
+    });
+
+    it("goes on making scopes after one replaces its own element", async () => {
+        const page = await mount(
+            `<div id="a" nm-data="swapOut(this)"></div><div id="b" nm-data-x="1"></div>`,
+            {
+                beforeInit: (window) =>
+                    (window.swapOut = (el) => {
+                        const next = el.ownerDocument.createElement("div");
+                        next.id = "a2";
+                        el.replaceWith(next);
+                        return {};
+                    }),
+            },
+        );
+        expect(page.$("#b").nmProxy?.x).toBe(1);
+    });
+
+    it("runs a setter even when its getter already gives the value", async () => {
+        const page = await mount(
+            `<div nm-data="new Box()"><button id="b" nm-on-click="value = undefined"></button></div>`,
+            { beforeInit: (window) => (window.Box = class { calls = 0; set value(v) { this.calls++; } }) },
+        );
+        page.$("#b").click();
+        expect(page.scope("#b").calls).toBe(1);
+    });
+
+    it("keeps going when a factory's object has a getter named like a helper", async () => {
+        const page = await mount(
+            `<div id="a" nm-data="new S()"></div><div id="b" nm-data-x="1"></div>`,
+            { beforeInit: (window) => (window.S = class { get $refs() { return {}; } }) },
+        );
+        expect(page.$("#b").nmProxy?.x).toBe(1);
+    });
+});
