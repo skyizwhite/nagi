@@ -130,7 +130,10 @@
             let write;
 
             const opts = runWithEl(el, () => {
-                data = { ...this.$dataset(), ...this.$nmData(), ...data };
+                let inner = {};
+                for (let node = el; node?.nodeType === 1 && !node.nmProxy; node = node.parentElement)
+                    inner = { ...node.dataset, ...inner };
+                data = { ...this.$nmData(), ...inner, ...data };
 
                 const encodedData = new URLSearchParams(data);
                 const opts = { headers: { "nm-request": true }, method, signal };
@@ -364,7 +367,8 @@
             try {
                 const builtIn = (obj) => {
                     for (let p = Object.getPrototypeOf(obj); p && Object.getPrototypeOf(p); p = Object.getPrototypeOf(p))
-                        if (/\[native code\]/.test(Function.prototype.toString.call(p.constructor))) return true;
+                        if (Object.hasOwn(p, "constructor") && /\[native code\]/.test(Function.prototype.toString.call(p.constructor)))
+                            return true;
                 };
                 if (made !== null && typeof made === "object" && typeof made.then !== "function" && !builtIn(made)) {
                     const descriptors = Object.getOwnPropertyDescriptors(made);
@@ -430,15 +434,12 @@
         const seen = new Set();
         let dataEl = baseEl.closest("[nm-ignore]") ? null : baseEl;
         while (dataEl) {
-            let parent = dataEl.parentElement;
+            const parent = dataEl.parentElement;
             const before = dataEl.previousElementSibling;
             seen.add(dataEl);
             makeScope(dataEl);
             const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
-            if (dataEl !== baseEl && (moved || !baseEl.contains(dataEl))) {
-                while (parent && parent !== baseEl && !baseEl.contains(parent)) parent = parent.parentElement;
-                walker.currentNode = parent || baseEl;
-            } else walker.currentNode = dataEl;
+            walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
             do dataEl = walker.nextNode();
             while (dataEl && seen.has(dataEl));
         }

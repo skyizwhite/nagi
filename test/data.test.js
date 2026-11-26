@@ -380,3 +380,37 @@ describe("scopes, after the review of nm-scope", () => {
         expect(page.$("#s").textContent).toBe("2");
     });
 });
+
+describe("scopes, after the second review of nm-scope", () => {
+    it("sends a closer element's data-* over the scope's value of the same name", async () => {
+        const page = await mount(
+            `<div nm-scope data-id="0"><button id="b" data-id="5" nm-on-click="$get('/row')"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(new URL(page.requests[0].url).searchParams.get("id")).toBe("5");
+    });
+
+    it("takes an object made with Object.create of a plain object", async () => {
+        const page = await mount(`
+            <div id="d" nm-scope="Object.create({ inc() { this.n++ } }, { n: { value: 0, enumerable: true, writable: true } })"></div>
+        `);
+        const scope = page.$("#d").nmProxy;
+        scope.inc();
+        expect(scope.n).toBe(1);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("makes the scopes inside an element a factory moves earlier", async () => {
+        const page = await mount(`
+            <div id="x"></div>
+            <section>
+                <div nm-scope="(document.getElementById('x').append(this), {})">
+                    <div nm-let-a="1"><span id="s" nm-bind-textcontent="a"></span></div>
+                </div>
+            </section>
+        `);
+        expect(page.$("#s").textContent).toBe("1");
+    });
+});
