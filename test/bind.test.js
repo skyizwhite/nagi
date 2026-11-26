@@ -2,13 +2,9 @@ import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
 describe("nm-data", () => {
-    it("makes a scope from an object literal, with or without braces", async () => {
-        const page = await mount(`
-            <div id="a" nm-data="{ n: 1 }"></div>
-            <div id="b" nm-data="n: 2"></div>
-        `);
+    it("makes a scope from an object literal", async () => {
+        const page = await mount(`<div id="a" nm-data="{ n: 1 }"></div>`);
         expect(page.$("#a").nmProxy.n).toBe(1);
-        expect(page.$("#b").nmProxy.n).toBe(2);
     });
 
     it("runs the expression with the scope element as this", async () => {

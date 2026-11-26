@@ -10,19 +10,11 @@
         el.dispatchEvent(new CustomEvent(name, opts));
     };
 
-    const evalExpression = (expression, data, thisArg) => {
-        if (/^{.*}$/s.test(expression)) {
-            expression = expression.slice(1, -1);
-        }
-
+    const evaluate = (expression, data, thisArg) => {
         try {
-            return new Function(
-                "__data",
-                `with(__data) {return {${expression}}}`,
-            ).call(thisArg, data);
+            return new Function("__data", `with(__data) {return (${expression}\n)}`).call(thisArg, data);
         } catch (err) {
-            console.error("[Nomini] failed to parse obj:", expression, "\n", err);
-            return {};
+            console.error("[Nomini] failed to evaluate:", expression, "\n", err);
         }
     };
 
@@ -39,8 +31,10 @@
         );
     };
 
-    const getClosestProxy = (el) =>
-        el.closest("[nm-data]")?.nmProxy || helpers();
+    const getClosestProxy = (el) => {
+        for (; el; el = el.parentElement) if (el.nmProxy) return el.nmProxy;
+        return helpers();
+    };
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
         const prev = [currentEl, currentBind, currentHandler];
@@ -196,7 +190,7 @@
 
             while (el?.nodeType === 1) {
                 datasets = { ...el.dataset, ...datasets };
-                if (el.hasAttribute("nm-data")) break;
+                if (el.nmProxy) break;
                 el = el.parentElement;
             }
 
@@ -344,12 +338,26 @@
         // --- END template
 
         // --- BEGIN data
-        queryAttr(baseEl, "[nm-data]").forEach((dataEl) => {
+        queryAttr(baseEl, "*").forEach((dataEl) => {
+            const attrs = [...dataEl.attributes];
+            if (!attrs.some(({ name }) => /^nm-(data$|data-|fn-)/.test(name))) return;
+
+            const base = dataEl.getAttribute("nm-data")?.trim();
             const rawData = {
-                ...evalExpression(dataEl.getAttribute("nm-data"), {}, dataEl),
+                ...(base && evaluate(base, {}, dataEl)),
                 ...helpers(),
                 _nmEl: dataEl,
             };
+
+            attrs.forEach(({ name, value }) => {
+                const key = name.match(/^nm-data-(.+)$/)?.[1];
+                if (!key) return;
+                try {
+                    rawData[key] = JSON.parse(value);
+                } catch {
+                    rawData[key] = value;
+                }
+            });
 
             const trackedDeps = new Map();
 
@@ -377,6 +385,11 @@
             });
 
             dataEl.nmProxy = proxyData;
+
+            attrs.forEach(({ name, value }) => {
+                const key = name.match(/^nm-fn-(.+)$/)?.[1];
+                if (key) rawData[key] = evaluate(value, proxyData, dataEl);
+            });
         });
         // --- END data
 
@@ -460,7 +473,7 @@
             bindEl.nmBound = true;
 
             const proxyData = getClosestProxy(bindEl);
-            const props = Object.assign({}, ...entries.map((entry) => evalExpression(entry, proxyData, bindEl)));
+            const props = Object.assign({}, ...entries.map((entry) => evaluate(`{${entry}}`, proxyData, bindEl)));
             const handle = (val, e) => val(e)?.catch?.((err) => console.error("[Nomini] failed to run:", val, "\n", err));
 
             Object.entries(props).forEach(([key, val]) => {
