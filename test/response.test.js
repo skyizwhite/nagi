@@ -13,7 +13,7 @@ describe("swapping answers", () => {
     };
 
     const button = (call, scope = "{}") => `
-        <div id="d" nm-scope="${scope}"><button id="b" nm-on-click="${call}"></button></div>
+        <div id="d" n-scope="${scope}"><button id="b" n-on-click="${call}"></button></div>
         <div id="target">old</div>
     `;
 
@@ -41,7 +41,7 @@ describe("swapping answers", () => {
             },
         });
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$get('/x')"></button></div>
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/x')"></button></div>
             <div id="target">old</div>`,
             { server: () => new Response(body) },
         );
@@ -53,8 +53,8 @@ describe("swapping answers", () => {
 
     it("takes an answer with no body as nothing to swap", async () => {
         const page = await mount(
-            `<div nm-scope="{ _err: null }" nm-on-fetcherr="_err = e.detail.err">
-                <button id="b" nm-on-click="$get('/x')"></button>
+            `<div n-scope="{ _err: null }" n-on-fetcherr="_err = e.detail.err">
+                <button id="b" n-on-click="$get('/x')"></button>
             </div>
             <div id="target">old</div>`,
             { server: () => ({ status: 204 }) },
@@ -71,8 +71,8 @@ describe("aborted requests", () => {
     it("sends no fetcherr for a request it aborted, and stays fetching for the newer one", async () => {
         const answers = [];
         const page = await mount(
-            `<div nm-scope="{ _errs: [] }" nm-on-fetcherr="_errs = [..._errs, e.detail.err]">
-                <button id="b" nm-on-click="$get('/x')"></button>
+            `<div n-scope="{ _errs: [] }" n-on-fetcherr="_errs = [..._errs, e.detail.err]">
+                <button id="b" n-on-click="$get('/x')"></button>
             </div>`,
             { server: () => new Promise((resolve) => answers.push(resolve)) },
         );
@@ -94,7 +94,7 @@ describe("aborted requests", () => {
         const slow = new ReadableStream({ pull: () => reading() }, { highWaterMark: 0 });
         const answers = [new Response(slow), `<div id="target">second</div>`];
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$get('/x')"></button></div>
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/x')"></button></div>
             <div id="target">old</div>`,
             { server: () => answers.shift() },
         );
@@ -111,7 +111,7 @@ describe("aborted requests", () => {
         const first = new ReadableStream({ start: (controller) => (send = controller) });
         const answers = [new Response(first), `<div id="other">second</div>`];
         const page = await mount(
-            `<div nm-scope="{}"><button id="b" nm-on-click="$get('/x')"></button></div>
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/x')"></button></div>
             <div id="target">old</div><div id="other">old</div>`,
             { server: () => answers.shift() },
         );
@@ -130,9 +130,9 @@ describe("aborted requests", () => {
         const signals = [];
         let answerInner;
         const page = await mount(
-            `<div nm-scope="{}"><button id="outer" nm-on-click="$get('/outer')"></button></div>
-            <div id="target" nm-scope="{}">
-                <button id="inner" nm-on-click="$get('/inner')"></button>
+            `<div n-scope="{}"><button id="outer" n-on-click="$get('/outer')"></button></div>
+            <div id="target" n-scope="{}">
+                <button id="inner" n-on-click="$get('/inner')"></button>
             </div>
             <div id="late">old</div>`,
             {
@@ -160,8 +160,8 @@ describe("aborted requests", () => {
 describe("errors", () => {
     const mountAsking = (answer, extra = "") =>
         mount(
-            `<div nm-scope="{ _err: null, _redirect: null }" nm-on-fetcherr="_err = e.detail" nm-on-fetchredirect="_redirect = e.detail.url">
-                <button id="b" nm-on-click="$post('/x')"></button>
+            `<div n-scope="{ _err: null, _redirect: null }" n-on-fetcherr="_err = e.detail" n-on-fetchredirect="_redirect = e.detail.url">
+                <button id="b" n-on-click="$post('/x')"></button>
                 ${extra}
             </div>
             <div id="target">old</div>`,
@@ -170,8 +170,8 @@ describe("errors", () => {
 
     it("dispatches fetcherr with the status and text for an error answer with nothing to swap", async () => {
         const page = await mount(
-            `<div nm-scope="{ _err: null }" nm-on-fetcherr="_err = e.detail">
-                <button id="b" nm-on-click="$get('/x', { q: 1 })"></button>
+            `<div n-scope="{ _err: null }" n-on-fetcherr="_err = e.detail">
+                <button id="b" n-on-click="$get('/x', { q: 1 })"></button>
             </div>
             <div id="target">old</div>`,
             { server: () => ({ status: 500, body: "Server broke" }) },
@@ -187,8 +187,8 @@ describe("errors", () => {
 
     it("dispatches fetcherr when the answer's body fails partway", async () => {
         const page = await mount(
-            `<div nm-scope="{ _err: null }" nm-on-fetcherr="_err = e.detail.err">
-                <button id="b" nm-on-click="$get('/x')"></button>
+            `<div n-scope="{ _err: null }" n-on-fetcherr="_err = e.detail.err">
+                <button id="b" n-on-click="$get('/x')"></button>
             </div>`,
             { server: () => new Response(new ReadableStream({ start: (c) => c.error(new Error("cut")) })) },
         );
@@ -225,8 +225,8 @@ describe("errors", () => {
 
     it("sends fetcherr for a URL that cannot be fetched", async () => {
         const page = await mount(
-            `<div nm-scope="{ _err: null }" nm-on-fetcherr="_err = e.detail">
-                <button id="b" nm-on-click="$get('http://[bad', { a: 1 })"></button>
+            `<div n-scope="{ _err: null }" n-on-fetcherr="_err = e.detail">
+                <button id="b" n-on-click="$get('http://[bad', { a: 1 })"></button>
             </div>`,
             { server: () => "" },
         );
@@ -239,8 +239,8 @@ describe("errors", () => {
     it("sends fetcherr to document when the element that asked is gone", async () => {
         let answer;
         const page = await mount(
-            `<div nm-scope="{}"><button id="outer" nm-on-click="$get('/outer')"></button></div>
-            <div id="target" nm-scope="{}"><button id="order" nm-on-click="$post('/order')"></button></div>`,
+            `<div n-scope="{}"><button id="outer" n-on-click="$get('/outer')"></button></div>
+            <div id="target" n-scope="{}"><button id="order" n-on-click="$post('/order')"></button></div>`,
             {
                 server: ({ url }) =>
                     url.endsWith("/order") ? new Promise((resolve) => (answer = resolve)) : `<div id="target"></div>`,
@@ -260,16 +260,16 @@ describe("errors", () => {
 describe("headers", () => {
     const mountAsking = (answer, extra = "") =>
         mount(
-            `<div nm-scope="{ _err: null, _redirect: null }" nm-on-fetcherr="_err = e.detail" nm-on-fetchredirect="_redirect = e.detail.url">
-                <button id="b" nm-on-click="$post('/x')"></button>
+            `<div n-scope="{ _err: null, _redirect: null }" n-on-fetcherr="_err = e.detail" n-on-fetchredirect="_redirect = e.detail.url">
+                <button id="b" n-on-click="$post('/x')"></button>
                 ${extra}
             </div>
             <div id="target">old</div>`,
             { server: () => answer },
         );
 
-    it("goes to the URL of nm-redirect without swapping, after a fetchredirect event", async () => {
-        const page = await mountAsking({ body: `<div id="target">new</div>`, headers: { "nm-redirect": "/done" } });
+    it("goes to the URL of n-redirect without swapping, after a fetchredirect event", async () => {
+        const page = await mountAsking({ body: `<div id="target">new</div>`, headers: { "n-redirect": "/done" } });
         const assign = vi.spyOn(page.window.location, "assign").mockImplementation(() => {});
         page.$("#b").click();
         await page.settle();
@@ -280,8 +280,8 @@ describe("headers", () => {
 
     it("does not go when fetchredirect is cancelled", async () => {
         const page = await mount(
-            `<div nm-scope nm-on-fetchredirect="e.preventDefault()"><button id="b" nm-on-click="$post('/x')"></button></div>`,
-            { server: () => ({ headers: { "nm-redirect": "/done" } }) },
+            `<div n-scope n-on-fetchredirect="e.preventDefault()"><button id="b" n-on-click="$post('/x')"></button></div>`,
+            { server: () => ({ headers: { "n-redirect": "/done" } }) },
         );
         const assign = vi.spyOn(page.window.location, "assign").mockImplementation(() => {});
         page.$("#b").click();
@@ -289,16 +289,16 @@ describe("headers", () => {
         expect(assign).not.toHaveBeenCalled();
     });
 
-    it("replaces the page's URL with nm-replace-url after swapping", async () => {
-        const page = await mountAsking({ body: `<div id="target">new</div>`, headers: { "nm-replace-url": "/list?page=2" } });
+    it("replaces the page's URL with n-replace-url after swapping", async () => {
+        const page = await mountAsking({ body: `<div id="target">new</div>`, headers: { "n-replace-url": "/list?page=2" } });
         page.$("#b").click();
         await page.settle();
         expect(page.$("#target").textContent).toBe("new");
         expect(page.window.location.href).toBe("http://localhost/list?page=2");
     });
 
-    it("warns about an nm-replace-url it cannot use, and still counts the answer as done", async () => {
-        const page = await mountAsking({ body: `<div id="target">new</div>`, headers: { "nm-replace-url": "https://other.example/x" } });
+    it("warns about an n-replace-url it cannot use, and still counts the answer as done", async () => {
+        const page = await mountAsking({ body: `<div id="target">new</div>`, headers: { "n-replace-url": "https://other.example/x" } });
         page.$("#b").click();
         await page.settle();
         expect(page.$("#target").textContent).toBe("new");
@@ -308,8 +308,8 @@ describe("headers", () => {
 
     it("has replaced the URL by the time the swapped content inits", async () => {
         const page = await mountAsking({
-            body: `<div id="target" nm-let-path="location.pathname"><span id="p" nm-bind-textcontent="path"></span></div>`,
-            headers: { "nm-replace-url": "/list" },
+            body: `<div id="target" n-let-path="location.pathname"><span id="p" n-bind-textcontent="path"></span></div>`,
+            headers: { "n-replace-url": "/list" },
         });
         page.$("#b").click();
         await page.settle();

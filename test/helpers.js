@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { Window } from "happy-dom";
 
 const root = new URL("..", import.meta.url);
-const fullSource = readFileSync(new URL("nomini.js", root), "utf8");
+const fullSource = readFileSync(new URL("nagi.js", root), "utf8");
 const devoured = new Map();
 
 const sourceWithout = (blocks) => {
@@ -149,7 +149,7 @@ export const mount = async (html, { server, beforeInit, without = [] } = {}) => 
         errors,
         warnings,
         scope: (selector) => {
-            for (let el = $(selector); el; el = el.parentElement) if (el.nmProxy) return el.nmProxy;
+            for (let el = $(selector); el; el = el.parentElement) if (el.nagiProxy) return el.nagiProxy;
         },
         settle: async (timeout = 1000) => {
             await settle(window, pending, timeout);

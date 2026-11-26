@@ -5,7 +5,7 @@ import { later } from "./support.js";
 describe("tracking", () => {
     it("sets a property and keeps it in step with the scope", async () => {
         const page = await mount(`
-            <div nm-scope="{ n: 1 }"><span id="s" nm-bind-textcontent="n * 10"></span></div>
+            <div n-scope="{ n: 1 }"><span id="s" n-bind-textcontent="n * 10"></span></div>
         `);
         await page.settle();
         expect(page.$("#s").textContent).toBe("10");
@@ -17,8 +17,8 @@ describe("tracking", () => {
 
     it("has written a bind by the time the element's init runs", async () => {
         const page = await mount(`
-            <div nm-scope="{ n: 1, seen: null }">
-                <span id="s" nm-bind-textcontent="n" nm-on-init="seen = this.textContent"></span>
+            <div n-scope="{ n: 1, seen: null }">
+                <span id="s" n-bind-textcontent="n" n-on-init="seen = this.textContent"></span>
             </div>
         `);
         expect(page.scope("#s").seen).toBe("1");
@@ -26,7 +26,7 @@ describe("tracking", () => {
 
     it("writes a bind as the scope changes, without waiting", async () => {
         const page = await mount(`
-            <div nm-scope="{ n: 1 }"><span id="s" nm-bind-textcontent="n"></span></div>
+            <div n-scope="{ n: 1 }"><span id="s" n-bind-textcontent="n"></span></div>
         `);
         page.scope("#s").n = 2;
         expect(page.$("#s").textContent).toBe("2");
@@ -34,8 +34,8 @@ describe("tracking", () => {
 
     it("tracks what a bind reads when it runs again", async () => {
         const page = await mount(`
-            <div nm-scope="{ flag: true, a: 'a', b: 'b' }">
-                <span id="s" nm-bind-textcontent="flag ? a : b"></span>
+            <div n-scope="{ flag: true, a: 'a', b: 'b' }">
+                <span id="s" n-bind-textcontent="flag ? a : b"></span>
             </div>
         `);
         const scope = page.scope("#s");
@@ -46,8 +46,8 @@ describe("tracking", () => {
 
     it("runs a bind again with its element as the current one", async () => {
         const page = await mount(`
-            <div nm-scope="{ n: 1, got: [] }" nm-on-changed="got = [...got, e.detail]">
-                <span id="s" nm-bind-textcontent="($dispatch('changed', n), n)"></span>
+            <div n-scope="{ n: 1, got: [] }" n-on-changed="got = [...got, e.detail]">
+                <span id="s" n-bind-textcontent="($dispatch('changed', n), n)"></span>
             </div>
         `);
         page.scope("#s").n = 2;
@@ -57,8 +57,8 @@ describe("tracking", () => {
 
     it("keeps tracking a bind after it calls $watch", async () => {
         const page = await mount(`
-            <div nm-scope="{ x: 1, y: 'y' }">
-                <span id="s" nm-bind-textcontent="(() => { $watch(() => x); return y })()"></span>
+            <div n-scope="{ x: 1, y: 'y' }">
+                <span id="s" n-bind-textcontent="(() => { $watch(() => x); return y })()"></span>
             </div>
         `);
         page.scope("#s").y = "y2";
@@ -67,9 +67,9 @@ describe("tracking", () => {
 
     it("runs a bind again when another bind it set off changes what it read", async () => {
         const page = await mount(`
-            <div nm-scope="{ a: 1, total: 0, label: '' }">
-                <span id="first" nm-bind-textcontent="(() => { const shown = label; total = a + 1; return shown })()"></span>
-                <span id="second" nm-bind-textcontent="(label = 'v' + total)"></span>
+            <div n-scope="{ a: 1, total: 0, label: '' }">
+                <span id="first" n-bind-textcontent="(() => { const shown = label; total = a + 1; return shown })()"></span>
+                <span id="second" n-bind-textcontent="(label = 'v' + total)"></span>
             </div>
         `);
         page.scope("#first").a = 5;
@@ -79,7 +79,7 @@ describe("tracking", () => {
 
     it("does not run binds again when a value is set to what it already is", async () => {
         const page = await mount(`
-            <div nm-scope="{ n: 1, runs: 0 }"><span id="s" nm-bind-textcontent="(runs++, n)"></span></div>
+            <div n-scope="{ n: 1, runs: 0 }"><span id="s" n-bind-textcontent="(runs++, n)"></span></div>
         `);
         page.scope("#s").n = 1;
         expect(page.scope("#s").runs).toBe(1);
@@ -87,18 +87,18 @@ describe("tracking", () => {
 
     it("creates a key set to undefined", async () => {
         const page = await mount(`
-            <div id="d" nm-scope="{}" nm-on-init="$watch(() => 0)"></div>
+            <div id="d" n-scope="{}" n-on-init="$watch(() => 0)"></div>
         `);
-        const scope = page.$("#d").nmProxy;
+        const scope = page.$("#d").nagiProxy;
         scope.color = undefined;
         expect("color" in scope).toBe(true);
     });
 
     it("runs binds again when an object is set to itself after changing it", async () => {
         const page = await mount(`
-            <div nm-scope="{ items: [] }">
-                <button id="b" nm-on-click="items.push(1); items = items"></button>
-                <span id="s" nm-bind-textcontent="items.length"></span>
+            <div n-scope="{ items: [] }">
+                <button id="b" n-on-click="items.push(1); items = items"></button>
+                <span id="s" n-bind-textcontent="items.length"></span>
             </div>
         `);
         page.$("#b").click();
@@ -107,8 +107,8 @@ describe("tracking", () => {
 
     it("stops running a bind for what it no longer reads", async () => {
         const page = await mount(`
-            <div nm-scope="{ flag: true, a: 'a', b: 'b', runs: 0 }">
-                <span id="s" nm-bind-textcontent="(runs++, flag ? a : b)"></span>
+            <div n-scope="{ flag: true, a: 'a', b: 'b', runs: 0 }">
+                <span id="s" n-bind-textcontent="(runs++, flag ? a : b)"></span>
             </div>
         `);
         const scope = page.scope("#s");
@@ -119,8 +119,8 @@ describe("tracking", () => {
 
     it("does not track what an event handler reads into the bind that sent the event", async () => {
         const page = await mount(`
-            <div nm-scope="{ n: 1, other: 0, runs: 0 }" nm-on-changed="other">
-                <span id="s" nm-bind-textcontent="(runs++, $dispatch('changed'), n)"></span>
+            <div n-scope="{ n: 1, other: 0, runs: 0 }" n-on-changed="other">
+                <span id="s" n-bind-textcontent="(runs++, $dispatch('changed'), n)"></span>
             </div>
         `);
         const scope = page.scope("#s");
@@ -132,7 +132,7 @@ describe("tracking", () => {
 describe("async binds", () => {
     it("writes the resolved value of a promise", async () => {
         const page = await mount(`
-            <div nm-scope="{}"><span id="s" nm-bind-textcontent="(async () => 'later')()"></span></div>
+            <div n-scope="{}"><span id="s" n-bind-textcontent="(async () => 'later')()"></span></div>
         `);
         await page.settle();
         expect(page.$("#s").textContent).toBe("later");
@@ -140,7 +140,7 @@ describe("async binds", () => {
 
     it("logs an async bind that rejects", async () => {
         const page = await mount(`
-            <div nm-scope="{}"><span nm-bind-textcontent="(async () => { throw new Error('no') })()"></span></div>
+            <div n-scope="{}"><span n-bind-textcontent="(async () => { throw new Error('no') })()"></span></div>
         `);
         await page.settle();
         expect(page.errors).toHaveLength(1);
@@ -148,7 +148,7 @@ describe("async binds", () => {
 
     it("keeps the value of the newest run when an older one resolves last", async () => {
         const page = await mount(
-            `<div nm-let-n="1"><span id="s" nm-bind-textcontent="(async () => { const v = n; await wait(v === 1 ? 40 : 5); return v })()"></span></div>`,
+            `<div n-let-n="1"><span id="s" n-bind-textcontent="(async () => { const v = n; await wait(v === 1 ? 40 : 5); return v })()"></span></div>`,
             { beforeInit: (window) => (window.wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))) },
         );
         page.scope("#s").n = 2;
@@ -158,9 +158,9 @@ describe("async binds", () => {
 
     it("does not write once the bind's element was taken out by a swap", async () => {
         const page = await mount(
-            `<div nm-scope>
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target"><span id="s" nm-bind-textcontent="(async () => { await wait(30); return 'late' })()">old</span></div>
+            `<div n-scope>
+                <button id="b" n-on-click="$get('/x')"></button>
+                <div id="target"><span id="s" n-bind-textcontent="(async () => { await wait(30); return 'late' })()">old</span></div>
             </div>`,
             {
                 server: () => `<div id="target"></div>`,
@@ -178,16 +178,16 @@ describe("async binds", () => {
 describe("watchers", () => {
     it("$watch reruns a function when what it read changes", async () => {
         const page = await mount(`
-            <div id="d" nm-scope="{ n: 1, seen: [] }" nm-on-init="$watch(() => seen.push(n))"></div>
+            <div id="d" n-scope="{ n: 1, seen: [] }" n-on-init="$watch(() => seen.push(n))"></div>
         `);
-        page.$("#d").nmProxy.n = 2;
-        expect(page.$("#d").nmProxy.seen).toEqual([1, 2]);
+        page.$("#d").nagiProxy.n = 2;
+        expect(page.$("#d").nagiProxy.seen).toEqual([1, 2]);
     });
 
     it("replaces the watchers a bind made when it runs again", async () => {
         const page = await mount(`
-            <div nm-scope="{ x: 1, y: 1, log: [] }">
-                <span id="s" nm-bind-textcontent="(() => { $watch(() => log.push(x)); return y })()"></span>
+            <div n-scope="{ x: 1, y: 1, log: [] }">
+                <span id="s" n-bind-textcontent="(() => { $watch(() => log.push(x)); return y })()"></span>
             </div>
         `);
         const scope = page.scope("#s");
@@ -200,9 +200,9 @@ describe("watchers", () => {
 
     it("does not run a watcher again from inside itself", async () => {
         const page = await mount(`
-            <div id="d" nm-scope="{ count: 0 }" nm-on-init="$watch(() => count = count + 1)"></div>
+            <div id="d" n-scope="{ count: 0 }" n-on-init="$watch(() => count = count + 1)"></div>
         `);
-        const scope = page.$("#d").nmProxy;
+        const scope = page.$("#d").nagiProxy;
         expect(scope.count).toBe(1);
         scope.count = 10;
         expect(scope.count).toBe(11);
@@ -210,8 +210,8 @@ describe("watchers", () => {
 
     it("stops a bind that its own run made another bind drop", async () => {
         const page = await mount(`
-            <div nm-scope="{ x: 0, y: 0, done: false, log: [] }">
-                <span nm-bind-textcontent="(() => {
+            <div n-scope="{ x: 0, y: 0, done: false, log: [] }">
+                <span n-bind-textcontent="(() => {
                     x;
                     $watch(() => {
                         if (y === 1 && !done) { done = true; x = x + 1 }
@@ -230,9 +230,9 @@ describe("watchers", () => {
 
     it("logs a bind that keeps setting itself off and stops it", async () => {
         const page = await mount(`
-            <div nm-scope="{ a: 0, b: 0 }">
-                <span id="s" nm-bind-textcontent="(a = b + 1)"></span>
-                <span nm-bind-textcontent="(b = a + 1)"></span>
+            <div n-scope="{ a: 0, b: 0 }">
+                <span id="s" n-bind-textcontent="(a = b + 1)"></span>
+                <span n-bind-textcontent="(b = a + 1)"></span>
             </div>
         `);
         expect(page.errors.some(([message]) => message.includes("stopped running after 100 times"))).toBe(true);
@@ -242,9 +242,9 @@ describe("watchers", () => {
 describe("errors", () => {
     it("logs a bind that throws and goes on binding the rest", async () => {
         const page = await mount(`
-            <div nm-scope="{ n: 1 }">
-                <span id="bad" nm-bind-textcontent="n.missing.x"></span>
-                <span id="s" nm-bind-textcontent="n"></span>
+            <div n-scope="{ n: 1 }">
+                <span id="bad" n-bind-textcontent="n.missing.x"></span>
+                <span id="s" n-bind-textcontent="n"></span>
             </div>
         `);
         expect(page.$("#s").textContent).toBe("1");
@@ -259,16 +259,16 @@ describe("errors", () => {
 describe("elements a swap removes", () => {
     it("drops the binds of an element a swap removed", async () => {
         const page = await mount(
-            `<div id="d" nm-scope="{ n: 1, ran: [] }">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target"><span nm-bind-textcontent="(ran.push(this.isConnected), n)"></span></div>
+            `<div id="d" n-scope="{ n: 1, ran: [] }">
+                <button id="b" n-on-click="$get('/x')"></button>
+                <div id="target"><span n-bind-textcontent="(ran.push(this.isConnected), n)"></span></div>
             </div>`,
             { server: () => `<div id="target"></div>` },
         );
         page.$("#b").click();
         await page.settle();
 
-        const scope = page.$("#d").nmProxy;
+        const scope = page.$("#d").nagiProxy;
         scope.ran.length = 0;
         scope.n = 2;
         expect(scope.ran).toEqual([]);
@@ -276,9 +276,9 @@ describe("elements a swap removes", () => {
 
     it("runs the binds of an element put back in the document", async () => {
         const page = await mount(`
-            <div id="d" nm-scope="{ n: 1 }"><span id="s" nm-bind-textcontent="n"></span></div>
+            <div id="d" n-scope="{ n: 1 }"><span id="s" n-bind-textcontent="n"></span></div>
         `);
-        const scope = page.$("#d").nmProxy;
+        const scope = page.$("#d").nagiProxy;
         const span = page.$("#s");
         span.remove();
         scope.n = 2;
@@ -290,17 +290,17 @@ describe("elements a swap removes", () => {
 
     it("drops a $watch set up from an element a swap removed", async () => {
         const page = await mount(
-            `<div id="d" nm-scope="{ n: 1, seen: [] }">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target"><span nm-on-init="$watch(() => seen.push(n))"></span></div>
+            `<div id="d" n-scope="{ n: 1, seen: [] }">
+                <button id="b" n-on-click="$get('/x')"></button>
+                <div id="target"><span n-on-init="$watch(() => seen.push(n))"></span></div>
             </div>`,
-            { server: () => `<div id="target"><span nm-on-init="$watch(() => seen.push(n))"></span></div>` },
+            { server: () => `<div id="target"><span n-on-init="$watch(() => seen.push(n))"></span></div>` },
         );
         for (let i = 0; i < 3; i++) {
             page.$("#b").click();
             await page.settle();
         }
-        const scope = page.$("#d").nmProxy;
+        const scope = page.$("#d").nagiProxy;
         scope.seen.length = 0;
         scope.n = 2;
         expect(scope.seen).toEqual([2]);
@@ -308,15 +308,15 @@ describe("elements a swap removes", () => {
 
     it("drops a $persist set up from an element a swap removed", async () => {
         const page = await mount(
-            `<div id="d" nm-scope="{ n: 1 }">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target"><span nm-on-init="$persist('n')"></span></div>
+            `<div id="d" n-scope="{ n: 1 }">
+                <button id="b" n-on-click="$get('/x')"></button>
+                <div id="target"><span n-on-init="$persist('n')"></span></div>
             </div>`,
             { server: () => `<div id="target"></div>` },
         );
         page.$("#b").click();
         await page.settle();
-        page.$("#d").nmProxy.n = 5;
-        expect(page.window.localStorage["_nmProp-n"]).toBe("1");
+        page.$("#d").nagiProxy.n = 5;
+        expect(page.window.localStorage["_nagiProp-n"]).toBe("1");
     });
 });

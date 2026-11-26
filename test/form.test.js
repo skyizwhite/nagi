@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
-describe("nm-form", () => {
+describe("n-form", () => {
     const form = `
-        <form id="f" nm-scope="{}" nm-form>
+        <form id="f" n-scope="{}" n-form>
             <input name="text" value="hello">
             <input name="count" type="number" value="3">
             <input name="agree" type="checkbox" checked>
@@ -21,7 +21,7 @@ describe("nm-form", () => {
 
     it("copies each named field into the scope, typed by input type", async () => {
         const page = await mount(form);
-        const scope = page.$("#f").nmProxy;
+        const scope = page.$("#f").nagiProxy;
         expect(scope.text).toBe("hello");
         expect(scope.count).toBe(3);
         expect(scope.agree).toBe(true);
@@ -34,12 +34,12 @@ describe("nm-form", () => {
         const input = page.$("[name=text]");
         input.value = "bye";
         input.dispatchEvent(new page.window.Event("input"));
-        expect(page.$("#f").nmProxy.text).toBe("bye");
+        expect(page.$("#f").nagiProxy.text).toBe("bye");
     });
 
     it("disables the submit buttons while the scope is fetching", async () => {
         const page = await mount(form);
-        const scope = page.$("#f").nmProxy;
+        const scope = page.$("#f").nagiProxy;
         scope.$fetching = true;
         await page.settle();
         expect(page.$("#send").disabled).toBe(true);
@@ -51,43 +51,43 @@ describe("nm-form", () => {
 
     it("keeps the checked radio's value when an unchecked one comes after it", async () => {
         const page = await mount(`
-            <form id="f" nm-scope="{}" nm-form>
+            <form id="f" n-scope="{}" n-form>
                 <input type="radio" name="c" value="a" checked>
                 <input type="radio" name="c" value="b">
             </form>
         `);
-        expect(page.$("#f").nmProxy.c).toBe("a");
+        expect(page.$("#f").nagiProxy.c).toBe("a");
     });
 
     it("still defines the group's key", async () => {
         const page = await mount(`
-            <form nm-scope="{}" nm-form>
+            <form n-scope="{}" n-form>
                 <input type="radio" name="c" value="a">
                 <input type="radio" name="c" value="b">
-                <span id="s" nm-bind-textcontent="c ?? 'none'"></span>
+                <span id="s" n-bind-textcontent="c ?? 'none'"></span>
             </form>
         `);
         expect(page.$("#s").textContent).toBe("none");
         expect(page.errors).toEqual([]);
     });
 
-    it("keeps the fields of an inner nm-form in the form's scope", async () => {
+    it("keeps the fields of an inner n-form in the form's scope", async () => {
         const page = await mount(`
-            <div id="outer" nm-scope="{ name: 'Page title' }">
-                <form id="f" nm-scope nm-form><input name="name" value="typed"></form>
+            <div id="outer" n-scope="{ name: 'Page title' }">
+                <form id="f" n-scope n-form><input name="name" value="typed"></form>
             </div>
         `);
-        expect(page.$("#outer").nmProxy.name).toBe("Page title");
-        expect(page.$("#f").nmProxy.name).toBe("typed");
+        expect(page.$("#outer").nagiProxy.name).toBe("Page title");
+        expect(page.$("#f").nagiProxy.name).toBe("typed");
     });
 
-    it("wires the new fields and submit buttons of an nm-form target", async () => {
+    it("wires the new fields and submit buttons of an n-form target", async () => {
         const page = await mount(
-            `<div nm-scope="{}">
-                <button id="b" type="button" nm-on-click="$get('/x')"></button>
-                <form id="target" nm-form></form>
+            `<div n-scope="{}">
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <form id="target" n-form></form>
             </div>`,
-            { server: () => `<form id="target" nm-swap="inner"><input name="q" value="hi"><button id="go">Go</button></form>` },
+            { server: () => `<form id="target" n-swap="inner"><input name="q" value="hi"><button id="go">Go</button></form>` },
         );
         await swapOnce(page);
         const scope = page.scope("#target");
@@ -102,13 +102,13 @@ describe("nm-form", () => {
         expect(page.$("#go").disabled).toBe(true);
     });
 
-    it("wires the fields swapped into an element inside an nm-form", async () => {
+    it("wires the fields swapped into an element inside an n-form", async () => {
         const page = await mount(
-            `<form nm-scope="{}" nm-form>
-                <button id="b" type="button" nm-on-click="$get('/x')"></button>
+            `<form n-scope="{}" n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
                 <div id="target"></div>
             </form>`,
-            { server: () => `<div id="target" nm-swap="inner"><input name="q" value="hi"></div>` },
+            { server: () => `<div id="target" n-swap="inner"><input name="q" value="hi"></div>` },
         );
         await swapOnce(page);
         expect(page.scope("#target").q).toBe("hi");

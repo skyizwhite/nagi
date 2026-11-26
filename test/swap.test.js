@@ -14,8 +14,8 @@ describe("strategies", () => {
 
     const mountSwap = (html, answer) =>
         mount(
-            `<div id="d" nm-scope="{ hits: 0, gone: [] }">
-                <button id="b" nm-on-click="$get('/x')"></button>
+            `<div id="d" n-scope="{ hits: 0, gone: [] }">
+                <button id="b" n-on-click="$get('/x')"></button>
                 ${html}
             </div>`,
             { server: () => answer },
@@ -27,7 +27,7 @@ describe("strategies", () => {
     };
 
     const button = (call, scope = "{}") => `
-        <div id="d" nm-scope="${scope}"><button id="b" nm-on-click="${call}"></button></div>
+        <div id="d" n-scope="${scope}"><button id="b" n-on-click="${call}"></button></div>
         <div id="target">old</div>
     `;
 
@@ -36,8 +36,8 @@ describe("strategies", () => {
         expect(page.$("#target").outerHTML).toBe(`<div id="target"><b>new</b></div>`);
     });
 
-    it("replaces only the children with nm-swap=inner", async () => {
-        const page = await swap(`<div id="target" nm-swap="inner"><b>new</b></div>`);
+    it("replaces only the children with n-swap=inner", async () => {
+        const page = await swap(`<div id="target" n-swap="inner"><b>new</b></div>`);
         expect(page.$("#target").outerHTML).toBe(`<div id="target" class="t"><b>new</b></div>`);
     });
 
@@ -47,7 +47,7 @@ describe("strategies", () => {
         ["prepend", `<div id="target" class="t"><b>new</b><span>old</span></div>`],
         ["append", `<div id="target" class="t"><span>old</span><b>new</b></div>`],
     ])("puts the children %s the element", async (strategy, expected) => {
-        const page = await swap(`<div id="target" nm-swap="${strategy}"><b>new</b></div>`);
+        const page = await swap(`<div id="target" n-swap="${strategy}"><b>new</b></div>`);
         expect(page.$("#target").parentElement.innerHTML).toContain(expected);
     });
 
@@ -68,7 +68,7 @@ describe("strategies", () => {
 
     it("binds what it swaps in", async () => {
         const page = await swap(
-            `<div id="target" nm-scope="{ n: 9 }"><span id="s" nm-bind-textcontent="n"></span></div>`,
+            `<div id="target" n-scope="{ n: 9 }"><span id="s" n-bind-textcontent="n"></span></div>`,
         );
         expect(page.$("#s").textContent).toBe("9");
     });
@@ -76,7 +76,7 @@ describe("strategies", () => {
     it("logs a strategy that only contains a valid one, and goes on with the rest", async () => {
         const page = await mountSwap(
             `<div id="target">old</div><div id="other">old</div>`,
-            `<div id="target" nm-swap="afterend">new</div><div id="other">new</div>`,
+            `<div id="target" n-swap="afterend">new</div><div id="other">new</div>`,
         );
         await swapOnce(page);
         expect(page.$("#target").textContent).toBe("old");
@@ -88,8 +88,8 @@ describe("strategies", () => {
 describe("inner swaps", () => {
     const mountSwap = (html, answer) =>
         mount(
-            `<div id="d" nm-scope="{ hits: 0, gone: [] }">
-                <button id="b" nm-on-click="$get('/x')"></button>
+            `<div id="d" n-scope="{ hits: 0, gone: [] }">
+                <button id="b" n-on-click="$get('/x')"></button>
                 ${html}
             </div>`,
             { server: () => answer },
@@ -102,25 +102,25 @@ describe("inner swaps", () => {
 
     it("binds the target of an inner swap only once", async () => {
         const page = await mountSwap(
-            `<div id="target" nm-on-ping="hits++"></div>`,
-            `<div id="target" nm-swap="inner"><span>new</span></div>`,
+            `<div id="target" n-on-ping="hits++"></div>`,
+            `<div id="target" n-swap="inner"><span>new</span></div>`,
         );
         await swapOnce(page);
         await swapOnce(page);
         page.$("#target").dispatchEvent(new page.window.Event("ping"));
-        expect(page.$("#d").nmProxy.hits).toBe(1);
+        expect(page.$("#d").nagiProxy.hits).toBe(1);
     });
 
     it("keeps the scope of the target of an inner swap, and binds the new children to it", async () => {
         const page = await mount(
-            `<button id="b" nm-on-click="$get('/x')"></button>
-            <div id="target" nm-scope="{ n: 1 }"></div>`,
-            { server: () => `<div id="target" nm-swap="inner"><span id="s" nm-bind-textcontent="n"></span></div>` },
+            `<button id="b" n-on-click="$get('/x')"></button>
+            <div id="target" n-scope="{ n: 1 }"></div>`,
+            { server: () => `<div id="target" n-swap="inner"><span id="s" n-bind-textcontent="n"></span></div>` },
         );
-        const scope = page.$("#target").nmProxy;
+        const scope = page.$("#target").nagiProxy;
         scope.n = 5;
         await swapOnce(page);
-        expect(page.$("#target").nmProxy).toBe(scope);
+        expect(page.$("#target").nagiProxy).toBe(scope);
         expect(page.$("#s").textContent).toBe("5");
         scope.n = 6;
         expect(page.$("#s").textContent).toBe("6");
@@ -130,8 +130,8 @@ describe("inner swaps", () => {
 describe("cleanup", () => {
     const mountSwap = (html, answer) =>
         mount(
-            `<div id="d" nm-scope="{ hits: 0, gone: [] }">
-                <button id="b" nm-on-click="$get('/x')"></button>
+            `<div id="d" n-scope="{ hits: 0, gone: [] }">
+                <button id="b" n-on-click="$get('/x')"></button>
                 ${html}
             </div>`,
             { server: () => answer },
@@ -143,47 +143,47 @@ describe("cleanup", () => {
     };
 
     const destroyed = `
-        <div id="target" nm-on-destroy="gone = [...gone, 'target']">
-            <span nm-on-destroy="gone = [...gone, 'child']"></span>
+        <div id="target" n-on-destroy="gone = [...gone, 'target']">
+            <span n-on-destroy="gone = [...gone, 'child']"></span>
         </div>
     `;
 
     it("dispatches destroy on the bound elements it replaces", async () => {
         const page = await mount(
-            `<div nm-scope="{ gone: [] }" id="d">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target"><span nm-on-destroy="gone = [...gone, 'span']"></span></div>
+            `<div n-scope="{ gone: [] }" id="d">
+                <button id="b" n-on-click="$get('/x')"></button>
+                <div id="target"><span n-on-destroy="gone = [...gone, 'span']"></span></div>
             </div>`,
             { server: () => `<div id="target"></div>` },
         );
         page.$("#b").click();
         await page.settle();
-        expect(page.$("#d").nmProxy.gone).toEqual(["span"]);
+        expect(page.$("#d").nagiProxy.gone).toEqual(["span"]);
     });
 
     it("sends destroy to the target and what is in it on an outer swap", async () => {
         const page = await mountSwap(destroyed, `<div id="target"></div>`);
         await swapOnce(page);
-        expect(page.$("#d").nmProxy.gone).toEqual(["target", "child"]);
+        expect(page.$("#d").nagiProxy.gone).toEqual(["target", "child"]);
     });
 
     it("sends destroy only to the children on an inner swap", async () => {
-        const page = await mountSwap(destroyed, `<div id="target" nm-swap="inner"></div>`);
+        const page = await mountSwap(destroyed, `<div id="target" n-swap="inner"></div>`);
         await swapOnce(page);
-        expect(page.$("#d").nmProxy.gone).toEqual(["child"]);
+        expect(page.$("#d").nagiProxy.gone).toEqual(["child"]);
     });
 
     it.each(["before", "after", "prepend", "append"])("sends no destroy on a %s swap", async (strategy) => {
-        const page = await mountSwap(destroyed, `<div id="target" nm-swap="${strategy}"><b>new</b></div>`);
+        const page = await mountSwap(destroyed, `<div id="target" n-swap="${strategy}"><b>new</b></div>`);
         await swapOnce(page);
-        expect(page.$("#d").nmProxy.gone).toEqual([]);
+        expect(page.$("#d").nagiProxy.gone).toEqual([]);
     });
 
     it("stops the debounce of an element it removed", async () => {
         const page = await mount(
-            `<div id="d" nm-scope="{ got: [] }">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target"><input id="i" nm-on-input="$debounce(() => got = [...got, 'ran'], 30)"></div>
+            `<div id="d" n-scope="{ got: [] }">
+                <button id="b" n-on-click="$get('/x')"></button>
+                <div id="target"><input id="i" n-on-input="$debounce(() => got = [...got, 'ran'], 30)"></div>
             </div>`,
             { server: () => `<div id="target"></div>` },
         );
@@ -191,14 +191,14 @@ describe("cleanup", () => {
         page.$("#b").click();
         await page.settle();
         await new Promise((resolve) => setTimeout(resolve, 50));
-        expect(page.$("#d").nmProxy.got).toEqual([]);
+        expect(page.$("#d").nagiProxy.got).toEqual([]);
     });
 
     it("removes the window listeners of an element it removed", async () => {
-        const target = `<div id="target" nm-on-keydown.window="hits++"></div>`;
+        const target = `<div id="target" n-on-keydown.window="hits++"></div>`;
         const page = await mount(
-            `<div id="d" nm-scope="{ hits: 0 }">
-                <button id="b" nm-on-click="$get('/x')"></button>
+            `<div id="d" n-scope="{ hits: 0 }">
+                <button id="b" n-on-click="$get('/x')"></button>
                 ${target}
             </div>`,
             { server: () => target },
@@ -208,14 +208,14 @@ describe("cleanup", () => {
             await page.settle();
         }
         page.window.dispatchEvent(new page.window.KeyboardEvent("keydown", { key: "a" }));
-        expect(page.$("#d").nmProxy.hits).toBe(1);
+        expect(page.$("#d").nagiProxy.hits).toBe(1);
     });
 });
 
 describe("cssMorph", () => {
     const swapTwice = async (fragment, before = `<div id="t" class="old"></div>`) => {
         const page = await mount(
-            `<div nm-scope><button id="b" nm-on-click="$get('/x')"></button>${before}</div>`,
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button>${before}</div>`,
             { server: () => fragment },
         );
         for (let i = 0; i < 2; i++) {
@@ -228,11 +228,11 @@ describe("cssMorph", () => {
 
     it("keeps the classes and styles binds set after an outer swap", async () => {
         const page = await mount(
-            `<div nm-let-on="true">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target" class="card" nm-bind-class.active="on" nm-bind-style.color="'red'"></div>
+            `<div n-let-on="true">
+                <button id="b" n-on-click="$get('/x')"></button>
+                <div id="target" class="card" n-bind-class.active="on" n-bind-style.color="'red'"></div>
             </div>`,
-            { server: () => `<div id="target" class="card" nm-bind-class.active="on" nm-bind-style.color="'red'"></div>` },
+            { server: () => `<div id="target" class="card" n-bind-class.active="on" n-bind-style.color="'red'"></div>` },
         );
         page.$("#b").click();
         await page.settle();
@@ -244,11 +244,11 @@ describe("cssMorph", () => {
 
     it("settles the class of an outer swap's bound target, and puts the bound classes back", async () => {
         const page = await mount(
-            `<div nm-let-on="true">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target" class="card collapsed" nm-bind-class.active="on"></div>
+            `<div n-let-on="true">
+                <button id="b" n-on-click="$get('/x')"></button>
+                <div id="target" class="card collapsed" n-bind-class.active="on"></div>
             </div>`,
-            { server: () => `<div id="target" class="card expanded" nm-bind-class.active="on"></div>` },
+            { server: () => `<div id="target" class="card expanded" n-bind-class.active="on"></div>` },
         );
         page.$("#b").click();
         await page.settle();
@@ -258,11 +258,11 @@ describe("cssMorph", () => {
 
     it("puts back a className bind after an outer swap", async () => {
         const page = await mount(
-            `<div nm-let-cls="'card open'">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <div id="target" class="card" nm-bind-classname="cls"></div>
+            `<div n-let-cls="'card open'">
+                <button id="b" n-on-click="$get('/x')"></button>
+                <div id="target" class="card" n-bind-classname="cls"></div>
             </div>`,
-            { server: () => `<div id="target" class="card" nm-bind-classname="cls"></div>` },
+            { server: () => `<div id="target" class="card" n-bind-classname="cls"></div>` },
         );
         page.$("#b").click();
         await page.settle();
@@ -272,7 +272,7 @@ describe("cssMorph", () => {
 
     it("still settles the class of an outer swap's target from the old to the new", async () => {
         const page = await mount(
-            `<div nm-scope><button id="b" nm-on-click="$get('/x')"></button><div id="target" class="old"></div></div>`,
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="target" class="old"></div></div>`,
             { server: () => `<div id="target" class="new"></div>` },
         );
         page.$("#b").click();
@@ -283,11 +283,11 @@ describe("cssMorph", () => {
 
     it("leaves the target of an inner swap and its wrapper alone, and settles the new children", async () => {
         const page = await mount(
-            `<div nm-scope>
-                <button id="b" nm-on-click="$get('/x')"></button>
+            `<div n-scope>
+                <button id="b" n-on-click="$get('/x')"></button>
                 <div id="target" class="keep"><p id="p" class="old"></p></div>
             </div>`,
-            { server: () => `<div id="target" nm-swap="inner" class="wrapper"><p id="p" class="new"></p></div>` },
+            { server: () => `<div id="target" n-swap="inner" class="wrapper"><p id="p" class="new"></p></div>` },
         );
         page.$("#b").click();
         await page.settle();
@@ -298,11 +298,11 @@ describe("cssMorph", () => {
 
     it("keeps classes and styles set at init by other code after an outer swap", async () => {
         const page = await mount(
-            `<div nm-scope>
-                <button id="b" nm-on-click="$get('/x')"></button>
+            `<div n-scope>
+                <button id="b" n-on-click="$get('/x')"></button>
                 <div id="t" class="old" style="color: blue"></div>
             </div>`,
-            { server: () => `<div id="t" class="new" style="margin: 1px" nm-on-init="this.classList.add('ready'); this.style.padding = '2px'"></div>` },
+            { server: () => `<div id="t" class="new" style="margin: 1px" n-on-init="this.classList.add('ready'); this.style.padding = '2px'"></div>` },
         );
         page.$("#b").click();
         await page.settle();
@@ -315,14 +315,14 @@ describe("cssMorph", () => {
     });
 
     it("keeps what init sets when the old element had it too", async () => {
-        const page = await swapTwice(`<div id="t" class="new" nm-on-init="this.classList.add('ready'); this.style.padding = '2px'"></div>`);
+        const page = await swapTwice(`<div id="t" class="new" n-on-init="this.classList.add('ready'); this.style.padding = '2px'"></div>`);
         const t = page.$("#t");
         expect([...t.classList].sort()).toEqual(["new", "ready"]);
         expect(t.style.padding).toBe("2px");
     });
 
     it("keeps a class init takes away from the answer's markup", async () => {
-        const page = await swapTwice(`<div id="t" class="loading" nm-on-init="this.classList.remove('loading')"></div>`);
+        const page = await swapTwice(`<div id="t" class="loading" n-on-init="this.classList.remove('loading')"></div>`);
         expect(page.$("#t").classList.contains("loading")).toBe(false);
     });
 });

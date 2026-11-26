@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
-describe("nm-ref", () => {
+describe("n-ref", () => {
     const swapOnce = async (page) => {
         page.$("#b").click();
         await page.settle();
@@ -9,32 +9,32 @@ describe("nm-ref", () => {
 
     it("puts the element in its scope's $refs", async () => {
         const page = await mount(`
-            <div id="d" nm-scope="{}"><input nm-ref="field" id="i"></div>
+            <div id="d" n-scope="{}"><input n-ref="field" id="i"></div>
         `);
-        expect(page.$("#d").nmProxy.$refs.field).toBe(page.$("#i"));
+        expect(page.$("#d").nagiProxy.$refs.field).toBe(page.$("#i"));
     });
 
     it("forgets the $refs of the children it removes", async () => {
         const page = await mount(
-            `<div id="target" nm-scope="{}">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <input nm-ref="box">
+            `<div id="target" n-scope="{}">
+                <button id="b" n-on-click="$get('/x')"></button>
+                <input n-ref="box">
             </div>`,
-            { server: () => `<div id="target" nm-swap="inner"><button id="b2"></button></div>` },
+            { server: () => `<div id="target" n-swap="inner"><button id="b2"></button></div>` },
         );
         await swapOnce(page);
-        expect(page.$("#target").nmProxy.$refs.box).toBeUndefined();
+        expect(page.$("#target").nagiProxy.$refs.box).toBeUndefined();
     });
 
     it("keeps a ref the new children set under the same name", async () => {
         const page = await mount(
-            `<div id="target" nm-scope="{}">
-                <button id="b" nm-on-click="$get('/x')"></button>
-                <input nm-ref="box">
+            `<div id="target" n-scope="{}">
+                <button id="b" n-on-click="$get('/x')"></button>
+                <input n-ref="box">
             </div>`,
-            { server: () => `<div id="target" nm-swap="inner"><input id="new" nm-ref="box"></div>` },
+            { server: () => `<div id="target" n-swap="inner"><input id="new" n-ref="box"></div>` },
         );
         await swapOnce(page);
-        expect(page.$("#target").nmProxy.$refs.box).toBe(page.$("#new"));
+        expect(page.$("#target").nagiProxy.$refs.box).toBe(page.$("#new"));
     });
 });
