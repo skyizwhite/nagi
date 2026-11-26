@@ -204,18 +204,29 @@ describe("helpers", () => {
         expect({ ...page.scope("#b").got }).toEqual({ a: "scope", b: "p", c: "button" });
     });
 
-    it("$persist keeps a member in localStorage and restores it", async () => {
+    it("$persist saves a member to localStorage as it changes", async () => {
         const page = await mount(`
             <div id="d" nm-data="{ n: 1 }" nm-bind="{ oninit: () => $persist('n') }"></div>
         `);
+        expect(page.window.localStorage["_nmProp-n"]).toBe("1");
+
         page.$("#d").nmProxy.n = 5;
         expect(page.window.localStorage["_nmProp-n"]).toBe("5");
+    });
 
-        const again = await mount(`
-            <div id="d" nm-data="{ n: 1 }" nm-bind="{ oninit: () => $persist('n') }"></div>
-        `);
-        again.window.localStorage["_nmProp-n"] = "7";
-        again.$("#d").dispatchEvent(new again.window.Event("init"));
-        expect(again.$("#d").nmProxy.n).toBe(7);
+    it("$persist restores what was saved before the page loaded", async () => {
+        const page = await mount(
+            `<div id="d" nm-data="{ n: 1 }" nm-bind="{ oninit: () => $persist('n') }"></div>`,
+            { beforeInit: (window) => (window.localStorage["_nmProp-n"] = "7") },
+        );
+        expect(page.$("#d").nmProxy.n).toBe(7);
+    });
+
+    it("$persist takes the storage key as its second argument", async () => {
+        const page = await mount(
+            `<div id="d" nm-data="{ n: 1 }" nm-bind="{ oninit: () => $persist('n', 'count') }"></div>`,
+            { beforeInit: (window) => (window.localStorage.count = "3") },
+        );
+        expect(page.$("#d").nmProxy.n).toBe(3);
     });
 });

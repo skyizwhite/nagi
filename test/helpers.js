@@ -1,15 +1,15 @@
 import { readFileSync } from "node:fs";
 import { Window } from "happy-dom";
-import { afterEach } from "vitest";
 
 const source = readFileSync(new URL("../nomini.js", import.meta.url), "utf8");
 
 const windows = new Set();
 
-afterEach(async () => {
+/** Closes every window `mount` opened. `test/setup.js` runs it after each test. */
+export const closeWindows = async () => {
     for (const window of windows) await window.happyDOM.close();
     windows.clear();
-});
+};
 
 const respond = (answer) => {
     if (answer instanceof Response) return answer;
@@ -18,21 +18,55 @@ const respond = (answer) => {
     return new Response(body, { status, headers });
 };
 
+const abortError = () => new DOMException("The operation was aborted.", "AbortError");
+
+/**
+ * Hands out `response` with a body that settles `done` once its reader has
+ * read it to the end, or given up on it.
+ */
+const trackBody = (response, done) => {
+    if (!response.body) {
+        done();
+        return response;
+    }
+    const reader = response.body.getReader();
+    const body = new ReadableStream({
+        async pull(controller) {
+            const { done: ended, value } = await reader.read();
+            if (ended) {
+                controller.close();
+                done();
+            } else controller.enqueue(value);
+        },
+        cancel(reason) {
+            done();
+            return reader.cancel(reason);
+        },
+    });
+    return new Response(body, response);
+};
+
 /**
  * Loads nomini into a fresh window holding `html`, and runs its init.
  *
  * `server(request)` answers each fetch nomini makes. `request` has the
  * `url`, `method`, `headers` and `body` (as a string) that were sent, and
  * the answer is a string, a `{ body, status, headers }` object or a
- * `Response`, or a promise of one.
+ * `Response`, or a promise of one. An answer still pending when the request
+ * is aborted is dropped, and the fetch rejects with an AbortError.
+ *
+ * `beforeInit(window)` runs after the HTML is in place and before nomini is
+ * loaded, to set up what nomini should find when it starts.
  */
-export const mount = async (html, { server } = {}) => {
+export const mount = async (html, { server, beforeInit } = {}) => {
     const window = new Window({ url: "http://localhost/" });
     windows.add(window);
 
     const requests = [];
+    const pending = new Set();
+
     window.TextDecoderStream = TextDecoderStream;
-    window.fetch = async (url, opts = {}) => {
+    window.fetch = (url, opts = {}) => {
         const request = {
             url: new URL(url, window.location.href).href,
             method: opts.method ?? "GET",
@@ -40,9 +74,35 @@ export const mount = async (html, { server } = {}) => {
             body: opts.body === undefined ? undefined : String(opts.body),
         };
         requests.push(request);
-        if (opts.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        if (!server) throw new Error(`No server for ${request.method} ${request.url}`);
-        return respond(await server(request));
+
+        let done;
+        const work = new Promise((resolve) => (done = resolve));
+        pending.add(work);
+        work.then(() => pending.delete(work));
+
+        const { signal } = opts;
+        return new Promise((resolve, reject) => {
+            const abort = () => {
+                done();
+                reject(abortError());
+            };
+            if (signal?.aborted) return abort();
+            signal?.addEventListener("abort", abort, { once: true });
+
+            new Promise((answered) => {
+                if (!server) throw new Error(`No server for ${request.method} ${request.url}`);
+                answered(server(request));
+            })
+                .then((answer) => {
+                    if (signal?.aborted) return;
+                    signal?.removeEventListener("abort", abort);
+                    resolve(trackBody(respond(answer), done));
+                })
+                .catch((err) => {
+                    done();
+                    reject(err);
+                });
+        });
     };
 
     const errors = [];
@@ -52,6 +112,7 @@ export const mount = async (html, { server } = {}) => {
 
     const { document } = window;
     document.body.innerHTML = html;
+    beforeInit?.(window);
     window.eval(source);
     document.dispatchEvent(new window.Event("DOMContentLoaded"));
 
@@ -66,16 +127,21 @@ export const mount = async (html, { server } = {}) => {
         warnings,
         /** The reactive scope of the nearest `nm-data` around `selector`. */
         scope: (selector) => $(selector).closest("[nm-data]").nmProxy,
-        /** Waits for timers, pending fetches and the swaps they make. */
-        settle: () => settle(window),
+        /**
+         * Waits until every fetch has been answered and its body read, and
+         * the window's timers (nomini's swap timer, debounces) have run.
+         * Hangs if a server answer never comes, so answer before settling.
+         */
+        settle: () => settle(window, pending),
     };
 };
 
-const settle = async (window) => {
-    // A fetch answer is read outside the window's timers before nomini sets
-    // the timer that swaps it, so give the read a moment on each round.
-    for (let round = 0; round < 3; round++) {
-        await new Promise((resolve) => setTimeout(resolve, 5));
+const settle = async (window, pending) => {
+    do {
+        await Promise.all(pending);
+        // Let the reader handle the end of the body before looking for the
+        // timers it sets.
+        await new Promise((resolve) => setTimeout(resolve));
         await window.happyDOM.waitUntilComplete();
-    }
+    } while (pending.size > 0);
 };

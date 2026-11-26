@@ -88,8 +88,13 @@ describe("requests", () => {
     });
 
     it("aborts the scope's request in flight when it makes another", async () => {
+        const answers = [];
+        const page = await mount(
+            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>
+            <div id="target">old</div>`,
+            { server: () => new Promise((resolve) => answers.push(resolve)) },
+        );
         const signals = [];
-        const page = await mount(button(`$get('/x')`), { server: () => "" });
         const fetch = page.window.fetch;
         page.window.fetch = (url, opts) => {
             signals.push(opts.signal);
@@ -97,8 +102,12 @@ describe("requests", () => {
         };
         page.$("#b").click();
         page.$("#b").click();
-        await page.settle();
         expect(signals.map((s) => s.aborted)).toEqual([true, false]);
+
+        answers[0](`<div id="target">first</div>`);
+        answers[1](`<div id="target">second</div>`);
+        await page.settle();
+        expect(page.$("#target").textContent).toBe("second");
     });
 
     it("dispatches fetcherr from the element when the answer is not ok, and swaps nothing", async () => {
@@ -181,6 +190,19 @@ describe("swaps", () => {
         page.$("#b").click();
         await page.settle();
         expect(page.$("#d").nmProxy.gone).toEqual(["span"]);
+    });
+
+    it("is waited for by settle() however slowly the answer comes", async () => {
+        const later = (ms, value) => new Promise((resolve) => setTimeout(() => resolve(value), ms));
+        const encoder = new TextEncoder();
+        const body = new ReadableStream({
+            async pull(controller) {
+                controller.enqueue(encoder.encode(await later(50, `<div id="target">new</div>`)));
+                controller.close();
+            },
+        });
+        const page = await swap(later(50, new Response(body)));
+        expect(page.$("#target").textContent).toBe("new");
     });
 
     it("swaps an answer streamed in pieces as one", async () => {
