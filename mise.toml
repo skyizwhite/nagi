@@ -1,0 +1,6 @@
+[tools]
+node = "26"
+
+[tasks.test]
+description = "Run the test suite"
+run = "npm test"

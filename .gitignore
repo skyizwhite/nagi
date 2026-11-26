@@ -3,3 +3,4 @@ www/public
 test.html
 dist/*.br
 dist/*.gz
+node_modules
