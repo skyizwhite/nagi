@@ -36,9 +36,10 @@
         );
     };
 
+    const pageWriting = new Set();
     const getClosestProxy = (el) => {
         for (; el; el = el.parentElement) if (el.nmProxy) return el.nmProxy;
-        return helpers();
+        return helpers(0, pageWriting);
     };
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
@@ -102,20 +103,26 @@
     let currentHandler = null;
 
     // Helpers that are included with every data object
-    const helpers = (pending = 0, writing = new Set()) => ({
+    const helpers = (pending = 0, writing = new Set(), controllers = new Set()) => ({
         // --- BEGIN ref
         $refs: {},
         // --- END ref
         // --- BEGIN fetch
         $fetching: false,
         _nmAbort: new AbortController(),
-        $get(url, data) {
-            this.$fetch(url, "GET", data);
+        $get(url, data, options) {
+            this.$fetch(url, "GET", data, options);
         },
-        $post(url, data) {
-            this.$fetch(url, "POST", data);
+        $post(url, data, options) {
+            this.$fetch(url, "POST", data, options);
         },
-        $fetch(url, method, data) {
+        $abort() {
+            controllers.forEach((controller) => controller.abort());
+            this._nmAbort.abort();
+            this._nmAbort = new AbortController();
+        },
+        $fetch(url, method, data, options) {
+            options ??= {};
             const el = currentEl ?? this._nmEl;
             const controller = new AbortController();
             const { signal } = controller;
@@ -180,7 +187,7 @@
                     typeof value === "string" ? value : value.size || value.name ? `\0file${idOf(value)}` : "\0empty",
                 ]);
                 write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sent) : ""}`;
-                if (writing.has(write)) return;
+                if (options.dedupe !== false && writing.has(write)) return;
 
                 this._nmAbort.abort();
                 return opts;
@@ -189,7 +196,16 @@
             if (!opts) return report("fetchskip", { method, url });
 
             this._nmAbort = reading ? controller : new AbortController();
-            if (write) writing.add(write);
+            const deduped = write && options.dedupe !== false;
+            if (deduped) writing.add(write);
+            controllers.add(controller);
+            let timedOut = false;
+            const { timeout } = options;
+            const timer = Number.isFinite(timeout) && timeout > 0 && setTimeout(() => {
+                timedOut = true;
+                controller.abort();
+                if (this._nmAbort === controller) this._nmAbort = new AbortController();
+            }, Math.min(timeout, 2147483647));
             pending++;
             this.$fetching = true;
 
@@ -232,9 +248,15 @@
                     if (!res.ok)
                         throw Object.assign(new Error(`${res.status} ${res.statusText}`), { status: res.status, text: buf, swapped });
                 })
-                .catch((err) => signal.aborted || report("fetcherr", { err, url, status: err?.status, text: err?.text, swapped: !!err?.swapped }))
+                .catch((err) => {
+                    if (timedOut) err = new DOMException("The request timed out.", "TimeoutError");
+                    else if (signal.aborted) return;
+                    report("fetcherr", { err, url, status: err?.status, text: err?.text, swapped: !!err?.swapped });
+                })
                 .finally(() => {
-                    writing.delete(write);
+                    clearTimeout(timer);
+                    controllers.delete(controller);
+                    if (deduped) writing.delete(write);
                     if (!--pending) this.$fetching = false;
                 });
         },
