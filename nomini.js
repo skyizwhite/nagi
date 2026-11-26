@@ -29,12 +29,6 @@
         }
     };
 
-    const propOf = (obj, name) => {
-        for (let o = obj; o; o = Object.getPrototypeOf(o))
-            for (const key of Object.getOwnPropertyNames(o))
-                if (key.toLowerCase() === name) return key;
-    };
-
     const queryAttr = (el, selector) => {
         const elMatch = el.matches(selector) ? [el] : [];
         return [...elMatch, ...el.querySelectorAll(selector)].filter(
@@ -99,6 +93,7 @@
         owner && (owner.nmRuns ||= new Set()).add(run);
         currentBind?.children.push(run);
         run();
+        return run;
     };
 
     // Important reactivity stuff
@@ -209,7 +204,9 @@
 
             return datasets;
         },
-        $watch: (fn) => watch(fn),
+        $watch: (fn) => {
+            watch(fn);
+        },
         $dispatch(evt, detail, opts) {
             dispatch(currentEl ?? this._nmEl ?? document, evt, { detail, ...opts });
         },
@@ -281,11 +278,12 @@
                 continue;
             }
 
-            // --- BEGIN morph
-            cssMorph(fragment);
-            // --- END morph
-
             const kids = [...fragment.childNodes];
+
+            // --- BEGIN morph
+            if (strategy === "outer") cssMorph(fragment);
+            else kids.forEach((kid) => kid.nodeType === 1 && cssMorph(kid));
+            // --- END morph
 
             if (strategy === "inner") {
                 [...target.children].forEach(drop);
@@ -326,7 +324,10 @@
                     });
 
                 morph(oldEl);
-                requestAnimationFrame(() => morph(newElCopy));
+                requestAnimationFrame(() => {
+                    morph(newElCopy);
+                    newEl.nmRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
+                });
             }
         });
     };
@@ -504,11 +505,29 @@
             console.error("[Nomini] nm-bind is no longer read, use nm-bind-* and nm-on-*:", el),
         );
 
+        const propOf = (obj, name) => {
+            for (let o = obj; o; o = Object.getPrototypeOf(o))
+                for (const key of Object.getOwnPropertyNames(o))
+                    if (key.toLowerCase() === name) return key;
+        };
+
+        const writable = (obj, key) => {
+            for (let o = obj; o; o = Object.getPrototypeOf(o)) {
+                const found = Object.getOwnPropertyDescriptor(o, key);
+                if (found) return !!(found.set || found.writable);
+            }
+            return true;
+        };
+
         queryAttr(baseEl, "*").forEach((bindEl) => {
             if (bindEl.nmBound) return;
             const entries = [...bindEl.attributes].flatMap(({ name, value }) => {
                 const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
-                if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
+                if (kind === "on") {
+                    if (/^\s*(async\s+)?(\([^)]*\)|[\w$]+)\s*=>/.test(value))
+                        console.warn("[Nomini] nm-on-* runs statements, and this only makes a function:", name, bindEl);
+                    return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
+                }
                 if (!kind) return [];
                 const [first, ...subs] = rest.split(".");
                 const sub = subs.join(".");
@@ -518,8 +537,18 @@
                     console.error("[Nomini] no such property:", name, bindEl);
                     return [];
                 }
+                const keyed = sub && /^(class|style|dataset)$/.test(main);
+                const camelSub = sub.replace(/-(\w)/g, (_, c) => c.toUpperCase());
+                if (main === "style" && sub && !sub.startsWith("--") && !(sub in bindEl.style) && !(camelSub in bindEl.style))
+                    console.warn("[Nomini] the style has no such property:", name, bindEl);
+                if (!keyed && !(sub ? writable(bindEl[main], inner) : writable(bindEl, main))) {
+                    console.error("[Nomini] cannot write:", name, bindEl);
+                    return [];
+                }
                 const key = main + (sub ? "." + inner : "");
-                return `${JSON.stringify(key)}: () => (${value.trim() ? value : "undefined"}\n)`;
+                const body = value.replace(/[\s;]+$/, "");
+                const empty = !body.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "").trim();
+                return `${JSON.stringify(key)}: () => (${empty ? "undefined" : body}\n)`;
             });
 
             if (!entries.length) return;
@@ -533,6 +562,8 @@
                 if (key.startsWith("@")) {
                     // --- BEGIN events
                     const [eventName, ...mods] = key.slice(1).split(".");
+                    const unknown = mods.filter((mod) => !/^(prevent|stop|once|window|debounce\d+)$/.test(mod));
+                    if (unknown.length) console.warn("[Nomini] unknown modifiers:", unknown, bindEl);
 
                     const debounceMod = mods.find((val) => val.startsWith("debounce"));
                     const delay = +debounceMod?.slice(8);
@@ -565,8 +596,8 @@
                             const v = resolvedVal;
                             const next = new Set(
                                 typeof v === "string" ? v.split(/\s+/).filter(Boolean)
-                                    : Array.isArray(v) ? v.filter(Boolean)
-                                    : Object.keys(v ?? {}).filter((name) => v[name]),
+                                    : Array.isArray(v) ? v.filter(Boolean).flatMap((item) => String(item).split(/\s+/)).filter(Boolean)
+                                    : Object.keys(v ?? {}).filter((name) => v[name]).flatMap((name) => name.split(/\s+/)).filter(Boolean),
                             );
                             const mine = new Set();
                             added.forEach((name) => next.has(name) || bindEl.classList.remove(name));
@@ -577,7 +608,7 @@
                             added = mine;
                         } else if (sub) {
                             const unset = resolvedVal == null || resolvedVal === false;
-                            if (main === "class") bindEl.classList.toggle(sub, resolvedVal);
+                            if (main === "class") bindEl.classList.toggle(sub, !!resolvedVal);
                             else if (main === "style")
                                 unset ? bindEl.style.removeProperty(sub) : bindEl.style.setProperty(sub, resolvedVal);
                             else if (main === "dataset")
@@ -591,7 +622,7 @@
                         if (typeof value?.then === "function")
                             value.then(write).catch((err) => console.error("[Nomini] failed to run:", val, "\n", err));
                         else write(value);
-                    }, bindEl);
+                    }, bindEl).attr = /^class(name|list)$/i.test(main) ? "class" : main;
                 }
             });
 
