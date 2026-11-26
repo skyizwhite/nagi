@@ -61,6 +61,7 @@
                         console.error("[Nomini] failed to run:", fn, "\n", err);
                     }
                 }
+                if (run.dirty) console.error("[Nomini] stopped running after 100 times:", fn);
             } finally {
                 run.active = false;
             }
@@ -294,9 +295,8 @@
                     const deps = trackedDeps[prop];
 
                     deps && [...deps].forEach((run) => {
-                        const { owner } = run;
-                        if (owner?.nmGone) deps.delete(run);
-                        else if (!owner || owner.isConnected) run();
+                        if (run.owner?.nmGone) deps.delete(run);
+                        else run();
                     });
 
                     return true;
@@ -398,7 +398,8 @@
 
                     watch(() => {
                         const value = val();
-                        if (typeof value?.then === "function") value.then(write);
+                        if (typeof value?.then === "function")
+                            value.then(write).catch((err) => console.error("[Nomini] failed to run:", val, "\n", err));
                         else write(value);
                     }, bindEl);
                 }

@@ -299,19 +299,6 @@ describe("reactivity", () => {
         expect(scope.ran).toEqual([]);
     });
 
-    it("does not run the binds of an element out of the document", async () => {
-        const page = await mount(`
-            <div id="d" nm-data="{ n: 1, ran: 0 }">
-                <span id="s" nm-bind="{ textContent: () => (ran++, n) }"></span>
-            </div>
-        `);
-        const scope = page.$("#d").nmProxy;
-        page.$("#s").remove();
-        scope.n = 2;
-        scope.n = 3;
-        expect(scope.ran).toBe(1);
-    });
-
     it("runs the binds of an element put back in the document", async () => {
         const page = await mount(`
             <div id="d" nm-data="{ n: 1 }"><span id="s" nm-bind="{ textContent: () => n }"></span></div>
@@ -321,6 +308,7 @@ describe("reactivity", () => {
         span.remove();
         scope.n = 2;
         page.$("#d").append(span);
+        expect(span.textContent).toBe("2");
         scope.n = 3;
         expect(span.textContent).toBe("3");
     });
@@ -377,6 +365,24 @@ describe("reactivity", () => {
         `);
         page.scope("#first").a = 5;
         expect(page.$("#first").textContent).toBe("v6");
+    });
+
+    it("logs a bind that keeps setting itself off and stops it", async () => {
+        const page = await mount(`
+            <div nm-data="{ n: 0 }" nm-bind="{ onx: () => n = n + 1 }">
+                <span id="s" nm-bind="{ textContent: () => ($dispatch('x'), n) }"></span>
+            </div>
+        `);
+        page.scope("#s").n = 10;
+        expect(page.errors.some(([message]) => message.includes("stopped running after 100 times"))).toBe(true);
+    });
+
+    it("logs an async bind that rejects", async () => {
+        const page = await mount(`
+            <div nm-data="{}"><span nm-bind="{ textContent: async () => { throw new Error('no') } }"></span></div>
+        `);
+        await page.settle();
+        expect(page.errors).toHaveLength(1);
     });
 
     it("does not track what an event handler reads into the bind that sent the event", async () => {
