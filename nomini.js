@@ -10,11 +10,14 @@
         el.dispatchEvent(new CustomEvent(name, opts));
     };
 
+    const failed = Symbol();
+
     const evaluate = (expression, data, thisArg) => {
         try {
             return new Function("__data", `with(__data) {return (${expression}\n)}`).call(thisArg, data);
         } catch (err) {
             console.error("[Nomini] failed to evaluate:", expression, "\n", err);
+            return failed;
         }
     };
 
@@ -177,7 +180,6 @@
 
             return Object.entries(this).reduce((acc, [k, v]) => {
                 if (!/^[a-z]+$/i.test(k)) return acc;
-                if (typeof v === "function") v = v();
                 if (isPrimitive(v) || (Array.isArray(v) && v.every(isPrimitive)))
                     acc[k] = v;
                 return acc;
@@ -353,7 +355,8 @@
                 const key = name.match(/^nm-data-(.+)$/)?.[1];
                 if (!key) return;
                 try {
-                    rawData[key] = JSON.parse(value);
+                    const parsed = JSON.parse(value);
+                    rawData[key] = typeof parsed !== "number" || String(parsed) === value.trim() ? parsed : value;
                 } catch {
                     rawData[key] = value;
                 }
@@ -388,7 +391,8 @@
 
             attrs.forEach(({ name, value }) => {
                 const key = name.match(/^nm-fn-(.+)$/)?.[1];
-                if (key) rawData[key] = evaluate(value, proxyData, dataEl);
+                const result = key && evaluate(value, proxyData, dataEl);
+                if (key && result !== failed) rawData[key] = result;
             });
         });
         // --- END data

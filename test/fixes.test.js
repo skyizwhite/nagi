@@ -234,18 +234,16 @@ describe("replacing a request", () => {
     it("keeps the request in flight when building the next one throws", async () => {
         let answer;
         const page = await mount(
-            `<div nm-data="{ broken() { throw new Error('no') } }">
+            `<div nm-data="{}">
                 <button id="first" nm-on-click="$get('/x')"></button>
                 <div id="target">old</div>
             </div>`,
             { server: () => new Promise((resolve) => (answer = resolve)) },
         );
         const scope = page.scope("#first");
-        const broken = scope.broken;
-        scope.broken = () => "fine";
         page.$("#first").click();
-        scope.broken = broken;
-        expect(() => scope.$get("/y")).toThrow("no");
+        const unwritable = { toString() { throw new Error("no"); } };
+        expect(() => scope.$get("/y", { bad: unwritable })).toThrow("no");
         answer(`<div id="target">new</div>`);
         await page.settle();
         expect(page.$("#target").textContent).toBe("new");

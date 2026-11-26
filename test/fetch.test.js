@@ -36,7 +36,7 @@ describe("requests", () => {
         expect(request.body).toBe("q=a");
     });
 
-    it("sends the scope's letter-only primitive members, calling functions for them", async () => {
+    it("sends the scope's letter-only primitive members, and not its functions", async () => {
         const page = await mount(
             button(`$get('/x')`, "{ name: 'n', list: [1, 2], obj: { a: 1 }, _hidden: 1, getter() { return 'g' } }"),
             { server: () => "" },
@@ -47,7 +47,7 @@ describe("requests", () => {
         const query = new URL(page.requests[0].url).searchParams;
         expect(query.get("name")).toBe("n");
         expect(query.get("list")).toBe("1,2");
-        expect(query.get("getter")).toBe("g");
+        expect(query.has("getter")).toBe(false);
         expect(query.has("obj")).toBe(false);
         expect(query.has("_hidden")).toBe(false);
     });

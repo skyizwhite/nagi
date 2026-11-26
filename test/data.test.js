@@ -104,3 +104,36 @@ describe("nm-data as an expression", () => {
         expect({ ...page.scope("#b").got }).toEqual({ in: "y" });
     });
 });
+
+describe("nm-data-* and nm-fn-*, after review", () => {
+    it("keeps a number-like value as the string written when the number would read back differently", async () => {
+        const page = await mount(`
+            <div id="d" nm-data-version="1.10" nm-data-id="12345678901234567890" nm-data-exp="1e3" nm-data-n="42" nm-data-f="1.5"></div>
+        `);
+        const scope = page.$("#d").nmProxy;
+        expect(scope.version).toBe("1.10");
+        expect(scope.id).toBe("12345678901234567890");
+        expect(scope.exp).toBe("1e3");
+        expect(scope.n).toBe(42);
+        expect(scope.f).toBe(1.5);
+    });
+
+    it("does not call the scope's functions to make a request's data", async () => {
+        const page = await mount(
+            `<div nm-data-count="1" nm-fn-add="(n) => count += n">
+                <button id="b" nm-on-click="$post('/x')"></button>
+            </div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#b").count).toBe(1);
+        expect(page.requests[0].body).toBe("count=1");
+    });
+
+    it("keeps a value of the same name when an nm-fn-* does not evaluate", async () => {
+        const page = await mount(`<div id="d" nm-data-v="2" nm-fn-v="("></div>`);
+        expect(page.$("#d").nmProxy.v).toBe(2);
+        expect(page.errors).toHaveLength(1);
+    });
+});
