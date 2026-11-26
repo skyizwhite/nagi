@@ -1,7 +1,7 @@
 # Contributing Guidelines
 First off, thank you for taking the time to contribute to Nomini! Contributions are always appreciated, and they can range from spelling and grammar fixes to whole new features, or even just bug reporting.
 
-All in all, this is a pretty small project, with loosely defined contributing guidelines. If you're editing the source of Nomini, that can be found in `nomini.js`. Otherwise, the website is in `www/`.
+All in all, this is a pretty small project, with loosely defined contributing guidelines. The source of Nomini is `nomini.js`.
 
 ## Tests
 Tools are managed with [mise](https://mise.jdx.dev). To run the tests:

@@ -1,6 +1,4 @@
 .DS_Store
-www/public
+dist
 test.html
-dist/*.br
-dist/*.gz
 node_modules

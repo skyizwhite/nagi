@@ -1,4 +1,4 @@
-# ![Nomini logo](./www/static/logo.svg)
+# Nomini
 
 Nomini is an extremely small (~2kb) library for reactive HTML and partial page updates. It blends the best ideas from Alpine.js, htmx, and Datastar while staying tiny and easy to understand.
 
@@ -10,8 +10,6 @@ Nomini lets you:
 - Keep everything declarative and local
 
 If you want the power of Alpine + htmx with **an order of magnitude less code**, Nomini is the smallest tool that delivers both.
-
-Full documentation is available at [the website](https://nomini.js.org/docs)
 
 ## Why Nomini?
 - It's tiny! (8x smaller than Datastar)
