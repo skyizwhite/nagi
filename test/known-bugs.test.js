@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
-// Each test here shows a bug that is still open, so it is marked `it.fails`.
-// When the bug is fixed the test starts to pass, `it.fails` reports that as a
-// failure, and the fix turns it back into an `it` (and moves it next to the
-// tests of the feature).
+// Each test here pins down a bug that is still open: it asserts the wrong
+// value nomini gives now, with the right one in a comment. Fixing the bug makes
+// the test fail, and the fix then asserts the right value and moves the test
+// next to the tests of the feature. Anything else that breaks the test, such
+// as a change to the helpers, also makes it fail, rather than passing for the
+// wrong reason as an `it.fails` test would.
 
 describe("#2 a bind of an element a swap removed stays subscribed", () => {
-    it.fails("does not run the bind of a removed element again", async () => {
+    it("does not run the bind of a removed element again", async () => {
         const page = await mount(
             `<div id="d" nm-data="{ n: 1, ran: [] }">
                 <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
@@ -23,14 +25,15 @@ describe("#2 a bind of an element a swap removed stays subscribed", () => {
         scope.ran.length = 0;
         scope.n = 2;
         await page.settle();
-        expect(scope.ran).toEqual([]);
+        // Right: [] (no bind of a removed element runs).
+        expect(scope.ran).toEqual([false]);
     });
 });
 
 describe("#3 nm-swap=inner initializes the target itself again", () => {
     const server = () => `<div id="target" nm-swap="inner"><span>new</span></div>`;
 
-    it.fails("does not add the target's listeners twice", async () => {
+    it("does not add the target's listeners twice", async () => {
         const page = await mount(
             `<div id="d" nm-data="{ hits: 0 }">
                 <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
@@ -42,10 +45,11 @@ describe("#3 nm-swap=inner initializes the target itself again", () => {
         await page.settle();
 
         page.$("#target").dispatchEvent(new page.window.Event("ping"));
-        expect(page.$("#d").nmProxy.hits).toBe(1);
+        // Right: 1.
+        expect(page.$("#d").nmProxy.hits).toBe(2);
     });
 
-    it.fails("keeps the state of a target that is a scope", async () => {
+    it("keeps the state of a target that is a scope", async () => {
         const page = await mount(
             `<button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
             <div id="target" nm-data="{ n: 1 }"></div>`,
@@ -54,26 +58,29 @@ describe("#3 nm-swap=inner initializes the target itself again", () => {
         page.$("#target").nmProxy.n = 5;
         page.$("#b").click();
         await page.settle();
-        expect(page.$("#target").nmProxy.n).toBe(5);
+        // Right: 5.
+        expect(page.$("#target").nmProxy.n).toBe(1);
     });
 });
 
 describe("#4 a bind writes to the DOM only after an await", () => {
-    it.fails("has written by the time the element's init runs", async () => {
+    it("has written by the time the element's init runs", async () => {
         const page = await mount(
             `<div nm-data="{ n: 1, seen: null }">
                 <span id="s" nm-bind="{ textContent: () => n, oninit: () => seen = this.textContent }"></span>
             </div>`,
         );
-        expect(page.scope("#s").seen).toBe("1");
+        // Right: "1".
+        expect(page.scope("#s").seen).toBe("");
     });
 
-    it.fails("writes as the scope changes without waiting", async () => {
+    it("writes as the scope changes without waiting", async () => {
         const page = await mount(
             `<div nm-data="{ n: 1 }"><span id="s" nm-bind="{ textContent: () => n }"></span></div>`,
         );
         await page.settle();
         page.scope("#s").n = 2;
-        expect(page.$("#s").textContent).toBe("2");
+        // Right: "2".
+        expect(page.$("#s").textContent).toBe("1");
     });
 });

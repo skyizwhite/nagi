@@ -15,7 +15,7 @@ describe("requests", () => {
         const [request] = page.requests;
         expect(request.method).toBe("GET");
         expect(request.url).toBe("http://localhost/x?q=a+b");
-        expect(request.headers["nm-request"]).toBe(true);
+        expect(request.headers["nm-request"]).toBe("true");
     });
 
     it("$get appends to a query string the URL already has", async () => {
@@ -110,10 +110,36 @@ describe("requests", () => {
         expect(page.$("#target").textContent).toBe("second");
     });
 
+    it("drops an answer whose body is still arriving when the request is aborted", async () => {
+        const encoder = new TextEncoder();
+        let send;
+        const slow = new ReadableStream({ start: (controller) => (send = controller) });
+        const answers = [new Response(slow), `<div id="target">second</div>`];
+        const page = await mount(
+            `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>
+            <div id="target">old</div>`,
+            { server: () => answers.shift() },
+        );
+        page.$("#b").click();
+        await new Promise((resolve) => setTimeout(resolve));
+        page.$("#b").click();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(page.$("#target").textContent).toBe("second");
+
+        // The first body comes in only now, after the second was swapped in.
+        // A browser has cancelled it, so the server finds it closed.
+        try {
+            send.enqueue(encoder.encode(`<div id="target">first</div>`));
+            send.close();
+        } catch {}
+        await page.settle();
+        expect(page.$("#target").textContent).toBe("second");
+    });
+
     it("dispatches fetcherr from the element when the answer is not ok, and swaps nothing", async () => {
         const page = await mount(
             `<div nm-data="{ _err: null }" nm-bind="{ onfetcherr: (e) => _err = e.detail }">
-                <button id="b" nm-bind="{ onclick: () => $get('/x') }"></button>
+                <button id="b" nm-bind="{ onclick: () => $get('/x', { q: 1 }) }"></button>
             </div>
             <div id="target">old</div>`,
             { server: () => ({ status: 500, body: `<div id="target">new</div>` }) },
@@ -122,7 +148,7 @@ describe("requests", () => {
         await page.settle();
 
         // The url is the one fetched, query string and all.
-        expect(page.scope("#b")._err.url).toBe("/x?");
+        expect(page.scope("#b")._err.url).toBe("/x?q=1");
         expect(page.$("#target").textContent).toBe("old");
     });
 });

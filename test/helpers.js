@@ -22,23 +22,36 @@ const abortError = () => new DOMException("The operation was aborted.", "AbortEr
 
 /**
  * Hands out `response` with a body that settles `done` once its reader has
- * read it to the end, or given up on it.
+ * read it to the end or given up on it, and that errors with an AbortError,
+ * as a browser's does, if `signal` aborts before then.
  */
-const trackBody = (response, done) => {
+const trackBody = (response, signal, done) => {
     if (!response.body) {
         done();
         return response;
     }
     const reader = response.body.getReader();
+    let abort;
     const body = new ReadableStream({
+        start(controller) {
+            abort = () => {
+                controller.error(abortError());
+                reader.cancel().catch(() => {});
+                done();
+            };
+            signal?.addEventListener("abort", abort, { once: true });
+        },
         async pull(controller) {
             const { done: ended, value } = await reader.read();
+            if (signal?.aborted) return;
             if (ended) {
+                signal?.removeEventListener("abort", abort);
                 controller.close();
                 done();
             } else controller.enqueue(value);
         },
         cancel(reason) {
+            signal?.removeEventListener("abort", abort);
             done();
             return reader.cancel(reason);
         },
@@ -52,8 +65,8 @@ const trackBody = (response, done) => {
  * `server(request)` answers each fetch nomini makes. `request` has the
  * `url`, `method`, `headers` and `body` (as a string) that were sent, and
  * the answer is a string, a `{ body, status, headers }` object or a
- * `Response`, or a promise of one. An answer still pending when the request
- * is aborted is dropped, and the fetch rejects with an AbortError.
+ * `Response`, or a promise of one. Aborting a request rejects its fetch, or
+ * errors its body if it has been answered, with an AbortError.
  *
  * `beforeInit(window)` runs after the HTML is in place and before nomini is
  * loaded, to set up what nomini should find when it starts.
@@ -70,7 +83,7 @@ export const mount = async (html, { server, beforeInit } = {}) => {
         const request = {
             url: new URL(url, window.location.href).href,
             method: opts.method ?? "GET",
-            headers: { ...opts.headers },
+            headers: Object.fromEntries(new Headers(opts.headers)),
             body: opts.body === undefined ? undefined : String(opts.body),
         };
         requests.push(request);
@@ -96,7 +109,7 @@ export const mount = async (html, { server, beforeInit } = {}) => {
                 .then((answer) => {
                     if (signal?.aborted) return;
                     signal?.removeEventListener("abort", abort);
-                    resolve(trackBody(respond(answer), done));
+                    resolve(trackBody(respond(answer), signal, done));
                 })
                 .catch((err) => {
                     done();
