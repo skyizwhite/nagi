@@ -96,7 +96,7 @@
     let currentHandler = null;
 
     // Helpers that are included with every data object
-    const helpers = () => ({
+    const helpers = (pending = 0, writing = new Set()) => ({
         // --- BEGIN ref
         $refs: {},
         // --- END ref
@@ -114,6 +114,9 @@
             const controller = new AbortController();
             const { signal } = controller;
             method = (method || "GET").toUpperCase();
+            const reading = /^(GET|HEAD|OPTIONS)$/.test(method);
+            const report = (name, detail) => dispatch(el?.isConnected ? el : document, name, { detail });
+            let write;
 
             const opts = runWithEl(el, () => {
                 data = { ...this.$nmData(), ...this.$dataset(), ...data };
@@ -130,11 +133,18 @@
                     url = path + joiner + query + url.slice(hashAt);
                 }
 
+                write = !reading && `${method} ${url} ${opts.body ?? ""}`;
+                if (writing.has(write)) return;
+
                 this._nmAbort.abort();
                 return opts;
             });
 
-            this._nmAbort = controller;
+            if (!opts) return report("fetchskip", { method, url });
+
+            this._nmAbort = reading ? controller : new AbortController();
+            if (write) writing.add(write);
+            pending++;
             this._nmFetching = true;
 
             fetch(url, opts)
@@ -156,9 +166,10 @@
 
                     if (!signal.aborted) swap(buf);
                 })
-                .catch((err) => signal.aborted || dispatch(el ?? document, "fetcherr", { detail: { err, url } }))
+                .catch((err) => signal.aborted || report("fetcherr", { err, url }))
                 .finally(() => {
-                    if (this._nmAbort === controller) this._nmFetching = false;
+                    writing.delete(write);
+                    if (!--pending) this._nmFetching = false;
                 });
         },
         $nmData() {
