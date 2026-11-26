@@ -345,7 +345,7 @@
 
         // --- BEGIN data
         const reserved = (key, el) =>
-            /^(\$|_nm)/i.test(key) && console.error("[Nomini] this name is nomini's own:", key, el);
+            /^(\$|_nm|__proto__$)/i.test(key) && console.error("[Nomini] this name is nomini's own:", key, el);
 
         marked.forEach((dataEl) => {
             const attrs = [...dataEl.attributes];
@@ -356,7 +356,12 @@
             const isObject = made !== null && typeof made === "object" && typeof made.then !== "function";
             if (!isObject && made !== failed) console.error("[Nomini] nm-data must give an object:", base, dataEl);
             const source = isObject ? made : {};
-            const rawData = Object.create(Object.getPrototypeOf(source), Object.getOwnPropertyDescriptors(source));
+            const descriptors = Object.getOwnPropertyDescriptors(source);
+            Object.values(descriptors).forEach((d) => {
+                d.configurable = true;
+                if ("value" in d) d.writable = true;
+            });
+            const rawData = Object.create(Object.getPrototypeOf(source), descriptors);
             Object.assign(rawData, helpers(), { _nmEl: dataEl });
 
             const keep = (_, parsed, context) =>
@@ -387,9 +392,9 @@
 
                     return Reflect.get(obj, prop, receiver);
                 },
-                set(obj, prop, val) {
+                set(obj, prop, val, receiver) {
                     if (prop in obj && val !== Object(val) && Object.is(obj[prop], val)) return true;
-                    obj[prop] = val;
+                    if (!Reflect.set(obj, prop, val, receiver)) return false;
 
                     const deps = trackedDeps.get(prop);
 
@@ -469,7 +474,7 @@
             console.error("[Nomini] nm-bind is no longer read, use nm-bind-* and nm-on-*:", el),
         );
 
-        marked.forEach((bindEl) => {
+        queryAttr(baseEl, "*").forEach((bindEl) => {
             const entries = [...bindEl.attributes].flatMap(({ name, value }) => {
                 const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
                 if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;

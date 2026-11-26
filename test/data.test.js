@@ -193,3 +193,51 @@ describe("nm-data, after the second review", () => {
         expect([...page.$("#d").nmProxy.ids]).toEqual(["12345678901234567890", "1.10", 3]);
     });
 });
+
+describe("nm-data, after the third review", () => {
+    it("makes a frozen object's values writable in the scope", async () => {
+        const page = await mount(`
+            <div nm-data="Object.freeze({ n: 1 })" nm-data-m="5"><button id="b" nm-on-click="n++"></button></div>
+        `);
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#b").n).toBe(2);
+        expect(page.scope("#b").m).toBe(5);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("runs a factory object's setter with the scope as this", async () => {
+        const page = await mount(
+            `<div nm-data="new Box()">
+                <button id="b" nm-on-click="value = 5"></button>
+                <span id="s" nm-bind-textcontent="n"></span>
+            </div>`,
+            { beforeInit: (window) => (window.Box = class { n = 1; set value(v) { this.n = v; } }) },
+        );
+        page.$("#b").click();
+        expect(page.$("#s").textContent).toBe("5");
+    });
+
+    it("binds what a factory adds to the scope's element", async () => {
+        const page = await mount(
+            `<div nm-data="build(this)"></div>`,
+            {
+                beforeInit: (window) =>
+                    (window.build = (el) => {
+                        el.innerHTML = `<span id="s" nm-bind-textcontent="name"></span>`;
+                        return { name: "Ann" };
+                    }),
+            },
+        );
+        expect(page.$("#s").textContent).toBe("Ann");
+    });
+
+    it("logs nm-data-__proto__ and keeps the prototype", async () => {
+        const page = await mount(
+            `<div id="d" nm-data="new C()" nm-data-__proto__="{}"></div>`,
+            { beforeInit: (window) => (window.C = class { hi() { return "hi"; } }) },
+        );
+        expect(page.$("#d").nmProxy.hi()).toBe("hi");
+        expect(page.errors).toHaveLength(1);
+    });
+});
