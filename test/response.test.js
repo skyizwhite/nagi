@@ -60,3 +60,32 @@ describe("#8 response headers", () => {
         expect(page.window.location.href).toBe("http://localhost/list?page=2");
     });
 });
+
+describe("response handling, after review", () => {
+    it("does not swap an error page whose ids are not on the page, and sends fetcherr", async () => {
+        const page = await mountAsking({ status: 500, body: `<div id="summary">Traceback</div>` });
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#b")._err.status).toBe(500);
+        expect(page.warnings).toEqual([]);
+    });
+
+    it("warns about an nm-replace-url it cannot use, and still counts the answer as done", async () => {
+        const page = await mountAsking({ body: `<div id="target">new</div>`, headers: { "nm-replace-url": "https://other.example/x" } });
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#target").textContent).toBe("new");
+        expect(page.scope("#b")._err).toBeNull();
+        expect(page.warnings).toHaveLength(1);
+    });
+
+    it("has replaced the URL by the time the swapped content inits", async () => {
+        const page = await mountAsking({
+            body: `<div id="target" nm-let-path="location.pathname"><span id="p" nm-bind-textcontent="path"></span></div>`,
+            headers: { "nm-replace-url": "/list" },
+        });
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#p").textContent).toBe("/list");
+    });
+});
