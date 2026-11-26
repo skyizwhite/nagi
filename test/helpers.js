@@ -145,7 +145,9 @@ export const mount = async (html, { server, beforeInit, without = [] } = {}) => 
         requests,
         errors,
         warnings,
-        scope: (selector) => $(selector).closest("[nm-data]").nmProxy,
+        scope: (selector) => {
+            for (let el = $(selector); el; el = el.parentElement) if (el.nmProxy) return el.nmProxy;
+        },
         settle: async (timeout = 1000) => {
             await settle(window, pending, timeout);
             if (unserved.length) {

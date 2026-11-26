@@ -4,7 +4,7 @@ import { mount } from "./helpers.js";
 describe("nm-ref", () => {
     it("puts the element in its scope's $refs", async () => {
         const page = await mount(`
-            <div id="d" nm-data="{}"><input nm-ref="field" id="i"></div>
+            <div id="d" nm-scope="{}"><input nm-ref="field" id="i"></div>
         `);
         expect(page.$("#d").nmProxy.$refs.field).toBe(page.$("#i"));
     });
@@ -12,7 +12,7 @@ describe("nm-ref", () => {
 
 describe("nm-form", () => {
     const form = `
-        <form id="f" nm-data="{}" nm-form>
+        <form id="f" nm-scope="{}" nm-form>
             <input name="text" value="hello">
             <input name="count" type="number" value="3">
             <input name="agree" type="checkbox" checked>
@@ -66,7 +66,7 @@ describe("nm-use", () => {
     it("binds what the template brings in", async () => {
         const page = await mount(`
             <template id="t"><span id="s" nm-bind-textcontent="n"></span></template>
-            <div nm-data="{ n: 4 }"><div nm-use="t"></div></div>
+            <div nm-scope="{ n: 4 }"><div nm-use="t"></div></div>
         `);
         await page.settle();
         expect(page.$("#s").textContent).toBe("4");

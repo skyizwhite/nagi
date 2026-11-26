@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 
-const button = `<div nm-data="{}"><button id="b" nm-on-click="$get('/y')"></button></div>`;
+const button = `<div nm-scope="{}"><button id="b" nm-on-click="$get('/y')"></button></div>`;
 
 describe("settle()", () => {
     it("fails with the requests still pending once it times out", async () => {

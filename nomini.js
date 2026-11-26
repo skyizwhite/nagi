@@ -10,19 +10,22 @@
         el.dispatchEvent(new CustomEvent(name, opts));
     };
 
-    const evalExpression = (expression, data, thisArg) => {
-        if (/^{.*}$/s.test(expression)) {
-            expression = expression.slice(1, -1);
-        }
+    const failed = Symbol();
 
+    const isData = (obj, prop) => {
+        for (let o = obj; o; o = Object.getPrototypeOf(o)) {
+            const found = Object.getOwnPropertyDescriptor(o, prop);
+            if (found) return "value" in found;
+        }
+        return true;
+    };
+
+    const evaluate = (expression, data, thisArg) => {
         try {
-            return new Function(
-                "__data",
-                `with(__data) {return {${expression}}}`,
-            ).call(thisArg, data);
+            return new Function("__data", `with(__data) {return (${expression}\n)}`).call(thisArg, data);
         } catch (err) {
-            console.error("[Nomini] failed to parse obj:", expression, "\n", err);
-            return {};
+            console.error("[Nomini] failed to evaluate:", expression, "\n", err);
+            return failed;
         }
     };
 
@@ -39,8 +42,10 @@
         );
     };
 
-    const getClosestProxy = (el) =>
-        el.closest("[nm-data]")?.nmProxy || helpers();
+    const getClosestProxy = (el) => {
+        for (; el; el = el.parentElement) if (el.nmProxy) return el.nmProxy;
+        return helpers();
+    };
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
         const prev = [currentEl, currentBind, currentHandler];
@@ -125,7 +130,10 @@
             let write;
 
             const opts = runWithEl(el, () => {
-                data = { ...this.$nmData(), ...this.$dataset(), ...data };
+                let inner = {};
+                for (let node = el; node?.nodeType === 1 && !node.nmProxy; node = node.parentElement)
+                    inner = { ...node.dataset, ...inner };
+                data = { ...this.$nmData(), ...inner, ...data };
 
                 const encodedData = new URLSearchParams(data);
                 const opts = { headers: { "nm-request": true }, method, signal };
@@ -183,7 +191,6 @@
 
             return Object.entries(this).reduce((acc, [k, v]) => {
                 if (!/^[a-z]+$/i.test(k)) return acc;
-                if (typeof v === "function") v = v();
                 if (isPrimitive(v) || (Array.isArray(v) && v.every(isPrimitive)))
                     acc[k] = v;
                 return acc;
@@ -196,7 +203,7 @@
 
             while (el?.nodeType === 1) {
                 datasets = { ...el.dataset, ...datasets };
-                if (el.hasAttribute("nm-data")) break;
+                if (el.nmProxy) break;
                 el = el.parentElement;
             }
 
@@ -343,18 +350,56 @@
         queryAttr(baseEl, "[nm-use]").forEach(use);
         // --- END template
 
+
         // --- BEGIN data
-        queryAttr(baseEl, "[nm-data]").forEach((dataEl) => {
-            const rawData = {
-                ...evalExpression(dataEl.getAttribute("nm-data"), {}, dataEl),
-                ...helpers(),
-                _nmEl: dataEl,
-            };
+        const reserved = (key, el) =>
+            /^(\$|_nm|__proto__$)/i.test(key) && console.error("[Nomini] this name is nomini's own:", key, el);
+
+        const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
+            acceptNode: (node) => (node.hasAttribute("nm-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+        });
+        const define = (obj, key, value) =>
+            Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
+
+        const baseOf = (dataEl) => {
+            const base = dataEl.getAttribute("nm-scope")?.trim();
+            const made = base ? evaluate(base, {}, dataEl) : {};
+            try {
+                const builtIn = (obj) => {
+                    for (let p = Object.getPrototypeOf(obj); p && Object.getPrototypeOf(p); p = Object.getPrototypeOf(p))
+                        if (Object.hasOwn(p, "constructor") && /\[native code\]/.test(Function.prototype.toString.call(p.constructor)))
+                            return true;
+                };
+                if (made !== null && typeof made === "object" && typeof made.then !== "function" && !builtIn(made)) {
+                    const descriptors = Object.getOwnPropertyDescriptors(made);
+                    Object.values(descriptors).forEach((d) => {
+                        d.configurable = true;
+                        if ("value" in d) d.writable = true;
+                    });
+                    return Object.create(Object.getPrototypeOf(made), descriptors);
+                }
+                if (made !== failed) console.error("[Nomini] nm-scope must give an object:", base, dataEl);
+            } catch (err) {
+                console.error("[Nomini] failed to read the object of nm-scope:", base, dataEl, "\n", err);
+            }
+            return {};
+        };
+
+        const makeScope = (dataEl) => {
+            if (dataEl.nmProxy) return;
+            const attrs = [...dataEl.attributes];
+            if (dataEl.hasAttribute("nm-data"))
+                console.error("[Nomini] nm-data is no longer read, use nm-scope:", dataEl);
+            if (!attrs.some(({ name }) => /^nm-(scope$|let-)/.test(name))) return;
+
+            const rawData = baseOf(dataEl);
+            Object.entries({ ...helpers(), _nmEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
+            Object.entries(dataEl.dataset).forEach(([key, value]) => reserved(key, dataEl) || define(rawData, key, value));
 
             const trackedDeps = new Map();
 
             const proxyData = new Proxy(rawData, {
-                get(obj, prop) {
+                get(obj, prop, receiver) {
                     if (currentBind) {
                         let deps = trackedDeps.get(prop);
                         if (!deps) trackedDeps.set(prop, (deps = new Set()));
@@ -362,11 +407,11 @@
                         currentBind.deps.add(deps);
                     }
 
-                    return obj[prop];
+                    return Reflect.get(obj, prop, receiver);
                 },
-                set(obj, prop, val) {
-                    if (prop in obj && val !== Object(val) && Object.is(obj[prop], val)) return true;
-                    obj[prop] = val;
+                set(obj, prop, val, receiver) {
+                    if (prop in obj && val !== Object(val) && isData(obj, prop) && Object.is(obj[prop], val)) return true;
+                    if (!Reflect.set(obj, prop, val, receiver)) return false;
 
                     const deps = trackedDeps.get(prop);
 
@@ -377,7 +422,27 @@
             });
 
             dataEl.nmProxy = proxyData;
-        });
+
+            attrs.forEach(({ name, value }) => {
+                const key = name.match(/^nm-let-(.+)$/)?.[1];
+                if (!key || reserved(key, dataEl)) return;
+                const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, dataEl)) : undefined;
+                if (result !== failed && !Reflect.set(proxyData, key, result)) define(rawData, key, result);
+            });
+        };
+
+        const seen = new Set();
+        let dataEl = baseEl.closest("[nm-ignore]") ? null : baseEl;
+        while (dataEl) {
+            const parent = dataEl.parentElement;
+            const before = dataEl.previousElementSibling;
+            seen.add(dataEl);
+            makeScope(dataEl);
+            const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
+            walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
+            do dataEl = walker.nextNode();
+            while (dataEl && seen.has(dataEl));
+        }
         // --- END data
 
         // --- BEGIN ref
@@ -440,6 +505,7 @@
         );
 
         queryAttr(baseEl, "*").forEach((bindEl) => {
+            if (bindEl.nmBound) return;
             const entries = [...bindEl.attributes].flatMap(({ name, value }) => {
                 const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
                 if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
@@ -460,7 +526,7 @@
             bindEl.nmBound = true;
 
             const proxyData = getClosestProxy(bindEl);
-            const props = Object.assign({}, ...entries.map((entry) => evalExpression(entry, proxyData, bindEl)));
+            const props = Object.assign({}, ...entries.map((entry) => evaluate(`{${entry}}`, proxyData, bindEl)));
             const handle = (val, e) => val(e)?.catch?.((err) => console.error("[Nomini] failed to run:", val, "\n", err));
 
             Object.entries(props).forEach(([key, val]) => {
