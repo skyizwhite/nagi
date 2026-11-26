@@ -47,14 +47,28 @@
         }
     };
 
+    const unlink = (run) => {
+        run.deps.forEach((deps) => deps.delete(run));
+        run.deps.clear();
+        run.children.forEach(kill);
+        run.children = [];
+    };
+
+    const kill = (run) => {
+        run.gone = true;
+        run.owner?.nmRuns.delete(run);
+        unlink(run);
+    };
+
     const watch = (fn, el = currentEl, owner = el) => {
         const run = () => {
-            if (run === currentBind) return;
+            if (run.gone || run === currentBind) return;
             if (run.active) return (run.dirty = true);
             run.active = true;
             try {
                 for (let i = 0; i < 100 && (i === 0 || run.dirty); i++) {
                     run.dirty = false;
+                    unlink(run);
                     try {
                         runWithEl(el, fn, run);
                     } catch (err) {
@@ -67,6 +81,10 @@
             }
         };
         run.owner = owner;
+        run.deps = new Set();
+        run.children = [];
+        owner && (owner.nmRuns ||= new Set()).add(run);
+        currentBind?.children.push(run);
         run();
     };
 
@@ -189,7 +207,7 @@
 
     // --- BEGIN fetch
     const markGone = (el) =>
-        [el, ...el.querySelectorAll("*")].forEach((node) => (node.nmGone = true));
+        [el, ...el.querySelectorAll("*")].forEach((node) => node.nmRuns?.forEach(kill));
 
     const swap = (text) => {
         const template = document.createElement("template");
@@ -285,20 +303,21 @@
 
             const proxyData = new Proxy(rawData, {
                 get(obj, prop) {
-                    if (currentBind) (trackedDeps[prop] ||= new Set()).add(currentBind);
+                    if (currentBind) {
+                        const deps = (trackedDeps[prop] ||= new Set());
+                        deps.add(currentBind);
+                        currentBind.deps.add(deps);
+                    }
 
                     return obj[prop];
                 },
                 set(obj, prop, val) {
-                    if (Object.is(obj[prop], val)) return true;
+                    if (prop in obj && val !== Object(val) && Object.is(obj[prop], val)) return true;
                     obj[prop] = val;
 
                     const deps = trackedDeps[prop];
 
-                    deps && [...deps].forEach((run) => {
-                        if (run.owner?.nmGone) deps.delete(run);
-                        else run();
-                    });
+                    deps && [...deps].forEach((run) => run());
 
                     return true;
                 },

@@ -370,11 +370,11 @@ describe("reactivity", () => {
 
     it("logs a bind that keeps setting itself off and stops it", async () => {
         const page = await mount(`
-            <div nm-data="{ n: 0 }" nm-bind="{ onx: () => n = n + 1 }">
-                <span id="s" nm-bind="{ textContent: () => ($dispatch('x'), n) }"></span>
+            <div nm-data="{ a: 0, b: 0 }">
+                <span id="s" nm-bind="{ textContent: () => (a = b + 1) }"></span>
+                <span nm-bind="{ textContent: () => (b = a + 1) }"></span>
             </div>
         `);
-        page.scope("#s").n = 10;
         expect(page.errors.some(([message]) => message.includes("stopped running after 100 times"))).toBe(true);
     });
 
@@ -392,6 +392,52 @@ describe("reactivity", () => {
         `);
         page.scope("#s").n = 1;
         expect(page.scope("#s").runs).toBe(1);
+    });
+
+    it("creates a key set to undefined", async () => {
+        const page = await mount(`
+            <div id="d" nm-data="{}" nm-bind="{ oninit: () => $watch(() => 0) }"></div>
+        `);
+        const scope = page.$("#d").nmProxy;
+        scope.color = undefined;
+        expect("color" in scope).toBe(true);
+    });
+
+    it("runs binds again when an object is set to itself after changing it", async () => {
+        const page = await mount(`
+            <div nm-data="{ items: [] }">
+                <button id="b" nm-bind="{ onclick: () => { items.push(1); items = items } }"></button>
+                <span id="s" nm-bind="{ textContent: () => items.length }"></span>
+            </div>
+        `);
+        page.$("#b").click();
+        expect(page.$("#s").textContent).toBe("1");
+    });
+
+    it("stops running a bind for what it no longer reads", async () => {
+        const page = await mount(`
+            <div nm-data="{ flag: true, a: 'a', b: 'b', runs: 0 }">
+                <span id="s" nm-bind="{ textContent: () => (runs++, flag ? a : b) }"></span>
+            </div>
+        `);
+        const scope = page.scope("#s");
+        scope.flag = false;
+        scope.a = "a2";
+        expect(scope.runs).toBe(2);
+    });
+
+    it("replaces the watchers a bind made when it runs again", async () => {
+        const page = await mount(`
+            <div nm-data="{ x: 1, y: 1, log: [] }">
+                <span id="s" nm-bind="{ textContent: () => { $watch(() => log.push(x)); return y } }"></span>
+            </div>
+        `);
+        const scope = page.scope("#s");
+        scope.y = 2;
+        scope.y = 3;
+        scope.log.length = 0;
+        scope.x = 2;
+        expect(scope.log).toEqual([2]);
     });
 
     it("does not track what an event handler reads into the bind that sent the event", async () => {
