@@ -137,3 +137,59 @@ describe("nm-data-* and nm-fn-*, after review", () => {
         expect(page.errors).toHaveLength(1);
     });
 });
+
+describe("nm-data, after the second review", () => {
+    it("keeps the methods and getters of a factory's object", async () => {
+        const page = await mount(
+            `<div nm-data="new Counter()">
+                <button id="b" nm-on-click="inc()"></button>
+                <span id="s" nm-bind-textcontent="double"></span>
+            </div>`,
+            {
+                beforeInit: (window) =>
+                    (window.Counter = class {
+                        n = 1;
+                        inc() { this.n++; }
+                        get double() { return this.n * 2; }
+                    }),
+            },
+        );
+        expect(page.$("#s").textContent).toBe("2");
+        page.$("#b").click();
+        expect(page.$("#s").textContent).toBe("4");
+    });
+
+    it("does not change the object the factory returned", async () => {
+        const page = await mount(
+            `<div id="a" nm-data="shared"></div><div id="b" nm-data="shared"></div>`,
+            { beforeInit: (window) => (window.shared = { n: 1 }) },
+        );
+        page.$("#a").nmProxy.n = 2;
+        expect(page.$("#b").nmProxy.n).toBe(1);
+        expect(page.window.shared.n).toBe(1);
+        expect(page.window.shared.$get).toBeUndefined();
+    });
+
+    it("logs an nm-data that gives a promise or a primitive, and makes an empty scope", async () => {
+        const page = await mount(`
+            <div id="a" nm-data="Promise.resolve({ n: 1 })"></div>
+            <div id="b" nm-data="'ab'"></div>
+        `);
+        expect(page.$("#a").nmProxy.n).toBeUndefined();
+        expect(page.$("#b").nmProxy[0]).toBeUndefined();
+        expect(page.errors).toHaveLength(2);
+    });
+
+    it("logs an nm-data-* or nm-fn-* named like a helper, and keeps the helper", async () => {
+        const page = await mount(`<div id="d" nm-data-$refs="{}" nm-fn-$get="() => 1" nm-data-_nmfetching="true"></div>`);
+        const scope = page.$("#d").nmProxy;
+        expect(typeof scope.$get).toBe("function");
+        expect(scope._nmFetching).toBe(false);
+        expect(page.errors).toHaveLength(3);
+    });
+
+    it("keeps numbers inside JSON as the text written when they would read back differently", async () => {
+        const page = await mount(`<div id="d" nm-data-ids="[12345678901234567890, 1.10, 3]"></div>`);
+        expect([...page.$("#d").nmProxy.ids]).toEqual(["12345678901234567890", "1.10", 3]);
+    });
+});

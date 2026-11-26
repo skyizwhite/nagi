@@ -339,24 +339,36 @@
         queryAttr(baseEl, "[nm-use]").forEach(use);
         // --- END template
 
+        const marked = queryAttr(baseEl, "*").filter((el) =>
+            [...el.attributes].some(({ name }) => name.startsWith("nm-")),
+        );
+
         // --- BEGIN data
-        queryAttr(baseEl, "*").forEach((dataEl) => {
+        const reserved = (key, el) =>
+            /^(\$|_nm)/i.test(key) && console.error("[Nomini] this name is nomini's own:", key, el);
+
+        marked.forEach((dataEl) => {
             const attrs = [...dataEl.attributes];
             if (!attrs.some(({ name }) => /^nm-(data$|data-|fn-)/.test(name))) return;
 
             const base = dataEl.getAttribute("nm-data")?.trim();
-            const rawData = {
-                ...(base && evaluate(base, {}, dataEl)),
-                ...helpers(),
-                _nmEl: dataEl,
-            };
+            const made = base ? evaluate(base, {}, dataEl) : {};
+            const isObject = made !== null && typeof made === "object" && typeof made.then !== "function";
+            if (!isObject && made !== failed) console.error("[Nomini] nm-data must give an object:", base, dataEl);
+            const source = isObject ? made : {};
+            const rawData = Object.create(Object.getPrototypeOf(source), Object.getOwnPropertyDescriptors(source));
+            Object.assign(rawData, helpers(), { _nmEl: dataEl });
+
+            const keep = (_, parsed, context) =>
+                typeof parsed === "number" && context?.source !== undefined && String(parsed) !== context.source
+                    ? context.source
+                    : parsed;
 
             attrs.forEach(({ name, value }) => {
                 const key = name.match(/^nm-data-(.+)$/)?.[1];
-                if (!key) return;
+                if (!key || reserved(key, dataEl)) return;
                 try {
-                    const parsed = JSON.parse(value);
-                    rawData[key] = typeof parsed !== "number" || String(parsed) === value.trim() ? parsed : value;
+                    rawData[key] = JSON.parse(value, keep);
                 } catch {
                     rawData[key] = value;
                 }
@@ -365,7 +377,7 @@
             const trackedDeps = new Map();
 
             const proxyData = new Proxy(rawData, {
-                get(obj, prop) {
+                get(obj, prop, receiver) {
                     if (currentBind) {
                         let deps = trackedDeps.get(prop);
                         if (!deps) trackedDeps.set(prop, (deps = new Set()));
@@ -373,7 +385,7 @@
                         currentBind.deps.add(deps);
                     }
 
-                    return obj[prop];
+                    return Reflect.get(obj, prop, receiver);
                 },
                 set(obj, prop, val) {
                     if (prop in obj && val !== Object(val) && Object.is(obj[prop], val)) return true;
@@ -391,8 +403,9 @@
 
             attrs.forEach(({ name, value }) => {
                 const key = name.match(/^nm-fn-(.+)$/)?.[1];
-                const result = key && evaluate(value, proxyData, dataEl);
-                if (key && result !== failed) rawData[key] = result;
+                if (!key || reserved(key, dataEl)) return;
+                const result = evaluate(value, proxyData, dataEl);
+                if (result !== failed) rawData[key] = result;
             });
         });
         // --- END data
@@ -456,7 +469,7 @@
             console.error("[Nomini] nm-bind is no longer read, use nm-bind-* and nm-on-*:", el),
         );
 
-        queryAttr(baseEl, "*").forEach((bindEl) => {
+        marked.forEach((bindEl) => {
             const entries = [...bindEl.attributes].flatMap(({ name, value }) => {
                 const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
                 if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
