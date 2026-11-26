@@ -100,3 +100,91 @@ describe("elements outside any scope", () => {
         await page.settle();
     });
 });
+
+describe("options, after review", () => {
+    it("runs abortable debounces scheduled after $abort", async () => {
+        const { page, answers } = await mountWaiting(
+            `<div nm-scope="{ got: 0 }">
+                <button id="r" nm-on-click="$get('/read')"></button>
+                <button id="stop" nm-on-click="$abort()"></button>
+                <input id="i" nm-on-input="$debounce(() => got++, 10, true)">
+            </div>`,
+        );
+        page.$("#r").click();
+        page.$("#stop").click();
+        page.$("#i").dispatchEvent(new page.window.Event("input"));
+        await later(40);
+        expect(page.scope("#i").got).toBe(1);
+        answers.forEach((answer) => answer(""));
+        await page.settle();
+    });
+
+    it("drops the abortable debounces waiting when $abort is called", async () => {
+        const page = await mount(`
+            <div nm-scope="{ got: 0 }">
+                <input id="i" nm-on-input="$debounce(() => got++, 10, true)">
+                <button id="stop" nm-on-click="$abort()"></button>
+            </div>
+        `);
+        page.$("#i").dispatchEvent(new page.window.Event("input"));
+        page.$("#stop").click();
+        await later(40);
+        expect(page.scope("#i").got).toBe(0);
+    });
+
+    it("runs abortable debounces scheduled after a read timed out", async () => {
+        const { page, answers } = await mountWaiting(
+            `<div nm-scope="{ got: 0 }">
+                <button id="r" nm-on-click="$get('/read', null, { timeout: 10 })"></button>
+                <input id="i" nm-on-input="$debounce(() => got++, 10, true)">
+            </div>`,
+        );
+        page.$("#r").click();
+        await later(30);
+        page.$("#i").dispatchEvent(new page.window.Event("input"));
+        await later(40);
+        expect(page.scope("#i").got).toBe(1);
+        answers.forEach((answer) => answer(""));
+        await page.settle();
+    });
+
+    it("does not let reads of elements outside any scope abort each other", async () => {
+        const signals = [];
+        const page = await mount(
+            `<button id="a" nm-on-click="$get('/a')"></button><button id="b" nm-on-click="$get('/b')"></button>`,
+            { server: () => "" },
+        );
+        const fetch = page.window.fetch;
+        page.window.fetch = (url, opts) => {
+            signals.push(opts.signal);
+            return fetch(url, opts);
+        };
+        page.$("#a").click();
+        page.$("#b").click();
+        expect(signals.map((s) => s.aborted)).toEqual([false, false]);
+        await page.settle();
+    });
+
+    it("takes null options as none", async () => {
+        const page = await mount(
+            `<div nm-scope><button id="b" nm-on-click="$post('/x', { a: 1 }, null)"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.requests).toHaveLength(1);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("sets no timeout for Infinity or a negative value", async () => {
+        const page = await mount(
+            `<div nm-scope="{ _errs: [] }" nm-on-fetcherr="_errs = [..._errs, e.detail.err.name]">
+                <button id="b" nm-on-click="$get('/a', null, { timeout: Infinity }); $post('/b', null, { timeout: -1 })"></button>
+            </div>`,
+            { server: () => later(20).then(() => "") },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#b")._errs).toEqual([]);
+    });
+});

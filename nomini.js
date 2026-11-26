@@ -36,10 +36,10 @@
         );
     };
 
-    let pageScope;
+    const pageWriting = new Set();
     const getClosestProxy = (el) => {
         for (; el; el = el.parentElement) if (el.nmProxy) return el.nmProxy;
-        return (pageScope ||= helpers());
+        return helpers(0, pageWriting);
     };
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
@@ -118,8 +118,11 @@
         },
         $abort() {
             controllers.forEach((controller) => controller.abort());
+            this._nmAbort.abort();
+            this._nmAbort = new AbortController();
         },
-        $fetch(url, method, data, options = {}) {
+        $fetch(url, method, data, options) {
+            options ??= {};
             const el = currentEl ?? this._nmEl;
             const controller = new AbortController();
             const { signal } = controller;
@@ -197,10 +200,12 @@
             if (deduped) writing.add(write);
             controllers.add(controller);
             let timedOut = false;
-            const timer = options.timeout && setTimeout(() => {
+            const { timeout } = options;
+            const timer = Number.isFinite(timeout) && timeout > 0 && setTimeout(() => {
                 timedOut = true;
                 controller.abort();
-            }, options.timeout);
+                if (this._nmAbort === controller) this._nmAbort = new AbortController();
+            }, Math.min(timeout, 2147483647));
             pending++;
             this.$fetching = true;
 
