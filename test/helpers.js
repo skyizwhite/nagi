@@ -7,8 +7,9 @@ const windows = new Set();
 
 /** Closes every window `mount` opened. `test/setup.js` runs it after each test. */
 export const closeWindows = async () => {
-    for (const window of windows) await window.happyDOM.close();
+    const closing = [...windows].map((window) => window.happyDOM.close());
     windows.clear();
+    await Promise.allSettled(closing);
 };
 
 const respond = (answer) => {
@@ -41,6 +42,7 @@ const trackBody = (response, signal, done) => {
             };
             signal?.addEventListener("abort", abort, { once: true });
         },
+        // Read from the answer only as nomini reads, as a network would.
         async pull(controller) {
             let ended, value;
             try {
@@ -62,7 +64,7 @@ const trackBody = (response, signal, done) => {
             done();
             return reader.cancel(reason);
         },
-    });
+    }, { highWaterMark: 0 });
     return new Response(body, response);
 };
 
@@ -97,6 +99,7 @@ export const mount = async (html, { server, beforeInit } = {}) => {
 
         let done;
         const work = new Promise((resolve) => (done = resolve));
+        work.request = request;
         pending.add(work);
         work.then(() => pending.delete(work));
 
@@ -148,15 +151,32 @@ export const mount = async (html, { server, beforeInit } = {}) => {
         /** The reactive scope of the nearest `nm-data` around `selector`. */
         scope: (selector) => $(selector).closest("[nm-data]").nmProxy,
         /**
-         * Waits until every fetch has been answered and its body read, and
-         * the window's timers (nomini's swap timer, debounces) have run.
-         * Hangs if a server answer never comes, so answer before settling.
+         * Waits until every fetch has been answered and its body read to the
+         * end (or aborted), and the window's timers (nomini's swap timer,
+         * debounces) have run. A fetch still pending after `timeout` ms, such
+         * as one whose server never answers or whose body nomini never reads,
+         * fails the wait with the requests it was waiting for.
          */
-        settle: () => settle(window, pending),
+        settle: (timeout = 1000) => settle(window, pending, timeout),
     };
 };
 
-const settle = async (window, pending) => {
+const settle = async (window, pending, timeout) => {
+    let timer;
+    const late = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            const left = [...pending].map(({ request: r }) => `${r.method} ${r.url}`);
+            reject(new Error(`settle() timed out waiting for: ${left.join(", ")}`));
+        }, timeout);
+    });
+    try {
+        await Promise.race([drain(window, pending), late]);
+    } finally {
+        clearTimeout(timer);
+    }
+};
+
+const drain = async (window, pending) => {
     do {
         await Promise.all(pending);
         // Let the reader handle the end of the body before looking for the

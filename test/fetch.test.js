@@ -113,7 +113,12 @@ describe("requests", () => {
     it("drops an answer whose body is still arriving when the request is aborted", async () => {
         const encoder = new TextEncoder();
         let send;
-        const slow = new ReadableStream({ start: (controller) => (send = controller) });
+        let reading;
+        const read = new Promise((resolve) => (reading = resolve));
+        const slow = new ReadableStream(
+            { start: (controller) => (send = controller), pull: () => reading() },
+            { highWaterMark: 0 },
+        );
         const answers = [new Response(slow), `<div id="target">second</div>`];
         const page = await mount(
             `<div nm-data="{}"><button id="b" nm-bind="{ onclick: () => $get('/x') }"></button></div>
@@ -121,7 +126,8 @@ describe("requests", () => {
             { server: () => answers.shift() },
         );
         page.$("#b").click();
-        await new Promise((resolve) => setTimeout(resolve));
+        // Abort only once nomini is reading the first body.
+        await read;
         page.$("#b").click();
         await page.settle();
         expect(page.$("#target").textContent).toBe("second");
