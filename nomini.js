@@ -26,6 +26,12 @@
         }
     };
 
+    const propOf = (obj, name) => {
+        for (let o = obj; o; o = Object.getPrototypeOf(o))
+            for (const key of Object.getOwnPropertyNames(o))
+                if (key.toLowerCase() === name) return key;
+    };
+
     const queryAttr = (el, selector) => {
         const elMatch = el.matches(selector) ? [el] : [];
         return [...elMatch, ...el.querySelectorAll(selector)].filter(
@@ -227,7 +233,7 @@
 
     // --- BEGIN fetch
     const drop = (el) => {
-        queryAttr(el, "[nm-bind]").forEach((node) => dispatch(node, "destroy", { bubbles: false }));
+        queryAttr(el, "*").forEach((node) => node.nmBound && dispatch(node, "destroy", { bubbles: false }));
         // --- BEGIN ref
         queryAttr(el, "[nm-ref]").forEach((node) => {
             const refs = getClosestProxy(node).$refs;
@@ -429,19 +435,38 @@
         // --- END form
 
         // --- BEGIN bind
-        queryAttr(baseEl, "[nm-bind]").forEach((bindEl) => {
-            const proxyData = getClosestProxy(bindEl);
+        queryAttr(baseEl, "[nm-bind]").forEach((el) =>
+            console.error("[Nomini] nm-bind is no longer read, use nm-bind-* and nm-on-*:", el),
+        );
 
-            const props = evalExpression(
-                bindEl.getAttribute("nm-bind"),
-                proxyData,
-                bindEl,
-            );
+        queryAttr(baseEl, "*").forEach((bindEl) => {
+            const entries = [...bindEl.attributes].flatMap(({ name, value }) => {
+                const [, kind, rest] = name.match(/^nm-(bind|on)-(.+)$/) || [];
+                if (kind === "on") return `${JSON.stringify("@" + rest)}: async (e) => {${value}\n}`;
+                if (!kind) return [];
+                const [first, ...subs] = rest.split(".");
+                const sub = subs.join(".");
+                const main = first === "class" ? first : propOf(bindEl, first);
+                const inner = !sub || /^(class|style|dataset)$/.test(main) ? sub : propOf(bindEl[main], sub);
+                if (!main || inner === undefined) {
+                    console.error("[Nomini] no such property:", name, bindEl);
+                    return [];
+                }
+                const key = main + (sub ? "." + inner : "");
+                return `${JSON.stringify(key)}: () => (${value.trim() ? value : "undefined"}\n)`;
+            });
+
+            if (!entries.length) return;
+            bindEl.nmBound = true;
+
+            const proxyData = getClosestProxy(bindEl);
+            const props = Object.assign({}, ...entries.map((entry) => evalExpression(entry, proxyData, bindEl)));
+            const handle = (val, e) => val(e)?.catch?.((err) => console.error("[Nomini] failed to run:", val, "\n", err));
 
             Object.entries(props).forEach(([key, val]) => {
-                if (key.startsWith("on")) {
+                if (key.startsWith("@")) {
                     // --- BEGIN events
-                    const [eventName, ...mods] = key.slice(2).split(".");
+                    const [eventName, ...mods] = key.slice(1).split(".");
 
                     const debounceMod = mods.find((val) => val.startsWith("debounce"));
                     const delay = +debounceMod?.slice(8);
@@ -451,8 +476,8 @@
                         if (mods.includes("prevent")) e.preventDefault();
                         if (mods.includes("stop")) e.stopPropagation();
 
-                        if (delay) proxyData.$debounce(() => val(e), delay);
-                        else val(e);
+                        if (delay) proxyData.$debounce(() => handle(val, e), delay);
+                        else handle(val, e);
                     }, null, val);
 
                     const listenOn = mods.includes("window") ? window : bindEl;
@@ -464,12 +489,33 @@
                     // --- END events
 
                     // If special event handling isn't enabled just do a normal event listener
-                    bindEl.addEventListener(key.slice(2), () => runWithEl(bindEl, val, null, val));
+                    bindEl.addEventListener(key.slice(1).split(".")[0], (e) => runWithEl(bindEl, () => handle(val, e), null, val));
                 } else {
-                    const [main, sub] = key.split(".");
+                    const [main, ...rest] = key.split(".");
+                    const sub = rest.join(".");
+                    let added = new Set();
                     const write = (resolvedVal) => {
-                        if (sub) {
+                        if (main === "class" && !sub) {
+                            const v = resolvedVal;
+                            const next = new Set(
+                                typeof v === "string" ? v.split(/\s+/).filter(Boolean)
+                                    : Array.isArray(v) ? v.filter(Boolean)
+                                    : Object.keys(v ?? {}).filter((name) => v[name]),
+                            );
+                            const mine = new Set();
+                            added.forEach((name) => next.has(name) || bindEl.classList.remove(name));
+                            next.forEach((name) => {
+                                if (added.has(name) || !bindEl.classList.contains(name)) mine.add(name);
+                                bindEl.classList.add(name);
+                            });
+                            added = mine;
+                        } else if (sub) {
+                            const unset = resolvedVal == null || resolvedVal === false;
                             if (main === "class") bindEl.classList.toggle(sub, resolvedVal);
+                            else if (main === "style")
+                                unset ? bindEl.style.removeProperty(sub) : bindEl.style.setProperty(sub, resolvedVal);
+                            else if (main === "dataset")
+                                unset ? bindEl.removeAttribute("data-" + sub) : bindEl.setAttribute("data-" + sub, resolvedVal);
                             else bindEl[main][sub] = resolvedVal;
                         } else bindEl[main] = resolvedVal;
                     };

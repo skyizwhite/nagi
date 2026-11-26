@@ -65,7 +65,7 @@ describe("nm-use", () => {
 
     it("binds what the template brings in", async () => {
         const page = await mount(`
-            <template id="t"><span id="s" nm-bind="{ textContent: () => n }"></span></template>
+            <template id="t"><span id="s" nm-bind-textcontent="n"></span></template>
             <div nm-data="{ n: 4 }"><div nm-use="t"></div></div>
         `);
         await page.settle();
