@@ -61,21 +61,16 @@ Makes a reactive scope from an object. Elements inside it can read and write its
 - Scopes nest. Inner elements can use the names of outer scopes too.
 
 #### `n-let-<name>`
-Adds one name from an expression to the closest scope it is in, its own element's included. Only `n-scope` makes a scope; an `n-let-*` outside any scope logs an error.
+Adds one name to the scope from an expression, which can use the names of outer scopes. Write it on the element of `n-scope`; Nagi logs an error otherwise. Elements inside the scope read and write the name as any other.
 
 ```html
 <div n-scope n-let-open="false" n-let-toggle="() => open = !open">
   <button n-on-click="toggle()">Menu</button>
-  <nav n-bind-hidden="!open">
-    <ul n-let-items="['Home', 'About']">…</ul>
-  </nav>
+  <nav n-bind-hidden="!open">…</nav>
 </div>
 ```
 
-- An `n-let-*` can use the names given before it to its scope and the scopes around it. `$el` is the element it is written on.
-- On the element of `n-scope`, it overrides the name of the same name there.
-- Give each name from one element. When a response replaces that element, the new one gives the name again. Nagi logs an error otherwise.
-- The name keeps its value after its element is removed.
+- It wins over a key of the same name in the `n-scope` object.
 - Names starting with `$` or `_nagi` are reserved for Nagi.
 
 #### `n-bind-<property>`
