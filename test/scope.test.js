@@ -78,6 +78,22 @@ describe("this and $el", () => {
         expect(page.scope("#b").got).toBe("b");
     });
 
+    it("updates an inner bind when an outer scope adds the name it reads", async () => {
+        const page = await mount(`
+            <div n-scope><button id="b" n-on-click="this.msg = 'hi'"></button>
+                <div n-let-a="1"><span id="s" n-bind-textcontent="this.msg ?? ''"></span></div>
+            </div>
+        `);
+        page.$("#b").click();
+        expect(page.$("#s").textContent).toBe("hi");
+    });
+
+    it("keeps $el the element though the scope has a key named $el", async () => {
+        const page = await mount(`<div n-scope="{ $el: 'x', got: null }"><button id="b" n-on-click="got = $el.id"></button></div>`);
+        page.$("#b").click();
+        expect(page.scope("#b").got).toBe("b");
+    });
+
     it("adds a name to the scope written through this", async () => {
         const page = await mount(`
             <div n-scope><button id="b" n-on-click="this.x = 5"></button><span id="s" n-bind-textcontent="this.x ?? ''"></span></div>

@@ -445,7 +445,7 @@
 
         return new Proxy(rawData, {
             has(obj, prop) {
-                return prop in obj || (!!outer && prop in outer);
+                return prop !== "$el" && (prop in obj || (!!outer && prop in outer));
             },
             get(obj, prop, receiver) {
                 if (fromOuter(obj, prop)) {
@@ -453,6 +453,7 @@
                     return typeof value === "function" ? bindToOuter(value) : value;
                 }
                 if (currentBind) {
+                    if (outer && !(prop in obj)) outer[prop];
                     const deps = trackedDeps.get(prop) ?? trackedDeps.set(prop, new Set()).get(prop);
                     deps.add(currentBind);
                     currentBind.deps.add(deps);
