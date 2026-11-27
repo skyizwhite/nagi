@@ -75,6 +75,36 @@ describe("n-form", () => {
         expect(["submit", "image", "plain", "off"].map((id) => page.$(`#${id}`).disabled)).toEqual([false, false, false, true]);
     });
 
+    it("disables a button while fetching that a bind enabled after the HTML disabled it", async () => {
+        const page = await mount(`<form id="f" n-scope="{ ok: true }" n-form><button id="b" disabled n-bind-disabled="!ok"></button></form>`);
+        expect(page.$("#b").disabled).toBe(false);
+        page.$("#f").nagiProxy.$fetching = true;
+        expect(page.$("#b").disabled).toBe(true);
+        page.$("#f").nagiProxy.$fetching = false;
+        expect(page.$("#b").disabled).toBe(false);
+    });
+
+    it("needs a scope, and leaves the fields and buttons of an n-form outside any scope alone", async () => {
+        const answers = [];
+        const page = await mount(
+            `<form n-form><input name="q" value="a"><button id="send"></button></form>
+            <span id="s" n-bind-textcontent="typeof q"></span>
+            <button id="b" n-on-click="$get('/x')"></button>`,
+            { server: () => new Promise((resolve) => answers.push(resolve)) },
+        );
+        expect(page.$("#s").textContent).toBe("undefined");
+        page.$("#b").click();
+        expect(page.$("#send").disabled).toBe(false);
+        answers.forEach((answer) => answer(""));
+        await page.settle();
+    });
+
+    it("logs a field named like a helper, and keeps the helper", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input name="$fetching" value="x"></form>`);
+        expect(page.$("#f").nagiProxy.$fetching).toBe(false);
+        expect(page.errors).toHaveLength(1);
+    });
+
     it("keeps the checked radio's value when an unchecked one comes after it", async () => {
         const page = await mount(`
             <form id="f" n-scope="{}" n-form>

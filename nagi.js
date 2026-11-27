@@ -484,10 +484,7 @@
         });
     };
 
-    const formProxy = (el) => {
-        const form = el.closest("[n-form]");
-        return form && getClosestProxy(form);
-    };
+    const formScope = (el) => closestScope(el.closest("[n-form]"));
 
     const inputReaders = {
         __proto__: null,
@@ -628,12 +625,12 @@
         });
 
         queryAttr(baseEl, "[name]").forEach((inputEl) => {
-            const proxyData = formProxy(inputEl);
-            if (!proxyData) return;
+            const scopeEl = formScope(inputEl);
+            if (!scopeEl || reserved(inputEl.name, inputEl)) return;
 
             const { type } = inputEl;
-            const rawData = closestScope(inputEl.closest("[n-form]"))?.nagiRaw;
-            if (rawData && !(inputEl.name in rawData)) define(rawData, inputEl.name, undefined);
+            const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
+            if (!(inputEl.name in rawData)) define(rawData, inputEl.name, undefined);
 
             const read = inputReaders[type] ?? ((el) => el.value);
             const setVal = () => {
@@ -650,9 +647,13 @@
         });
 
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
-            if (!/^(submit|image)$/.test(submitEl.type) || submitEl.hasAttribute("disabled")) return;
-            const proxyData = formProxy(submitEl);
-            if (proxyData) watch(() => (submitEl.disabled = proxyData.$fetching), submitEl);
+            const proxyData = formScope(submitEl)?.nagiProxy;
+            if (!proxyData || !/^(submit|image)$/.test(submitEl.type)) return;
+            let disabledByForm = false;
+            watch(() => {
+                if (proxyData.$fetching && !submitEl.disabled) [submitEl.disabled, disabledByForm] = [true, true];
+                else if (!proxyData.$fetching && disabledByForm) [submitEl.disabled, disabledByForm] = [false, false];
+            }, submitEl);
         });
 
         queryAttr(baseEl, "*").forEach((bindEl) => {
