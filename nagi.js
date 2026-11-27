@@ -48,7 +48,7 @@
     const getClosestProxy = (el) => {
         const scope = closestScope(el)?.nagiProxy;
         if (scope) return scope;
-        if (!ownScopes.has(el)) ownScopes.set(el, reactive(helpers()));
+        if (!ownScopes.has(el)) ownScopes.set(el, reactive({ ...helpers(), _nagiEl: el }));
         return ownScopes.get(el);
     };
 
@@ -334,7 +334,7 @@
             if (refs?.[name] === node) delete refs[name];
         });
         [el, ...el.querySelectorAll("*")].forEach((node) => {
-            node.nagiProxy?._nagiAbort.abort();
+            (node.nagiProxy ?? ownScopes.get(node))?._nagiAbort.abort();
             node.nagiRuns?.forEach(kill);
             node.nagiCleanup?.forEach((clean) => clean());
             node.nagiTimers?.forEach(clearTimeout);
@@ -653,13 +653,20 @@
             inputEl.addEventListener("change", setVal);
         });
 
+        queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.warn("[Nagi] n-form needs a scope:", form));
+
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
             const proxyData = formScope(submitEl)?.nagiProxy;
-            if (!proxyData || !/^(submit|image)$/.test(submitEl.type)) return;
+            if (!proxyData) return;
             let disabledByForm = false;
             watch(() => {
-                if (proxyData.$fetching && !submitEl.disabled) [submitEl.disabled, disabledByForm] = [true, true];
-                else if (!proxyData.$fetching && disabledByForm) [submitEl.disabled, disabledByForm] = [false, false];
+                const fetching = proxyData.$fetching;
+                if (fetching && !submitEl.disabled && /^(submit|image)$/.test(submitEl.type))
+                    [submitEl.disabled, disabledByForm] = [true, true];
+                else if (!fetching && disabledByForm) {
+                    [submitEl.disabled, disabledByForm] = [false, false];
+                    submitEl.nagiRuns?.forEach((run) => run.attr === "disabled" && run());
+                }
             }, submitEl);
         });
 

@@ -84,7 +84,22 @@ describe("n-form", () => {
         expect(page.$("#b").disabled).toBe(false);
     });
 
-    it("needs a scope, and leaves the fields and buttons of an n-form outside any scope alone", async () => {
+    it("leaves a button disabled that a bind disabled during the request", async () => {
+        const page = await mount(`<form id="f" n-scope="{ ok: true }" n-form><button id="b" n-bind-disabled="!ok"></button></form>`);
+        const scope = page.$("#f").nagiProxy;
+        scope.$fetching = true;
+        scope.ok = false;
+        scope.$fetching = false;
+        expect(page.$("#b").disabled).toBe(true);
+    });
+
+    it("leaves alone a button a bind turned from submit into a plain button", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><button id="b" n-bind-type="'button'"></button></form>`);
+        page.$("#f").nagiProxy.$fetching = true;
+        expect(page.$("#b").disabled).toBe(false);
+    });
+
+    it("warns about an n-form outside any scope, and leaves its fields and buttons alone", async () => {
         const answers = [];
         const page = await mount(
             `<form n-form><input name="q" value="a"><button id="send"></button></form>
@@ -93,6 +108,7 @@ describe("n-form", () => {
             { server: () => new Promise((resolve) => answers.push(resolve)) },
         );
         expect(page.$("#s").textContent).toBe("undefined");
+        expect(page.warnings).toHaveLength(1);
         page.$("#b").click();
         expect(page.$("#send").disabled).toBe(false);
         answers.forEach((answer) => answer(""));

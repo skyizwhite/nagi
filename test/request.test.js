@@ -972,6 +972,17 @@ describe("elements outside any scope", () => {
         expect(page.requests.map((r) => r.url)).toEqual(["http://localhost/now"]);
     });
 
+    it("send the events of a request made after an await to their element", async () => {
+        const page = await mount(
+            `<div n-scope="{ got: 0 }"><span id="s" n-bind-textcontent="got"></span></div>
+            <button id="b" n-on-click="await 0; $post('/x')" n-on-fetcherr="document.querySelector('[n-scope]').nagiProxy.got++"></button>`,
+            { server: () => ({ status: 500 }) },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#s").textContent).toBe("1");
+    });
+
     it("bind $fetching for their own requests", async () => {
         const { page, answers } = await mountWaiting(`<button id="b" n-on-click="$post('/x')" n-bind-disabled="$fetching"></button>`);
         page.$("#b").click();
