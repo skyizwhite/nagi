@@ -362,6 +362,40 @@ describe("n-form", () => {
         expect(page.$("#b").disabled).toBe(false);
     });
 
+    it("leaves ignored radios out when a reset reads a radio group", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form><input id="a" type="radio" name="s" value="a"><div n-ignore><input type="radio" name="s" value="z" checked></div></form>
+        `);
+        const a = page.$("#a");
+        a.checked = true;
+        a.dispatchEvent(new page.window.Event("change"));
+        page.$("#f").reset();
+        await later(10);
+        expect(page.$("#f").nagiProxy.s).toBeUndefined();
+    });
+
+    it("reads a radio group across the forms of its scope when one of them is reset", async () => {
+        const page = await mount(`
+            <div id="d" n-scope n-form>
+                <form id="A"><input type="radio" name="s" value="a"></form>
+                <form><input type="radio" name="s" value="b" checked></form>
+            </div>
+        `);
+        page.$("#A").reset();
+        await later(10);
+        expect(page.$("#d").nagiProxy.s).toBe("b");
+    });
+
+    it("keeps the type of a value an init handler set when a bind writes it into its field", async () => {
+        const page = await mount(`<form id="f" n-scope n-form n-on-init="n = 5"><input name="n" n-bind-value="n"></form>`);
+        expect(page.$("#f").nagiProxy.n).toBe(5);
+    });
+
+    it("clears a radio group's name when a bind unchecks all of it", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input type="radio" name="s" value="b" checked n-bind-checked="false"></form>`);
+        expect(page.$("#f").nagiProxy.s).toBeUndefined();
+    });
+
     it("keeps the checked radio's value when an unchecked one comes after it", async () => {
         const page = await mount(`
             <form id="f" n-scope="{}" n-form>

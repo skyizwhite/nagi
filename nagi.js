@@ -524,6 +524,11 @@
         const setVal = () => {
             if (type !== "radio" || inputEl.checked) proxyData[inputEl.name] = read();
         };
+        const syncRadio = () => {
+            proxyData[inputEl.name] = queryAttr(scopeEl, "input[type=radio]").find(
+                (el) => el.name === inputEl.name && el.checked && formScope(el) === scopeEl,
+            )?.value;
+        };
         const snapshot = () => (type === "radio" ? inputEl.checked : String(read()));
 
         if (!hasName(rawData, name)) define(rawData, name, undefined);
@@ -533,17 +538,15 @@
         inputEl.addEventListener("change", setVal);
         const { form } = inputEl;
         if (form) {
-            const afterReset = () => {
-                if (!inputEl.isConnected) return;
-                const groupChecked = [...form.elements].some((el) => el.type === "radio" && el.name === inputEl.name && el.checked);
-                if (type === "radio" && !groupChecked) proxyData[inputEl.name] = undefined;
-                else setVal();
-            };
-            const onReset = () => setTimeout(afterReset);
+            const onReset = () => setTimeout(() => inputEl.isConnected && (type === "radio" ? syncRadio() : setVal()));
             form.addEventListener("reset", onReset);
             (inputEl.nagiCleanup ||= []).push(() => form.removeEventListener("reset", onReset));
         }
-        return () => snapshot() === first || setVal();
+        return () => {
+            if (snapshot() === first) return;
+            if (type === "radio") syncRadio();
+            else if (String(read()) !== String(proxyData[inputEl.name])) setVal();
+        };
     };
 
     const propOf = (obj, name) => {
