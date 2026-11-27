@@ -284,6 +284,65 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.email).toBe("a@b.c");
     });
 
+    it("resets a radio group to its default whatever order the radios come in", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form><input type="radio" name="s" value="a"><input type="radio" name="s" value="b" checked></form>
+        `);
+        const [a, b] = page.window.document.querySelectorAll("[name=s]");
+        a.checked = true;
+        a.dispatchEvent(new page.window.Event("change"));
+        expect(page.$("#f").nagiProxy.s).toBe("a");
+        page.$("#f").reset();
+        await later(10);
+        expect([a.checked, b.checked, page.$("#f").nagiProxy.s]).toEqual([false, true, "b"]);
+    });
+
+    it("lets a number field be cleared", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input type="number" name="n" value="5"></form>`);
+        const input = page.$("[name=n]");
+        input.value = "";
+        input.dispatchEvent(new page.window.Event("input"));
+        expect(input.value).toBe("");
+        expect(page.$("#f").nagiProxy.n).toBe(0);
+    });
+
+    it("has read the fields by the time binds and init handlers first run", async () => {
+        const page = await mount(`
+            <form n-scope="{ seen: null }" n-form>
+                <input name="q" value="x"><span id="s" n-on-init="seen = q" n-bind-textcontent="q.toUpperCase()"></span>
+            </form>
+        `);
+        expect(page.$("#s").textContent).toBe("X");
+        expect(page.scope("#s").seen).toBe("x");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("takes a field named like an Object.prototype member from the field", async () => {
+        const page = await mount(`<form id="f" n-scope="{ a: 1 }" n-form><input name="constructor" value="x"></form>`);
+        expect(page.$("[name=constructor]").value).toBe("x");
+        expect(page.$("#f").nagiProxy.constructor).toBe("x");
+    });
+
+    it("does not count a field of an inner n-form scope as sharing the outer field's name", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ q: 'outer' }" n-form>
+                <input id="o" name="q"><div n-scope="{ q: 'inner' }" n-form><input name="q"></div>
+            </form>
+        `);
+        expect(page.$("#o").value).toBe("outer");
+        page.$("#f").nagiProxy.q = "changed";
+        expect(page.$("#o").value).toBe("changed");
+    });
+
+    it("selects the scope's value once the select gets an option for it", async () => {
+        const page = await mount(`<form n-scope="{ city: 'b' }" n-form><select id="s" name="city"><option>a</option></select></form>`);
+        const option = page.window.document.createElement("option");
+        option.textContent = "b";
+        page.$("#s").append(option);
+        await later(10);
+        expect(page.$("#s").value).toBe("b");
+    });
+
     it("keeps the checked radio's value when an unchecked one comes after it", async () => {
         const page = await mount(`
             <form id="f" n-scope="{}" n-form>
