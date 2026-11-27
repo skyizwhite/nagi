@@ -575,7 +575,7 @@
         const field = { inputEl, setVal };
 
         setVal();
-        if (fresh && rawData[name] === undefined) announceName(scopeEl, name);
+        if (fresh && read() === undefined) announceName(scopeEl, name);
         inputEl.addEventListener("input", setVal);
         inputEl.addEventListener("change", setVal);
         formFields.add(field);

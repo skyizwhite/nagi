@@ -45,6 +45,22 @@ describe("n-form", () => {
         expect([...page.$("#f").nagiProxy.seen]).toEqual([undefined, "hi"]);
     });
 
+    it("shows an empty field a response brings in where an outer name was read before", async () => {
+        const page = await mount(
+            `<div n-scope="{ extra: 'x' }">
+                <form n-scope n-form>
+                    <span id="s" n-bind-textcontent="String(extra)"></span>
+                    <div id="target"></div>
+                    <button type="button" id="b" n-on-click="$get('/x')"></button>
+                </form>
+            </div>`,
+            { server: () => `<div id="target"><input type="number" name="extra"></div>` },
+        );
+        expect(page.$("#s").textContent).toBe("x");
+        await swapOnce(page);
+        expect(page.$("#s").textContent).toBe("undefined");
+    });
+
     it("copies each named field into the scope, typed by input type", async () => {
         const page = await mount(form);
         const scope = page.$("#f").nagiProxy;
