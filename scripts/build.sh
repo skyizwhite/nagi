@@ -1,4 +1,4 @@
 mkdir -p ./dist
 rm -f ./dist/*
 
-(command -v minify >/dev/null && minify --type js || cat) < nagi.js > ./dist/nagi.min.js
+npx rolldown nagi.js --minify --format esm --logLevel warn --postBanner "$(sed -n '1,6p' nagi.js)" --file ./dist/nagi.min.js

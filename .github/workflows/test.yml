@@ -13,3 +13,5 @@ jobs:
       - uses: jdx/mise-action@v5
       - run: npm ci
       - run: npm test
+      - run: sh scripts/build.sh
+      - run: git diff --exit-code dist
