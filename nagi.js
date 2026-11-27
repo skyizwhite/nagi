@@ -44,8 +44,13 @@
         for (; el; el = el.parentElement) if (el.nagiProxy) return el;
     };
 
-    const pageWriting = new Set();
-    const getClosestProxy = (el) => closestScope(el)?.nagiProxy ?? helpers(0, pageWriting);
+    const ownScopes = new WeakMap();
+    const getClosestProxy = (el) => {
+        const scope = closestScope(el)?.nagiProxy;
+        if (scope) return scope;
+        if (!ownScopes.has(el)) ownScopes.set(el, reactive({ ...helpers(), _nagiEl: el }));
+        return ownScopes.get(el);
+    };
 
     const hostOf = (scope) => currentEl ?? scope._nagiEl;
 
@@ -104,7 +109,7 @@
     };
 
     // Helpers that are included with every data object
-    const helpers = (pending = 0, writing = new Set(), controllers = new Set()) => ({
+    const helpers = (pending = 0, writing = new Set(), controllers = new Set(), read = null) => ({
         $refs: {},
         $fetching: false,
         _nagiAbort: new AbortController(),
@@ -118,6 +123,10 @@
         ),
         $abort() {
             controllers.forEach((controller) => controller.abort());
+            this._nagiStop();
+        },
+        _nagiStop() {
+            read?.abort();
             this._nagiAbort.abort();
             this._nagiAbort = new AbortController();
         },
@@ -148,22 +157,25 @@
                 write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sentOf(entries)) : ""}`;
                 if (dedupe && writing.has(write)) return;
 
+                read?.abort();
                 this._nagiAbort.abort();
                 return opts;
             });
 
             if (!opts) return report("fetchskip", { method, url });
 
-            this._nagiAbort = reading ? controller : new AbortController();
+            this._nagiAbort = new AbortController();
+            if (reading) read = controller;
+            if (reading && el) el.nagiRead = controller;
             const deduped = write && dedupe;
             if (deduped) writing.add(write);
             controllers.add(controller);
             let timedOut = false;
+            let received = false;
             const { timeout } = options;
             const timer = Number.isFinite(timeout) && timeout > 0 && setTimeout(() => {
                 timedOut = true;
                 controller.abort();
-                if (this._nagiAbort === controller) this._nagiAbort = new AbortController();
             }, Math.min(timeout, 2147483647));
             pending++;
             this.$fetching = true;
@@ -179,6 +191,7 @@
 
                     const text = await readText(res.body);
                     if (signal.aborted) return;
+                    received = true;
 
                     const swapped = res.ok || fragmentsOf(text).some((child) => child.id && document.getElementById(child.id));
 
@@ -196,22 +209,21 @@
                 })
                 .catch((err) => {
                     if (timedOut) err = new DOMException("The request timed out.", "TimeoutError");
-                    else if (signal.aborted) return;
+                    else if (signal.aborted && !received) return;
                     report("fetcherr", { err, url, status: err?.status, text: err?.text, swapped: !!err?.swapped });
                 })
                 .finally(() => {
                     clearTimeout(timer);
                     controllers.delete(controller);
+                    if (read === controller) read = null;
+                    if (el?.nagiRead === controller) el.nagiRead = null;
                     if (deduped) writing.delete(write);
                     if (!--pending) this.$fetching = false;
                 });
         },
         $dataset() {
             let datasets = {};
-            for (let el = hostOf(this); el?.nodeType === 1; el = el.parentElement) {
-                datasets = { ...el.dataset, ...datasets };
-                if (el.nagiProxy) break;
-            }
+            for (let el = hostOf(this); el?.nodeType === 1; el = el.parentElement) datasets = { ...el.dataset, ...datasets };
             return datasets;
         },
         $watch: (fn) => void watch(fn),
@@ -322,12 +334,13 @@
     const drop = (el) => {
         queryAttr(el, "*").forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
         queryAttr(el, "[n-ref]").forEach((node) => {
-            const refs = getClosestProxy(node).$refs;
+            const refs = closestScope(node)?.nagiProxy.$refs;
             const name = node.getAttribute("n-ref");
-            if (refs[name] === node) delete refs[name];
+            if (refs?.[name] === node) delete refs[name];
         });
         [el, ...el.querySelectorAll("*")].forEach((node) => {
-            node.nagiProxy?._nagiAbort.abort();
+            (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
+            node.nagiRead?.abort();
             node.nagiRuns?.forEach(kill);
             node.nagiCleanup?.forEach((clean) => clean());
             node.nagiTimers?.forEach(clearTimeout);
@@ -421,17 +434,8 @@
         return {};
     };
 
-    const makeScope = (dataEl) => {
-        if (dataEl.nagiProxy) return;
-        const attrs = [...dataEl.attributes];
-        if (!attrs.some(({ name }) => /^n-(scope$|let-)/.test(name))) return;
-
-        const rawData = baseOf(dataEl);
-        Object.entries({ ...helpers(), _nagiEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
-        Object.entries(dataEl.dataset).forEach(([key, value]) => reserved(key, dataEl) || define(rawData, key, value));
-
+    const reactive = (rawData, outer) => {
         const trackedDeps = new Map();
-        const outer = closestScope(dataEl.parentElement)?.nagiProxy;
         const fromOuter = (obj, prop) => !(prop in obj) && !!outer && prop in outer;
         const bound = new WeakMap();
         const bindToOuter = (fn) => {
@@ -439,7 +443,7 @@
             return bound.get(fn);
         };
 
-        const proxyData = new Proxy(rawData, {
+        return new Proxy(rawData, {
             has(obj, prop) {
                 return prop in obj || (!!outer && prop in outer);
             },
@@ -465,6 +469,18 @@
                 return true;
             },
         });
+    };
+
+    const makeScope = (dataEl) => {
+        if (dataEl.nagiProxy) return;
+        const attrs = [...dataEl.attributes];
+        if (!attrs.some(({ name }) => /^n-(scope$|let-)/.test(name))) return;
+
+        const rawData = baseOf(dataEl);
+        Object.entries({ ...helpers(), _nagiEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
+
+        const outer = closestScope(dataEl.parentElement)?.nagiProxy;
+        const proxyData = reactive(rawData, outer);
 
         dataEl.nagiProxy = proxyData;
         dataEl.nagiRaw = rawData;
@@ -478,10 +494,7 @@
         });
     };
 
-    const formProxy = (el) => {
-        const form = el.closest("[n-form]");
-        return form && getClosestProxy(form);
-    };
+    const formScope = (el) => closestScope(el.closest("[n-form]"));
 
     const inputReaders = {
         __proto__: null,
@@ -618,16 +631,20 @@
         }
 
         queryAttr(baseEl, "[n-ref]").forEach((el) => {
-            getClosestProxy(el).$refs[el.getAttribute("n-ref")] = el;
+            const scope = closestScope(el)?.nagiProxy;
+            if (!scope) return console.error("[Nagi] n-ref needs a scope:", el);
+            scope.$refs[el.getAttribute("n-ref")] = el;
         });
 
+        queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
+
         queryAttr(baseEl, "[name]").forEach((inputEl) => {
-            const proxyData = formProxy(inputEl);
-            if (!proxyData) return;
+            const scopeEl = formScope(inputEl);
+            if (!scopeEl || reserved(inputEl.name, inputEl)) return;
 
             const { type } = inputEl;
-            const rawData = closestScope(inputEl.closest("[n-form]"))?.nagiRaw;
-            if (rawData && !(inputEl.name in rawData)) define(rawData, inputEl.name, undefined);
+            const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
+            if (!(inputEl.name in rawData)) define(rawData, inputEl.name, undefined);
 
             const read = inputReaders[type] ?? ((el) => el.value);
             const setVal = () => {
@@ -643,9 +660,19 @@
             inputEl.addEventListener("change", setVal);
         });
 
-        queryAttr(baseEl, "button, input[type='submit']").forEach((submitEl) => {
-            const proxyData = formProxy(submitEl);
-            if (proxyData) watch(() => (submitEl.disabled = proxyData.$fetching), submitEl);
+        queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
+            const proxyData = formScope(submitEl)?.nagiProxy;
+            if (!proxyData) return;
+            let disabledByForm = false;
+            watch(() => {
+                const fetching = proxyData.$fetching;
+                if (fetching && !submitEl.disabled && /^(submit|image)$/.test(submitEl.type))
+                    [submitEl.disabled, disabledByForm] = [true, true];
+                else if (!fetching && disabledByForm) {
+                    [submitEl.disabled, disabledByForm] = [false, false];
+                    submitEl.nagiRuns?.forEach((run) => run.attr === "disabled" && run());
+                }
+            }, submitEl);
         });
 
         queryAttr(baseEl, "*").forEach((bindEl) => {

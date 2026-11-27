@@ -417,7 +417,7 @@ describe("reads and writes", () => {
             },
         );
 
-    it("aborts the scope's request in flight when it makes another", async () => {
+    it("aborts the scope's read in flight when it makes another", async () => {
         const answers = [];
         const page = await mount(
             `<div n-scope="{}"><button id="b" n-on-click="$get('/x')"></button></div>
@@ -473,6 +473,26 @@ describe("reads and writes", () => {
         answers["/order"]("");
         await page.settle();
         expect(page.$("#results").textContent).toBe("old");
+    });
+
+    it("runs reads side by side in separate scopes", async () => {
+        const signals = [];
+        const page = await mount(
+            `<div n-scope="{}">
+                <div n-scope><button id="a" n-on-click="$get('/a')"></button></div>
+                <div n-scope><button id="b" n-on-click="$get('/b')"></button></div>
+            </div>`,
+            { server: () => "" },
+        );
+        const fetch = page.window.fetch;
+        page.window.fetch = (url, opts) => {
+            signals.push(opts.signal);
+            return fetch(url, opts);
+        };
+        page.$("#a").click();
+        page.$("#b").click();
+        expect(signals.map((s) => s.aborted)).toEqual([false, false]);
+        await page.settle();
     });
 
     it("takes OPTIONS as a read, aborted by a newer request", async () => {
@@ -898,14 +918,15 @@ describe("elements outside any scope", () => {
         return mount(html, { server: () => new Promise((resolve) => answers.push(resolve)) }).then((page) => ({ page, answers }));
     };
 
-    it("share one state for requests", async () => {
+    it("each dedupe their own writes", async () => {
         const { page, answers } = await mountWaiting(`
             <button id="a" n-on-click="$post('/order')"></button>
             <button id="b" n-on-click="$post('/order')"></button>
         `);
         page.$("#a").click();
+        page.$("#a").click();
         page.$("#b").click();
-        expect(page.requests).toHaveLength(1);
+        expect(page.requests).toHaveLength(2);
         answers.forEach((answer) => answer(""));
         await page.settle();
     });
@@ -925,6 +946,70 @@ describe("elements outside any scope", () => {
         page.$("#b").click();
         expect(signals.map((s) => s.aborted)).toEqual([false, false]);
         await page.settle();
+    });
+
+    it("abort an older read of the same element", async () => {
+        const signals = [];
+        const page = await mount(`<button id="a" n-on-click="$get('/a')"></button>`, { server: () => "" });
+        const fetch = page.window.fetch;
+        page.window.fetch = (url, opts) => {
+            signals.push(opts.signal);
+            return fetch(url, opts);
+        };
+        page.$("#a").click();
+        page.$("#a").click();
+        expect(signals.map((s) => s.aborted)).toEqual([true, false]);
+        await page.settle();
+    });
+
+    it("$abort only the requests of the element that calls it", async () => {
+        const { page, answers } = await mountWaiting(`
+            <button id="save" n-on-click="$post('/save')"></button>
+            <button id="cancel" n-on-click="$abort()"></button>
+        `);
+        const signals = [];
+        const fetch = page.window.fetch;
+        page.window.fetch = (url, opts) => {
+            signals.push(opts.signal);
+            return fetch(url, opts);
+        };
+        page.$("#save").click();
+        page.$("#cancel").click();
+        expect(signals.map((s) => s.aborted)).toEqual([false]);
+        answers.forEach((answer) => answer(""));
+        await page.settle();
+    });
+
+    it("drop an abortable debounce of the element when it makes a request", async () => {
+        const page = await mount(
+            `<input id="i" n-on-input="$debounce(() => $get('/late'), 20, true)" n-on-change="$post('/now')">`,
+            { server: () => "" },
+        );
+        page.$("#i").dispatchEvent(new page.window.Event("input"));
+        page.$("#i").dispatchEvent(new page.window.Event("change"));
+        await later(40);
+        await page.settle();
+        expect(page.requests.map((r) => r.url)).toEqual(["http://localhost/now"]);
+    });
+
+    it("send the events of a request made after an await to their element", async () => {
+        const page = await mount(
+            `<div n-scope="{ got: 0 }"><span id="s" n-bind-textcontent="got"></span></div>
+            <button id="b" n-on-click="await 0; $post('/x')" n-on-fetcherr="document.querySelector('[n-scope]').nagiProxy.got++"></button>`,
+            { server: () => ({ status: 500 }) },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#s").textContent).toBe("1");
+    });
+
+    it("bind $fetching for their own requests", async () => {
+        const { page, answers } = await mountWaiting(`<button id="b" n-on-click="$post('/x')" n-bind-disabled="$fetching"></button>`);
+        page.$("#b").click();
+        expect(page.$("#b").disabled).toBe(true);
+        answers.forEach((answer) => answer(""));
+        await page.settle();
+        expect(page.$("#b").disabled).toBe(false);
     });
 });
 

@@ -99,12 +99,11 @@ describe("n-scope objects", () => {
 
     it("makes a frozen object's values writable in the scope", async () => {
         const page = await mount(`
-            <div n-scope="Object.freeze({ n: 1 })" data-m="5"><button id="b" n-on-click="n++"></button></div>
+            <div n-scope="Object.freeze({ n: 1 })"><button id="b" n-on-click="n++"></button></div>
         `);
         page.$("#b").click();
         await page.settle();
         expect(page.scope("#b").n).toBe(2);
-        expect(page.scope("#b").m).toBe("5");
         expect(page.errors).toEqual([]);
     });
 
@@ -137,58 +136,29 @@ describe("n-scope objects", () => {
 });
 
 describe("data-* of the scope's element", () => {
-    it("adds them as the strings written, named as dataset names them", async () => {
+    it("are not names of the scope, so they hide no global", async () => {
         const page = await mount(`
-            <div id="d" n-scope data-model="post" data-count="3" data-user-id="42" data-none="null"></div>
+            <div n-scope="{ got: null }" data-model="post" data-location="here">
+                <button id="b" n-on-click="got = [typeof model, typeof location]"></button>
+            </div>
         `);
-        const scope = page.$("#d").nagiProxy;
-        expect(scope.model).toBe("post");
-        expect(scope.count).toBe("3");
-        expect(scope.userId).toBe("42");
-        expect(scope.none).toBe("null");
+        page.$("#b").click();
+        expect([...page.scope("#b").got]).toEqual(["undefined", "object"]);
     });
 
-    it("never runs a value as code", async () => {
-        const page = await mount(`<div id="d" n-scope data-x="(() => { window.ran = true })()"></div>`);
-        expect(page.window.ran).toBeUndefined();
-        expect(page.$("#d").nagiProxy.x).toBe("(() => { window.ran = true })()");
+    it("are read with this.dataset", async () => {
+        const page = await mount(`<div id="d" data-user-id="42" n-let-user="this.dataset.userId"></div>`);
+        expect(page.$("#d").nagiProxy.user).toBe("42");
     });
 
-    it("does not make a scope by itself", async () => {
-        const page = await mount(`
-            <div n-scope="{ a: 'outer' }"><div id="inner" data-a="inner"><span id="s" n-bind-textcontent="a"></span></div></div>
-        `);
-        expect(page.$("#inner").nagiProxy).toBeUndefined();
-        expect(page.$("#s").textContent).toBe("outer");
-    });
-
-    it("takes only the scope element's own, not its descendants'", async () => {
-        const page = await mount(`<div id="d" n-scope><span data-x="1"></span></div>`);
-        expect(page.$("#d").nagiProxy.x).toBeUndefined();
-    });
-
-    it("adds to and overrides the object of n-scope", async () => {
-        const page = await mount(`<div id="d" n-scope="{ a: 1, b: 1 }" data-b="2" data-c="3"></div>`);
-        const scope = page.$("#d").nagiProxy;
-        expect([scope.a, scope.b, scope.c]).toEqual([1, "2", "3"]);
-    });
-
-    it("sets a value over a getter of the factory's object", async () => {
-        const page = await mount(
-            `<div id="d" n-scope="new C()" data-mode="b"></div>`,
-            { beforeInit: (window) => (window.C = class { get mode() { return "a"; } }) },
-        );
-        expect(page.$("#d").nagiProxy.mode).toBe("b");
-    });
-
-    it("stops $dataset at the scope", async () => {
+    it("gathers $dataset from every ancestor, past the scope", async () => {
         const page = await mount(`
             <div data-outside="x">
                 <div n-let-got="null" data-in="y"><button id="b" n-on-click="got = $dataset()"></button></div>
             </div>
         `);
         page.$("#b").click();
-        expect({ ...page.scope("#b").got }).toEqual({ in: "y" });
+        expect({ ...page.scope("#b").got }).toEqual({ in: "y", outside: "x" });
     });
 });
 
@@ -220,9 +190,9 @@ describe("n-let-*", () => {
         expect(page.$("#d").nagiProxy.x).toBe("d");
     });
 
-    it("overrides data-* and n-scope of the same name", async () => {
-        const page = await mount(`<div id="d" n-scope="{ v: 1 }" data-v="2" n-let-v="v + 1"></div>`);
-        expect(page.$("#d").nagiProxy.v).toBe("21");
+    it("overrides n-scope of the same name", async () => {
+        const page = await mount(`<div id="d" n-scope="{ v: 1 }" n-let-v="v + 1"></div>`);
+        expect(page.$("#d").nagiProxy.v).toBe(2);
     });
 
     it("keeps a name with a dash as written", async () => {
@@ -231,10 +201,10 @@ describe("n-let-*", () => {
     });
 
     it("logs a value that does not make an expression, and keeps the value of the same name", async () => {
-        const page = await mount(`<div id="d" data-v="2" n-let-v="(" n-let-ok="() => v"></div>`);
+        const page = await mount(`<div id="d" n-scope="{ v: 2 }" n-let-v="(" n-let-ok="() => v"></div>`);
         const scope = page.$("#d").nagiProxy;
-        expect(scope.v).toBe("2");
-        expect(scope.ok()).toBe("2");
+        expect(scope.v).toBe(2);
+        expect(scope.ok()).toBe(2);
         expect(page.errors).toHaveLength(1);
     });
 
@@ -272,12 +242,11 @@ describe("n-let-*", () => {
 });
 
 describe("names kept for Nagi", () => {
-    it("logs a data-* or n-let-* named like a helper, and keeps the helper", async () => {
-        const page = await mount(`<div id="d" n-scope data-$refs="x" n-let-$get="() => 1" n-let-_nagifetching="true" n-let-__proto__="{}"></div>`);
+    it("logs an n-let-* named like a helper, and keeps the helper", async () => {
+        const page = await mount(`<div id="d" n-scope n-let-$get="() => 1" n-let-_nagifetching="true" n-let-__proto__="{}"></div>`);
         const scope = page.$("#d").nagiProxy;
         expect(typeof scope.$get).toBe("function");
-        expect(typeof scope.$refs).toBe("object");
-        expect(page.errors).toHaveLength(4);
+        expect(page.errors).toHaveLength(3);
     });
 
     it("lets a bind read a key named like an Object.prototype member", async () => {

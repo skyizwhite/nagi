@@ -25,7 +25,7 @@ describe("$dispatch", () => {
 });
 
 describe("$dataset", () => {
-    it("$dataset merges data-* from the element up to its scope, nearest first", async () => {
+    it("$dataset merges data-* from the element up to the page, the nearest winning", async () => {
         const page = await mount(`
             <div data-a="outside">
                 <div n-scope="{ got: null }" data-a="scope" data-b="scope">

@@ -37,4 +37,9 @@ describe("n-ref", () => {
         await swapOnce(page);
         expect(page.$("#target").nagiProxy.$refs.box).toBe(page.$("#new"));
     });
+
+    it("logs an n-ref outside any scope", async () => {
+        const page = await mount(`<input id="i" n-ref="field">`);
+        expect(page.errors).toHaveLength(1);
+    });
 });

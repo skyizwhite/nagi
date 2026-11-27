@@ -155,6 +155,46 @@ describe("aborted requests", () => {
         await page.settle();
         expect(page.$("#late").textContent).toBe("old");
     });
+
+    it("aborts the read of an element inside a scope that a swap removes", async () => {
+        let answerSlow;
+        const page = await mount(
+            `<div n-scope>
+                <div id="list"><button id="slow" n-on-click="$get('/slow')"></button></div>
+            </div>
+            <div n-scope><button id="swap" n-on-click="$get('/swap')"></button></div>
+            <div id="late">old</div>`,
+            {
+                server: ({ url }) =>
+                    url.endsWith("/slow") ? new Promise((resolve) => (answerSlow = resolve)) : `<div id="list"></div>`,
+            },
+        );
+        page.$("#slow").click();
+        page.$("#swap").click();
+        await later(20);
+        answerSlow(`<div id="late">late</div>`);
+        await page.settle();
+        expect(page.$("#late").textContent).toBe("old");
+    });
+
+    it("aborts the read of an element outside any scope that a swap removes", async () => {
+        let answerSlow;
+        const page = await mount(
+            `<div id="list"><button id="slow" n-on-click="$get('/slow')"></button></div>
+            <button id="swap" n-on-click="$get('/swap')"></button>
+            <div id="late">old</div>`,
+            {
+                server: ({ url }) =>
+                    url.endsWith("/slow") ? new Promise((resolve) => (answerSlow = resolve)) : `<div id="list"></div>`,
+            },
+        );
+        page.$("#slow").click();
+        page.$("#swap").click();
+        await later(20);
+        answerSlow(`<div id="late">late</div>`);
+        await page.settle();
+        expect(page.$("#late").textContent).toBe("old");
+    });
 });
 
 describe("errors", () => {
@@ -234,6 +274,19 @@ describe("errors", () => {
         await page.settle();
         expect(page.scope("#b")._err.url).toBe("http://[bad?a=1");
         expect(page.errors).toEqual([]);
+    });
+
+    it("sends fetcherr for a read whose error answer swaps out the scope that asked", async () => {
+        const page = await mount(
+            `<div id="w" n-scope><button id="b" n-on-click="$get('/x')"></button></div>`,
+            { server: () => ({ status: 500, body: `<div id="w">failed</div>` }) },
+        );
+        const got = [];
+        page.window.addEventListener("fetcherr", (e) => got.push(e.detail.status));
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#w").textContent).toBe("failed");
+        expect(got).toEqual([500]);
     });
 
     it("sends fetcherr to document when the element that asked is gone", async () => {
