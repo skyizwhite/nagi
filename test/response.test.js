@@ -68,11 +68,11 @@ describe("swapping answers", () => {
 });
 
 describe("aborted requests", () => {
-    it("sends no fetcherr for a request it aborted, and stays fetching for the newer one", async () => {
+    it("sends no fetcherr for a request $abort() stopped, and stays fetching for the newer one", async () => {
         const answers = [];
         const page = await mount(
             `<div n-scope="{ _errs: [] }" n-on-fetcherr="_errs = [..._errs, e.detail.err]">
-                <button id="b" n-on-click="$get('/x')"></button>
+                <button id="b" n-on-click="$abort(); $get('/x')"></button>
             </div>`,
             { server: () => new Promise((resolve) => answers.push(resolve)) },
         );
@@ -88,13 +88,13 @@ describe("aborted requests", () => {
         expect(scope.$fetching).toBe(false);
     });
 
-    it("swaps the newer answer when it aborts a request whose body is being read", async () => {
+    it("swaps the newer answer when $abort() stops a request whose body is being read", async () => {
         let reading;
         const read = new Promise((resolve) => (reading = resolve));
         const slow = new ReadableStream({ pull: () => reading() }, { highWaterMark: 0 });
         const answers = [new Response(slow), `<div id="target">second</div>`];
         const page = await mount(
-            `<div n-scope="{}"><button id="b" n-on-click="$get('/x')"></button></div>
+            `<div n-scope="{}"><button id="b" n-on-click="$abort(); $get('/x')"></button></div>
             <div id="target">old</div>`,
             { server: () => answers.shift() },
         );
@@ -105,13 +105,13 @@ describe("aborted requests", () => {
         expect(page.$("#target").textContent).toBe("second");
     });
 
-    it("swaps nothing from a request aborted while its body is arriving", async () => {
+    it("swaps nothing from a request $abort() stopped while its body is arriving", async () => {
         const encoder = new TextEncoder();
         let send;
         const first = new ReadableStream({ start: (controller) => (send = controller) });
         const answers = [new Response(first), `<div id="other">second</div>`];
         const page = await mount(
-            `<div n-scope="{}"><button id="b" n-on-click="$get('/x')"></button></div>
+            `<div n-scope="{}"><button id="b" n-on-click="$abort(); $get('/x')"></button></div>
             <div id="target">old</div><div id="other">old</div>`,
             { server: () => answers.shift() },
         );

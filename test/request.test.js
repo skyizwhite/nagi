@@ -417,7 +417,7 @@ describe("reads and writes", () => {
             },
         );
 
-    it("aborts the scope's request in flight when it makes another", async () => {
+    it("runs a newer request beside an older one, and keeps the newer answer when the older comes back last", async () => {
         const answers = [];
         const page = await mount(
             `<div n-scope="{}"><button id="b" n-on-click="$get('/x')"></button></div>
@@ -432,10 +432,12 @@ describe("reads and writes", () => {
         };
         page.$("#b").click();
         page.$("#b").click();
-        expect(signals.map((s) => s.aborted)).toEqual([true, false]);
+        expect(signals.map((s) => s.aborted)).toEqual([false, false]);
 
-        answers[0](`<div id="target">first</div>`);
         answers[1](`<div id="target">second</div>`);
+        await later(20);
+        expect(page.$("#target").textContent).toBe("second");
+        answers[0](`<div id="target">first</div>`);
         await page.settle();
         expect(page.$("#target").textContent).toBe("second");
     });
@@ -475,7 +477,22 @@ describe("reads and writes", () => {
         expect(page.$("#results").textContent).toBe("found");
     });
 
-    it("aborts the read of an element when the element makes a write", async () => {
+    it("appends an older answer after a newer one, since appending replaces nothing", async () => {
+        const answers = [];
+        const page = await mount(
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/more')"></button></div><ul id="list"></ul>`,
+            { server: () => new Promise((resolve) => answers.push(resolve)) },
+        );
+        page.$("#b").click();
+        page.$("#b").click();
+        answers[1](`<ul id="list" n-swap="append"><li>2</li></ul>`);
+        await later(20);
+        answers[0](`<ul id="list" n-swap="append"><li>1</li></ul>`);
+        await page.settle();
+        expect(page.$("#list").textContent).toBe("21");
+    });
+
+    it("does not let an older read's answer replace what a newer write swapped in", async () => {
         const answers = {};
         const page = await mount(
             `<div n-scope="{}"><button id="b" n-on-click="$get('/search'); $post('/order')"></button></div>
@@ -483,10 +500,11 @@ describe("reads and writes", () => {
             { server: ({ url }) => new Promise((resolve) => (answers[new URL(url).pathname] = resolve)) },
         );
         page.$("#b").click();
+        answers["/order"](`<div id="results">saved</div>`);
+        await later(20);
         answers["/search"](`<div id="results">stale</div>`);
-        answers["/order"]("");
         await page.settle();
-        expect(page.$("#results").textContent).toBe("old");
+        expect(page.$("#results").textContent).toBe("saved");
     });
 
     it("lets the reads of different elements in a scope run together", async () => {
@@ -506,20 +524,14 @@ describe("reads and writes", () => {
         await page.settle();
     });
 
-    it("takes OPTIONS as a read, aborted by a newer request of its element", async () => {
-        const signals = [];
+    it("takes OPTIONS as a read, sent again while the same one is in flight", async () => {
         const page = await mount(
             `<div n-scope="{}"><button id="o" n-on-click="$fetch('/x', 'OPTIONS')"></button></div>`,
             { server: () => "" },
         );
-        const fetch = page.window.fetch;
-        page.window.fetch = (url, opts) => {
-            signals.push(opts.signal);
-            return fetch(url, opts);
-        };
         page.$("#o").click();
         page.$("#o").click();
-        expect(signals[0].aborted).toBe(true);
+        expect(page.requests).toHaveLength(2);
         await page.settle();
     });
 
@@ -956,7 +968,7 @@ describe("elements outside any scope", () => {
         await page.settle();
     });
 
-    it("abort an older read of the same element", async () => {
+    it("run the reads of one element side by side", async () => {
         const signals = [];
         const page = await mount(`<button id="a" n-on-click="$get('/a')"></button>`, { server: () => "" });
         const fetch = page.window.fetch;
@@ -966,7 +978,7 @@ describe("elements outside any scope", () => {
         };
         page.$("#a").click();
         page.$("#a").click();
-        expect(signals.map((s) => s.aborted)).toEqual([true, false]);
+        expect(signals.map((s) => s.aborted)).toEqual([false, false]);
         await page.settle();
     });
 

@@ -109,7 +109,7 @@
     };
 
     // Helpers that are included with every data object
-    const helpers = (pending = 0, writing = new Set(), controllers = new Set(), reads = new Map()) => ({
+    const helpers = (pending = 0, writing = new Set(), controllers = new Set(), reads = new Set()) => ({
         $refs: {},
         $fetching: false,
         _nagiAbort: new AbortController(),
@@ -158,7 +158,6 @@
                 write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sentOf(entries)) : ""}`;
                 if (dedupe && writing.has(write)) return;
 
-                reads.get(el)?.abort();
                 this._nagiAbort.abort();
                 return opts;
             });
@@ -166,8 +165,10 @@
             if (!opts) return report("fetchskip", { method, url });
 
             this._nagiAbort = new AbortController();
-            if (reading) reads.set(el, controller);
-            if (reading && el) el.nagiRead = controller;
+            const order = ++requestCount;
+            const elReads = reading && el && (el.nagiReads ||= new Set());
+            if (reading) reads.add(controller);
+            if (elReads) elReads.add(controller);
             const deduped = write && dedupe;
             if (deduped) writing.add(write);
             controllers.add(controller);
@@ -204,7 +205,7 @@
                             console.warn("[Nagi] cannot replace the URL with", replace, err);
                         }
                     }
-                    if (swapped) swap(text);
+                    if (swapped) swap(text, order);
                     if (!res.ok)
                         throw Object.assign(new Error(`${res.status} ${res.statusText}`), { status: res.status, text, swapped });
                 })
@@ -216,7 +217,8 @@
                 .finally(() => {
                     clearTimeout(timer);
                     controllers.delete(controller);
-                    if (reads.get(el) === controller) reads.delete(el);
+                    reads.delete(controller);
+                    if (elReads) elReads.delete(controller);
                     if (deduped) writing.delete(write);
                     if (!--pending) this.$fetching = false;
                 });
@@ -340,7 +342,7 @@
         });
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
-            node.nagiRead?.abort();
+            node.nagiReads?.forEach((controller) => controller.abort());
             node.nagiRuns?.forEach(kill);
             node.nagiCleanup?.forEach((clean) => clean());
             node.nagiTimers?.forEach(clearTimeout);
@@ -350,13 +352,19 @@
 
     const initAll = (nodes) => nodes.forEach((node) => node.nodeType === 1 && init(node));
 
-    const swap = (text) => {
+    let requestCount = 0;
+    const swappedBy = new Map();
+
+    const swap = (text, order) => {
         for (const fragment of fragmentsOf(text)) {
             const strategy = fragment.getAttribute("n-swap") || "outer";
             const target = fragment.id && document.getElementById(fragment.id);
             if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
             if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
             if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
+            const replacing = strategy === "outer" || strategy === "inner";
+            if (replacing && swappedBy.get(fragment.id) > order) continue;
+            if (replacing) swappedBy.set(fragment.id, order);
 
             const kids = [...fragment.childNodes];
 
@@ -474,12 +482,10 @@
     const makeScope = (dataEl) => {
         if (dataEl.nagiProxy) return;
         const attrs = [...dataEl.attributes];
-        const ownForm = dataEl.hasAttribute("n-form") && !closestScope(dataEl.parentElement);
-        if (!ownForm && !attrs.some(({ name }) => /^n-(scope$|let-)/.test(name))) return;
+        if (!attrs.some(({ name }) => /^n-(scope$|let-)/.test(name))) return;
 
         const rawData = baseOf(dataEl);
         Object.entries({ ...helpers(), _nagiEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
-        Object.entries(dataEl.dataset).forEach(([key, value]) => reserved(key, dataEl) || define(rawData, key, value));
 
         const outer = closestScope(dataEl.parentElement)?.nagiProxy;
         const proxyData = reactive(rawData, outer);
@@ -637,6 +643,8 @@
             if (!scope) return console.error("[Nagi] n-ref needs a scope:", el);
             scope.$refs[el.getAttribute("n-ref")] = el;
         });
+
+        queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
 
         queryAttr(baseEl, "[name]").forEach((inputEl) => {
             const scopeEl = formScope(inputEl);
