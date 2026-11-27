@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
+import { later } from "./support.js";
 
 describe("n-form", () => {
     const form = `
@@ -125,6 +126,74 @@ describe("n-form", () => {
         const page = await mount(`<form id="f" n-scope n-form><input name="$fetching" value="x"></form>`);
         expect(page.$("#f").nagiProxy.$fetching).toBe(false);
         expect(page.errors).toHaveLength(1);
+    });
+
+    it("fills a field from a value the scope already has, and reads the field otherwise", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ email: 'a@b.c' }" n-form>
+                <input name="email" value="html"><input name="other" value="mine">
+            </form>
+        `);
+        expect(page.$("[name=email]").value).toBe("a@b.c");
+        expect(page.$("#f").nagiProxy.other).toBe("mine");
+    });
+
+    it("writes scope changes back to text, checkbox, radio and select fields", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input name="text" value="a"><input name="agree" type="checkbox">
+                <input name="size" type="radio" value="s" checked><input name="size" type="radio" value="m">
+                <select name="pick"><option>a</option><option>b</option></select>
+            </form>
+        `);
+        const scope = page.$("#f").nagiProxy;
+        scope.text = "b";
+        scope.agree = true;
+        scope.size = "m";
+        scope.pick = "b";
+        expect(page.$("[name=text]").value).toBe("b");
+        expect(page.$("[name=agree]").checked).toBe(true);
+        expect([...page.window.document.querySelectorAll("[name=size]")].map((r) => r.checked)).toEqual([false, true]);
+        expect(page.$("[name=pick]").value).toBe("b");
+    });
+
+    it("leaves what is typed in a number field alone when it reads as the same number", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input name="n" type="number"></form>`);
+        const input = page.$("[name=n]");
+        input.value = "1.";
+        input.dispatchEvent(new page.window.Event("input"));
+        expect(page.$("#f").nagiProxy.n).toBe(1);
+        expect(input.value).toBe("1.");
+    });
+
+    it("reads the fields again after the form is reset", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input name="q" value="x"></form>`);
+        const input = page.$("[name=q]");
+        input.value = "y";
+        input.dispatchEvent(new page.window.Event("input"));
+        page.$("#f").reset();
+        await later(10);
+        expect(page.$("#f").nagiProxy.q).toBe("x");
+    });
+
+    it("does not copy named buttons", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><button name="action" value="save"></button></form>`);
+        expect("action" in page.$("#f").nagiRaw).toBe(false);
+    });
+
+    it("keeps submit buttons disabled for the whole request, whatever their binds say", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ ok: true }" n-form>
+                <button id="a" n-bind-disabled="!ok"></button><button id="b" disabled n-bind-disabled="!ok"></button>
+            </form>
+        `);
+        const scope = page.$("#f").nagiProxy;
+        scope.$fetching = true;
+        scope.ok = false;
+        scope.ok = true;
+        expect([page.$("#a").disabled, page.$("#b").disabled]).toEqual([true, true]);
+        scope.$fetching = false;
+        expect([page.$("#a").disabled, page.$("#b").disabled]).toEqual([false, false]);
     });
 
     it("keeps the checked radio's value when an unchecked one comes after it", async () => {

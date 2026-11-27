@@ -300,6 +300,13 @@ describe("names kept for Nagi", () => {
         expect(page.errors).toHaveLength(3);
     });
 
+    it("logs an n-scope key named like a helper, and leaves it out", async () => {
+        const page = await mount(`<div id="d" n-scope="{ $x: 1, _nagiY: 2, n: 3 }"></div>`);
+        const raw = page.$("#d").nagiRaw;
+        expect(["$x" in raw, "_nagiY" in raw, raw.n]).toEqual([false, false, 3]);
+        expect(page.errors).toHaveLength(2);
+    });
+
     it("lets a bind read a key named like an Object.prototype member", async () => {
         const page = await mount(`
             <div n-scope="{ n: 1 }"><span id="s" n-bind-textcontent="String(hasOwnProperty('n'))"></span></div>

@@ -162,7 +162,10 @@
                 return opts;
             });
 
-            if (!opts) return report("fetchskip", { method, url });
+            if (!opts) {
+                report("fetchskip", { method, url });
+                return;
+            }
 
             this._nagiAbort = new AbortController();
             if (reading) read = controller;
@@ -421,6 +424,7 @@
         try {
             if (made !== null && typeof made === "object" && typeof made.then !== "function" && !builtIn(made)) {
                 const descriptors = Object.getOwnPropertyDescriptors(made);
+                Object.keys(descriptors).forEach((key) => reserved(key, dataEl) && delete descriptors[key]);
                 Object.values(descriptors).forEach((d) => {
                     d.configurable = true;
                     if ("value" in d) d.writable = true;
@@ -506,6 +510,13 @@
         range: (el) => +el.value,
     };
 
+    const inputWriters = {
+        __proto__: null,
+        checkbox: (el, value) => (el.checked = !!value),
+        radio: (el, value) => (el.checked = el.value === value),
+        file: () => {},
+    };
+
     const propOf = (obj, name) => {
         for (let o = obj; o; o = Object.getPrototypeOf(o))
             for (const key of Object.getOwnPropertyNames(o)) if (key.toLowerCase() === name) return key;
@@ -562,6 +573,7 @@
     const writerOf = (bindEl, main, sub) => {
         if (sub && main in keyedWriters) return (value) => keyedWriters[main](bindEl, sub, value);
         if (sub) return (value) => (bindEl[main][sub] = value);
+        if (main === "disabled") return (value) => bindEl.nagiHeld || (bindEl.disabled = value);
         if (main !== "class") return (value) => (bindEl[main] = value);
 
         let added = new Set();
@@ -639,38 +651,44 @@
 
         queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
 
-        queryAttr(baseEl, "[name]").forEach((inputEl) => {
+        queryAttr(baseEl, "input[name], select[name], textarea[name]").forEach((inputEl) => {
             const scopeEl = formScope(inputEl);
             if (!scopeEl || reserved(inputEl.name, inputEl)) return;
 
             const { type } = inputEl;
             const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
-            if (!(inputEl.name in rawData)) define(rawData, inputEl.name, undefined);
-
             const read = inputReaders[type] ?? ((el) => el.value);
+            const write = inputWriters[type] ?? ((el, value) => (el.value = value ?? ""));
             const setVal = () => {
-                if (type === "radio" && !inputEl.checked) {
-                    if (!(inputEl.name in proxyData)) proxyData[inputEl.name] = undefined;
-                    return;
-                }
-                proxyData[inputEl.name] = read(inputEl);
+                const { name } = inputEl;
+                if (type !== "radio" || inputEl.checked) proxyData[name] = read(inputEl);
+                else if (proxyData[name] === inputEl.value) proxyData[name] = undefined;
             };
 
-            setVal();
+            if (!(inputEl.name in rawData)) define(rawData, inputEl.name, undefined);
+            if (rawData[inputEl.name] === undefined) setVal();
+            watch(() => {
+                const value = proxyData[inputEl.name];
+                if (type in inputWriters || !Object.is(read(inputEl), value)) write(inputEl, value);
+            }, inputEl);
+
             inputEl.addEventListener("input", setVal);
             inputEl.addEventListener("change", setVal);
+            inputEl.form?.addEventListener("reset", () => setTimeout(setVal));
         });
 
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
             const proxyData = formScope(submitEl)?.nagiProxy;
             if (!proxyData) return;
-            let disabledByForm = false;
+            let wasDisabled = false;
             watch(() => {
                 const fetching = proxyData.$fetching;
-                if (fetching && !submitEl.disabled && /^(submit|image)$/.test(submitEl.type))
-                    [submitEl.disabled, disabledByForm] = [true, true];
-                else if (!fetching && disabledByForm) {
-                    [submitEl.disabled, disabledByForm] = [false, false];
+                if (fetching && !submitEl.nagiHeld && /^(submit|image)$/.test(submitEl.type)) {
+                    wasDisabled = submitEl.disabled;
+                    submitEl.disabled = submitEl.nagiHeld = true;
+                } else if (!fetching && submitEl.nagiHeld) {
+                    submitEl.nagiHeld = false;
+                    submitEl.disabled = wasDisabled;
                     submitEl.nagiRuns?.forEach((run) => run.attr === "disabled" && run());
                 }
             }, submitEl);
