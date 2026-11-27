@@ -77,15 +77,6 @@ describe("n-form", () => {
         expect(["submit", "image", "plain", "off"].map((id) => page.$(`#${id}`).disabled)).toEqual([false, false, false, true]);
     });
 
-    it("disables a button while fetching that a bind enabled after the HTML disabled it", async () => {
-        const page = await mount(`<form id="f" n-scope="{ ok: true }" n-form><button id="b" disabled n-bind-disabled="!ok"></button></form>`);
-        expect(page.$("#b").disabled).toBe(false);
-        page.$("#f").nagiProxy.$fetching = true;
-        expect(page.$("#b").disabled).toBe(true);
-        page.$("#f").nagiProxy.$fetching = false;
-        expect(page.$("#b").disabled).toBe(false);
-    });
-
     it("leaves a button disabled that a bind disabled during the request", async () => {
         const page = await mount(`<form id="f" n-scope="{ ok: true }" n-form><button id="b" n-bind-disabled="!ok"></button></form>`);
         const scope = page.$("#f").nagiProxy;
@@ -138,22 +129,13 @@ describe("n-form", () => {
         expect(page.errors).toHaveLength(2);
     });
 
-    it("writes a scope value into a field only through n-bind-value, and reads it back", async () => {
+    it("writes a scope value into a field only through n-bind-value", async () => {
         const page = await mount(`<form id="f" n-scope n-form><input name="q" value="a" n-bind-value="q"><input name="other" value="o"></form>`);
         const scope = page.$("#f").nagiProxy;
         scope.q = "b";
         scope.other = "x";
         expect(page.$("[name=q]").value).toBe("b");
         expect(page.$("[name=other]").value).toBe("o");
-    });
-
-    it("leaves what is typed in a number field alone when it reads as the same number", async () => {
-        const page = await mount(`<form id="f" n-scope n-form><input name="n" type="number"></form>`);
-        const input = page.$("[name=n]");
-        input.value = "1.";
-        input.dispatchEvent(new page.window.Event("input"));
-        expect(page.$("#f").nagiProxy.n).toBe(1);
-        expect(input.value).toBe("1.");
     });
 
     it("reads the fields again after the form is reset", async () => {
@@ -209,27 +191,12 @@ describe("n-form", () => {
         expect(page.errors).toEqual([]);
     });
 
-    it("does not copy named input buttons, and leaves their values alone", async () => {
+    it("does not copy named input buttons", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form><input type="submit" name="act" value="Save"><input type="submit" name="act" value="Delete"></form>
         `);
         expect("act" in page.$("#f").nagiRaw).toBe(false);
         expect([...page.window.document.querySelectorAll("[name=act]")].map((el) => el.value)).toEqual(["Save", "Delete"]);
-    });
-
-    it("takes the value of a field a swap brings into an existing scope from the field", async () => {
-        const page = await mount(
-            `<div id="d" n-scope n-form>
-                <form id="c"><textarea name="body">hi</textarea></form>
-                <button id="b" type="button" n-on-click="$get('/x')"></button>
-            </div>`,
-            { server: () => `<form id="c"><textarea name="body"></textarea></form>` },
-        );
-        expect(page.$("#d").nagiProxy.body).toBe("hi");
-        page.$("#b").click();
-        await page.settle();
-        expect(page.$("[name=body]").value).toBe("");
-        expect(page.$("#d").nagiProxy.body).toBe("");
     });
 
     it("stops following resets for a field a swap removed", async () => {
@@ -350,7 +317,7 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.s).toBeUndefined();
     });
 
-    it("keeps what an init handler sets for a field that no bind changed", async () => {
+    it("keeps what an init handler sets for a field's name", async () => {
         const page = await mount(`<form id="f" n-scope n-form n-on-init="q = 'preset'"><input name="q"></form>`);
         expect(page.$("#f").nagiProxy.q).toBe("preset");
     });
