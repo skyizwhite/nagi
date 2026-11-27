@@ -96,7 +96,7 @@ A dot reaches one level further:
 ```
 
 #### `n-on-<event>`
-Runs statements when the event fires. The event is `e`, and the handler can `await`. Custom events and events from other libraries work too, as long as their names are lowercase.
+Runs statements when the event fires. The event is `e`, and the handler can `await`. Custom events and events from other libraries work too, as long as their names are lowercase and have no `.`.
 
 ```html
 <button n-on-click="count++; $dispatch('changed', { count })">+1</button>
@@ -128,7 +128,7 @@ Puts the element in its scope's `$refs` under the given name. On an element that
 ```
 
 #### `n-form`
-Copies each named field inside it into its scope, and updates it on `input` and `change`. It needs a scope, and logs an error outside any. The copy goes one way, from the field to the scope; use `n-bind-value` to write back.
+Copies each named field inside it into its scope, and updates it on `input` and `change`. It needs a scope, and logs an error outside any. The copy goes one way, from the field to the scope; use `n-bind-value` to write back. When it is set up, a field's value in the HTML replaces any value the scope gave that name, so write the first value in the field's HTML.
 
 - A checkbox gives a boolean, a number or range field a number (`0` when empty), a file field its `FileList`, a radio group the value of the checked one, and any other field its `value`.
 - Every element with a `name` is copied, named buttons included. Checkboxes that share a name overwrite one another, and `form.reset()` does not update the scope.
@@ -178,7 +178,7 @@ Every scope has these names. An element outside any scope has a set of its own: 
 | `$dataset()` | The `data-*` of the element and all its ancestors, merged with the nearer ones winning |
 | `$dispatch(name, detail, options)` | Dispatches a bubbling event from the element |
 | `$watch(fn)` | Runs `fn`, and runs it again when what it read changes |
-| `$debounce(fn, ms, abortable)` | Waits until it has not been called for `ms`, then runs `fn`. With `abortable`, a new request of the scope drops it |
+| `$debounce(fn, ms, abortable)` | Waits until it has not been called for `ms`, then runs `fn`. Calls from the same handler share one timer. With `abortable`, a new request of the scope drops it |
 | `$persist(name, key)` | Restores a name of the scope from `localStorage`, and saves it there as it changes. Call it from `n-on-init`. The default key is the same for every scope, so pass `key` when more than one scope persists the same name |
 
 ### Requests
@@ -225,7 +225,7 @@ Except with `outer`, the element in the response is only a wrapper, and its chil
 </ul>
 ```
 
-What is swapped in is set up as if it had been on the page. A scope replaced by an `outer` swap starts over from its attributes. For an element whose `id` and tag stay the same, `style`, `class`, `width` and `height` start from their old values and move to the new ones in the next frame, so CSS transitions run. An error response is swapped only when one of its elements matches an `id` on the page.
+What is swapped in is set up as if it had been on the page. A scope replaced by an `outer` swap starts over from its attributes. For an element whose `id` and tag stay the same, `style`, `class`, `width` and `height` start from their old values and move to the new ones in the next frame, so CSS transitions run. An error response is swapped only when one of its top-level elements matches an `id` on the page.
 
 These response headers change what happens:
 
@@ -255,9 +255,9 @@ These response headers change what happens:
 - HTML lowercases attribute names, so what follows `n-let-`, `n-on-`, `class.` and `style.` is lowercase. `n-let-isOpen` defines `isopen`, and a name after `n-let-` must be a valid identifier to be used as a variable.
 - Only assigning a name is tracked. Write `items = [...items, x]`, not `items.push(x)`.
 - Assigning a bare name no scope has makes a global variable, and nothing updates. Declare every name in the scope. A name added later with `this.name = …` updates only bindings that read it as `this.name`.
-- `$el` stays the handler's element after an `await`, but `$dispatch`, `$dataset()`, `$debounce`, `$watch` and the request events use the scope's element after the first `await`.
+- `$el` stays the handler's element after an `await`, but `$dispatch`, `$dataset()`, `$debounce` and the request events use the scope's element after the first `await`. `$watch` and `$persist` called after an `await` belong to no element, so no swap stops them; call them before the first `await`.
 - Elements added by other scripts are not set up. Only `<body>` at `DOMContentLoaded` and what a response swaps in are.
-- Outside any scope, a name in `n-bind-*` is read from `window`, and the binding does not update when it changes.
+- Outside any scope, a name other than a helper is read from `window` in `n-bind-*`, and the binding does not update when it changes.
 
 ## Development
 
