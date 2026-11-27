@@ -1,19 +1,7 @@
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { Window } from "happy-dom";
 
-const root = new URL("..", import.meta.url);
-const fullSource = readFileSync(new URL("nagi.js", root), "utf8");
-const devoured = new Map();
-
-const sourceWithout = (blocks) => {
-    if (!blocks.length) return fullSource;
-    const key = blocks.join(" ");
-    if (!devoured.has(key)) {
-        devoured.set(key, execFileSync("sh", ["scripts/devour.sh", ...blocks], { cwd: root, encoding: "utf8" }));
-    }
-    return devoured.get(key);
-};
+const source = readFileSync(new URL("../nagi.js", import.meta.url), "utf8");
 
 const windows = new Set();
 
@@ -73,7 +61,7 @@ const trackBody = (response, signal, done) => {
     return new Response(body, response);
 };
 
-export const mount = async (html, { server, beforeInit, without = [] } = {}) => {
+export const mount = async (html, { server, beforeInit } = {}) => {
     const window = new Window({ url: "http://localhost/" });
     windows.add(window);
 
@@ -136,7 +124,7 @@ export const mount = async (html, { server, beforeInit, without = [] } = {}) => 
     const { document } = window;
     document.body.innerHTML = html;
     beforeInit?.(window);
-    window.eval(sourceWithout(without));
+    window.eval(source);
     document.dispatchEvent(new window.Event("DOMContentLoaded"));
 
     const $ = (selector) => document.querySelector(selector);

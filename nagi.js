@@ -105,10 +105,7 @@
 
     // Helpers that are included with every data object
     const helpers = (pending = 0, writing = new Set(), controllers = new Set()) => ({
-        // --- BEGIN ref
         $refs: {},
-        // --- END ref
-        // --- BEGIN fetch
         $fetching: false,
         _nagiAbort: new AbortController(),
         ...Object.fromEntries(
@@ -209,7 +206,6 @@
                     if (!--pending) this.$fetching = false;
                 });
         },
-        // --- END fetch
         $dataset() {
             let datasets = {};
             for (let el = hostOf(this); el?.nodeType === 1; el = el.parentElement) {
@@ -233,7 +229,6 @@
                 if (!signal?.aborted) runWithEl(el, fn);
             }, ms));
         },
-        // --- BEGIN helpers
         $persist(prop, key) {
             key = key || `_nagiProp-${prop}`;
 
@@ -244,10 +239,8 @@
                 localStorage[key] = JSON.stringify(this[prop]);
             });
         },
-        // --- END helpers
     });
 
-    // --- BEGIN fetch
     const fileIds = new WeakMap();
     let fileCount = 0;
     const idOf = (file) => {
@@ -328,13 +321,11 @@
 
     const drop = (el) => {
         queryAttr(el, "*").forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
-        // --- BEGIN ref
         queryAttr(el, "[n-ref]").forEach((node) => {
             const refs = getClosestProxy(node).$refs;
             const name = node.getAttribute("n-ref");
             if (refs[name] === node) delete refs[name];
         });
-        // --- END ref
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             node.nagiProxy?._nagiAbort.abort();
             node.nagiRuns?.forEach(kill);
@@ -356,16 +347,11 @@
 
             const kids = [...fragment.childNodes];
 
-            // --- BEGIN morph
             const settles = (strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1)).map(cssMorph);
-            // --- END morph
 
             if (strategy === "inner") {
                 [...target.children].forEach(drop);
                 target.replaceChildren(...kids);
-                // --- BEGIN template
-                if (target.hasAttribute("n-use")) use(target);
-                // --- END template
                 initAll([...target.childNodes]);
             } else if (strategy === "outer") {
                 drop(target);
@@ -376,14 +362,10 @@
                 initAll(kids);
             }
 
-            // --- BEGIN morph
             settles.forEach((settle) => settle());
-            // --- END morph
         }
     };
-    // --- END fetch
 
-    // --- BEGIN morph
     const attributesToSettle = ["style", "class", "height", "width"];
     const readSettled = (el) => attributesToSettle.map((attr) => [attr, el.getAttribute(attr)]);
 
@@ -407,20 +389,7 @@
                 });
             });
     };
-    // --- END morph
 
-    // --- BEGIN template
-    const use = (useEl) => {
-        const id = useEl.getAttribute("n-use");
-        const template = document.getElementById(id);
-        if (!template) return console.error("[Nagi] No template with id: #", id);
-        const templateFrag = template.content.cloneNode(true);
-        templateFrag.querySelector("slot:not([name])")?.replaceWith(...useEl.childNodes);
-        useEl.replaceChildren(templateFrag);
-    };
-    // --- END template
-
-    // --- BEGIN data
     const reserved = (key, el) => {
         if (!/^(\$|_nagi|__proto__$)/i.test(key)) return false;
         console.error("[Nagi] this name is Nagi's own:", key, el);
@@ -508,9 +477,7 @@
             if (!(key in rawData) || !Reflect.set(proxyData, key, result)) define(rawData, key, result);
         });
     };
-    // --- END data
 
-    // --- BEGIN form
     const formProxy = (el) => {
         const form = el.closest("[n-form]");
         return form && getClosestProxy(form);
@@ -524,9 +491,7 @@
         number: (el) => +el.value,
         range: (el) => +el.value,
     };
-    // --- END form
 
-    // --- BEGIN bind
     const propOf = (obj, name) => {
         for (let o = obj; o; o = Object.getPrototypeOf(o))
             for (const key of Object.getOwnPropertyNames(o)) if (key.toLowerCase() === name) return key;
@@ -601,7 +566,6 @@
     const handle = (val, e) => val(e)?.catch?.((err) => console.error("[Nagi] failed to run:", val, "\n", err));
 
     const listen = (bindEl, key, val, proxyData) => {
-        // --- BEGIN events
         const [eventName, ...mods] = key.split(".");
         const unknown = mods.filter((mod) => !/^(prevent|stop|once|window|debounce\d+)$/.test(mod));
         if (unknown.length) console.warn("[Nagi] unknown modifiers:", unknown, bindEl);
@@ -619,13 +583,6 @@
         const listenOn = mods.includes("window") ? window : bindEl;
         listenOn.addEventListener(eventName, listener, { once: mods.includes("once") });
         if (listenOn === window) (bindEl.nagiCleanup ||= []).push(() => window.removeEventListener(eventName, listener));
-
-        return;
-        // --- END events
-
-        // If special event handling isn't enabled just do a normal event listener
-        if (key.includes(".")) console.warn("[Nagi] this build does not handle modifiers:", key, bindEl);
-        bindEl.addEventListener(key.split(".")[0], (e) => runWithEl(bindEl, () => handle(val, e), null, val));
     };
 
     const bindProp = (bindEl, key, val) => {
@@ -642,14 +599,8 @@
         }, bindEl);
         run.attr = /^class(name|list)$/i.test(main) ? "class" : main;
     };
-    // --- END bind
 
     const init = (baseEl) => {
-        // --- BEGIN template
-        queryAttr(baseEl, "[n-use]").forEach(use);
-        // --- END template
-
-        // --- BEGIN data
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
             acceptNode: (node) => (node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
         });
@@ -665,15 +616,11 @@
             do dataEl = walker.nextNode();
             while (dataEl && seen.has(dataEl));
         }
-        // --- END data
 
-        // --- BEGIN ref
         queryAttr(baseEl, "[n-ref]").forEach((el) => {
             getClosestProxy(el).$refs[el.getAttribute("n-ref")] = el;
         });
-        // --- END ref
 
-        // --- BEGIN form
         queryAttr(baseEl, "[name]").forEach((inputEl) => {
             const proxyData = formProxy(inputEl);
             if (!proxyData) return;
@@ -700,9 +647,7 @@
             const proxyData = formProxy(submitEl);
             if (proxyData) watch(() => (submitEl.disabled = proxyData.$fetching), submitEl);
         });
-        // --- END form
 
-        // --- BEGIN bind
         queryAttr(baseEl, "*").forEach((bindEl) => {
             if (bindEl.nagiBound) return;
             const entries = [...bindEl.attributes].map(({ name, value }) => sourceOf(bindEl, name, value)).filter(Boolean);
@@ -718,7 +663,6 @@
 
             dispatch(bindEl, "init", { bubbles: false });
         });
-        // --- END bind
     };
 
     document.addEventListener("DOMContentLoaded", () => init(document.body));

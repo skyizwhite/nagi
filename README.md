@@ -34,7 +34,7 @@ npm install
 npm test        # or `mise run test`
 ```
 
-`scripts/build.sh` writes `dist/nagi.min.js` and `dist/nagi.core.min.js`, and `scripts/devour.sh` builds a copy without the blocks you name.
+`scripts/build.sh` writes `dist/nagi.min.js`.
 
 ## License
 
