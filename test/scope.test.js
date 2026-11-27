@@ -304,6 +304,15 @@ describe("n-let-*", () => {
         expect(page.window.seen).toBe(2);
     });
 
+    it("logs an n-let-* whose setter throws, and sets up the rest of the page", async () => {
+        const page = await mount(`
+            <div n-scope="{ set v(x) { throw new Error('no') } }" n-let-v="1"></div>
+            <div n-scope n-let-y="2"><span id="s" n-bind-textcontent="y"></span></div>
+        `);
+        expect(page.$("#s").textContent).toBe("2");
+        expect(page.errors).toHaveLength(1);
+    });
+
     it("defines a name for an n-let-* with no value", async () => {
         const page = await mount(`<div n-scope id="d" n-let-selected><button id="b" n-on-click="selected = 1"></button></div>`);
         page.$("#b").click();
