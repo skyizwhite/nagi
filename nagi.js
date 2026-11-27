@@ -162,7 +162,10 @@
                 return opts;
             });
 
-            if (!opts) return report("fetchskip", { method, url });
+            if (!opts) {
+                report("fetchskip", { method, url });
+                return;
+            }
 
             this._nagiAbort = new AbortController();
             if (reading) read = controller;
@@ -421,6 +424,7 @@
         try {
             if (made !== null && typeof made === "object" && typeof made.then !== "function" && !builtIn(made)) {
                 const descriptors = Object.getOwnPropertyDescriptors(made);
+                Object.keys(descriptors).forEach((key) => reserved(key, dataEl) && delete descriptors[key]);
                 Object.values(descriptors).forEach((d) => {
                     d.configurable = true;
                     if ("value" in d) d.writable = true;
@@ -497,13 +501,60 @@
 
     const formScope = (el) => closestScope(el.closest("[n-form]"));
 
-    const inputReaders = {
-        __proto__: null,
-        checkbox: (el) => el.checked,
-        radio: (el) => el.value,
-        file: (el) => el.files,
-        number: (el) => +el.value,
-        range: (el) => +el.value,
+    const isField = (el) => /^(SELECT|TEXTAREA)$/.test(el.tagName) || (el.tagName === "INPUT" && !/^(submit|image|button|reset)$/.test(el.type));
+
+    const formFields = new Set();
+    document.addEventListener("reset", (e) =>
+        setTimeout(() =>
+            formFields.forEach((field) => {
+                if (!field.inputEl.isConnected) formFields.delete(field);
+                else if (field.inputEl.form === e.target) field.setVal();
+            }),
+        ), true);
+
+    const hasName = (raw, name) => {
+        for (let o = raw; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) if (Object.hasOwn(o, name)) return true;
+        return false;
+    };
+
+    const fieldOf = (inputEl, scopeEl) => {
+        const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
+        const { name, type, form } = inputEl;
+        const radio = type === "radio";
+        const owned = (scopeEl.nagiFields ||= new Map());
+        let group = owned.get(name);
+        group?.members.forEach((el) => el.isConnected || group.members.delete(el));
+        if (group?.members.size && !(radio && group.radio && group.form === form))
+            return console.error("[Nagi] another field of the form has this name:", name, inputEl);
+        if (!group) {
+            if (hasName(rawData, name)) return console.error("[Nagi] this field's name is already a name of the scope:", name, inputEl);
+            define(rawData, name, undefined);
+            owned.set(name, (group = { members: new Set() }));
+        }
+        Object.assign(group, { radio, form });
+        group.members.add(inputEl);
+
+        const read = {
+            radio: () => [...group.members].find((el) => el.isConnected && el.form === inputEl.form && el.checked)?.value,
+            checkbox: () => inputEl.checked,
+            file: () => inputEl.files,
+            number: () => (inputEl.value === "" ? undefined : +inputEl.value),
+            range: () => +inputEl.value,
+            "select-multiple": () => [...inputEl.selectedOptions].map((option) => option.value),
+        }[type] ?? (() => inputEl.value);
+        const setVal = () => {
+            if (group.members.has(inputEl)) proxyData[name] = read();
+        };
+        const field = { inputEl, setVal };
+
+        setVal();
+        inputEl.addEventListener("input", setVal);
+        inputEl.addEventListener("change", setVal);
+        formFields.add(field);
+        (inputEl.nagiCleanup ||= []).push(() => {
+            group.members.delete(inputEl);
+            formFields.delete(field);
+        });
     };
 
     const propOf = (obj, name) => {
@@ -562,6 +613,7 @@
     const writerOf = (bindEl, main, sub) => {
         if (sub && main in keyedWriters) return (value) => keyedWriters[main](bindEl, sub, value);
         if (sub) return (value) => (bindEl[main][sub] = value);
+        if (main === "disabled") return (value) => bindEl.nagiHeld || (bindEl.disabled = value);
         if (main !== "class") return (value) => (bindEl[main] = value);
 
         let added = new Set();
@@ -639,38 +691,23 @@
 
         queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
 
-        queryAttr(baseEl, "[name]").forEach((inputEl) => {
+        queryAttr(baseEl, "[name]").filter(isField).forEach((inputEl) => {
             const scopeEl = formScope(inputEl);
-            if (!scopeEl || reserved(inputEl.name, inputEl)) return;
-
-            const { type } = inputEl;
-            const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
-            if (!(inputEl.name in rawData)) define(rawData, inputEl.name, undefined);
-
-            const read = inputReaders[type] ?? ((el) => el.value);
-            const setVal = () => {
-                if (type === "radio" && !inputEl.checked) {
-                    if (!(inputEl.name in proxyData)) proxyData[inputEl.name] = undefined;
-                    return;
-                }
-                proxyData[inputEl.name] = read(inputEl);
-            };
-
-            setVal();
-            inputEl.addEventListener("input", setVal);
-            inputEl.addEventListener("change", setVal);
+            if (scopeEl && !reserved(inputEl.name, inputEl)) fieldOf(inputEl, scopeEl);
         });
 
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
             const proxyData = formScope(submitEl)?.nagiProxy;
-            if (!proxyData) return;
-            let disabledByForm = false;
+            if (!proxyData || !submitEl.form) return;
+            let wasDisabled = false;
             watch(() => {
                 const fetching = proxyData.$fetching;
-                if (fetching && !submitEl.disabled && /^(submit|image)$/.test(submitEl.type))
-                    [submitEl.disabled, disabledByForm] = [true, true];
-                else if (!fetching && disabledByForm) {
-                    [submitEl.disabled, disabledByForm] = [false, false];
+                if (fetching && !submitEl.nagiHeld && /^(submit|image)$/.test(submitEl.type)) {
+                    wasDisabled = submitEl.disabled;
+                    submitEl.disabled = submitEl.nagiHeld = true;
+                } else if (!fetching && submitEl.nagiHeld) {
+                    submitEl.nagiHeld = false;
+                    if (!wasDisabled) submitEl.disabled = false;
                     submitEl.nagiRuns?.forEach((run) => run.attr === "disabled" && run());
                 }
             }, submitEl);

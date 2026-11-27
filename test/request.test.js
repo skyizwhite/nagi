@@ -629,6 +629,17 @@ describe("dedupe", () => {
         expect(page.requests.map((r) => r.body)).toEqual(["v=1", "v=2"]);
     });
 
+    it("returns nothing from $fetch, though it skips a write", async () => {
+        const { page, answers } = await mountWaiting(
+            `<div n-scope="{ got: [] }"><button id="b" n-on-click="got = [...got, $fetch('/x', 'POST')]"></button></div>`,
+        );
+        page.$("#b").click();
+        page.$("#b").click();
+        expect([...page.scope("#b").got]).toEqual([undefined, undefined]);
+        answers.forEach((answer) => answer(""));
+        await page.settle();
+    });
+
     it("sends fetchskip from the element for a write it did not send", async () => {
         const answers = {};
         const page = await mount(
