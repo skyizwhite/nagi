@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Nagi">
+  <g fill="none" stroke="#3399c2" stroke-linecap="round">
+    <ellipse cx="64" cy="72" rx="58" ry="20" stroke-width="2.5" opacity="0.35"/>
+    <ellipse cx="64" cy="72" rx="37" ry="12.5" stroke-width="3.5" opacity="0.65"/>
+    <ellipse cx="64" cy="72" rx="17" ry="5.5" stroke-width="4.5"/>
+  </g>
+  <circle cx="64" cy="42" r="6" fill="#3399c2"/>
+</svg>
