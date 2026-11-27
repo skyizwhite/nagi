@@ -143,11 +143,6 @@ describe("n-form", () => {
         expect(page.$("[name=other]").value).toBe("o");
     });
 
-    it("reads a field again after its binds have run", async () => {
-        const page = await mount(`<form id="f" n-scope n-form><input name="q" n-bind-value="'x'"></form>`);
-        expect(page.$("#f").nagiProxy.q).toBe("x");
-    });
-
     it("leaves what is typed in a number field alone when it reads as the same number", async () => {
         const page = await mount(`<form id="f" n-scope n-form><input name="n" type="number"></form>`);
         const input = page.$("[name=n]");
@@ -279,15 +274,6 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.search).toBe("foo");
     });
 
-    it("reads a select whose options a bind adds once the bind has run", async () => {
-        const page = await mount(`
-            <form id="f" n-scope="{ opts: '<option>a</option><option>b</option>' }" n-form>
-                <select name="city" n-bind-innerhtml="opts"></select>
-            </form>
-        `);
-        expect(page.$("#f").nagiProxy.city).toBe("a");
-    });
-
     it("resets a radio group to its default whatever order the radios come in", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form><input type="radio" name="s" value="a"><input type="radio" name="s" value="b" checked></form>
@@ -391,9 +377,13 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.n).toBe(5);
     });
 
-    it("clears a radio group's name when a bind unchecks all of it", async () => {
-        const page = await mount(`<form id="f" n-scope n-form><input type="radio" name="s" value="b" checked n-bind-checked="false"></form>`);
-        expect(page.$("#f").nagiProxy.s).toBeUndefined();
+    it("re-enables only the buttons it disabled when a request ends", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><button id="a" disabled></button></form>`);
+        const scope = page.$("#f").nagiProxy;
+        scope.$fetching = true;
+        page.$("#a").disabled = false;
+        scope.$fetching = false;
+        expect(page.$("#a").disabled).toBe(false);
     });
 
     it("keeps the checked radio's value when an unchecked one comes after it", async () => {

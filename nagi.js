@@ -529,11 +529,9 @@
                 (el) => el.name === inputEl.name && el.checked && formScope(el) === scopeEl,
             )?.value;
         };
-        const snapshot = () => (type === "radio" ? inputEl.checked : String(read()));
 
         if (!hasName(rawData, name)) define(rawData, name, undefined);
         setVal();
-        const first = snapshot();
         inputEl.addEventListener("input", setVal);
         inputEl.addEventListener("change", setVal);
         const { form } = inputEl;
@@ -542,11 +540,7 @@
             form.addEventListener("reset", onReset);
             (inputEl.nagiCleanup ||= []).push(() => form.removeEventListener("reset", onReset));
         }
-        return () => {
-            if (snapshot() === first) return;
-            if (type === "radio") syncRadio();
-            else if (String(read()) !== String(proxyData[inputEl.name])) setVal();
-        };
+
     };
 
     const propOf = (obj, name) => {
@@ -683,10 +677,9 @@
 
         queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
 
-        const fields = queryAttr(baseEl, "[name]").filter(isField).flatMap((inputEl) => {
+        queryAttr(baseEl, "[name]").filter(isField).forEach((inputEl) => {
             const scopeEl = formScope(inputEl);
-            if (!scopeEl || reserved(inputEl.name, inputEl)) return [];
-            return [fieldOf(inputEl, scopeEl)].filter(Boolean);
+            if (scopeEl && !reserved(inputEl.name, inputEl)) fieldOf(inputEl, scopeEl);
         });
 
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
@@ -700,7 +693,7 @@
                     submitEl.disabled = submitEl.nagiHeld = true;
                 } else if (!fetching && submitEl.nagiHeld) {
                     submitEl.nagiHeld = false;
-                    submitEl.disabled = wasDisabled;
+                    if (!wasDisabled) submitEl.disabled = false;
                     submitEl.nagiRuns?.forEach((run) => run.attr === "disabled" && run());
                 }
             }, submitEl);
@@ -722,7 +715,6 @@
             dispatch(bindEl, "init", { bubbles: false });
         });
 
-        fields.forEach((reread) => reread());
     };
 
     document.addEventListener("DOMContentLoaded", () => init(document.body));
