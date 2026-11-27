@@ -238,13 +238,23 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.coupon).toBe("gone");
     });
 
-    it("reads a named output and a named custom element that has a value", async () => {
+    it("reads only native fields, leaving outputs and custom elements to n-on-*", async () => {
         const page = await mount(
             `<form id="f" n-scope n-form><output name="total">3</output><x-pick name="pick"></x-pick></form>`,
             { beforeInit: (window) => window.customElements.define("x-pick", class extends window.HTMLElement { value = "p"; }) },
         );
-        expect(page.$("#f").nagiProxy.total).toBe("3");
-        expect(page.$("#f").nagiProxy.pick).toBe("p");
+        expect(["total" in page.$("#f").nagiRaw, "pick" in page.$("#f").nagiRaw]).toEqual([false, false]);
+    });
+
+    it("reads a checkbox with a value as a list, however many share its name", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input type="checkbox" name="t" value="a" checked></form>`);
+        expect([...page.$("#f").nagiProxy.t]).toEqual(["a"]);
+    });
+
+    it("logs a field named like a getter of the scope", async () => {
+        const page = await mount(`<form id="f" n-scope="{ get total() { return 5 } }" n-form><input name="total" value="3"></form>`);
+        expect(page.$("#f").nagiProxy.total).toBe(5);
+        expect(page.errors).toHaveLength(1);
     });
 
     it("leaves alone a named custom element that is not a field, such as an icon", async () => {

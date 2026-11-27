@@ -501,21 +501,7 @@
 
     const formScope = (el) => closestScope(el.closest("[n-form]"));
 
-    const inputReaders = {
-        __proto__: null,
-        checkbox: (el) => el.checked,
-        radio: (el) => el.value,
-        file: (el) => el.files,
-        number: (el) => (el.value === "" ? undefined : +el.value),
-        range: (el) => +el.value,
-    };
-
-    const nameOf = (el) => el.name ?? el.getAttribute("name");
-
-    const isField = (el) =>
-        (el.tagName.includes("-") && (el.constructor.formAssociated || "value" in el))
-            || /^(SELECT|TEXTAREA|OUTPUT)$/.test(el.tagName)
-            || (el.tagName === "INPUT" && !/^(submit|image|button|reset)$/.test(el.type));
+    const isField = (el) => /^(SELECT|TEXTAREA)$/.test(el.tagName) || (el.tagName === "INPUT" && !/^(submit|image|button|reset)$/.test(el.type));
 
     const hasName = (raw, name) => {
         for (let o = raw; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) if (Object.hasOwn(o, name)) return true;
@@ -524,34 +510,38 @@
 
     const fieldOf = (inputEl, scopeEl) => {
         const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
+        const { name, type } = inputEl;
+        const found = descriptorOf(rawData, name);
+        if (found?.get && !found.set) return console.error("[Nagi] this field's name is a getter of the scope:", name, inputEl);
+
         const formEl = inputEl.closest("[n-form]");
-        const read = inputReaders[inputEl.type] ?? ((el) => el.value);
+        const listed = type === "radio" || (type === "checkbox" && inputEl.hasAttribute("value"));
         const group = () =>
-            queryAttr(formEl, `input[type=${inputEl.type}]`).filter(
-                (el) => nameOf(el) === nameOf(inputEl) && el.form === inputEl.form && formScope(el) === scopeEl,
+            queryAttr(formEl, `input[type=${type}]`).filter(
+                (el) => el.name === inputEl.name && el.form === inputEl.form && formScope(el) === scopeEl && (type === "radio" || el.hasAttribute("value")),
             );
-        const readGroup = {
+        const read = {
             radio: () => group().find((el) => el.checked)?.value,
-            checkbox: () => {
-                const boxes = group();
-                return boxes.length > 1 ? boxes.filter((el) => el.checked).map((el) => el.value) : inputEl.checked;
-            },
-        }[inputEl.type];
+            checkbox: () => (listed ? group().filter((el) => el.checked).map((el) => el.value) : inputEl.checked),
+            file: () => inputEl.files,
+            number: () => (inputEl.value === "" ? undefined : +inputEl.value),
+            range: () => +inputEl.value,
+        }[type] ?? (() => inputEl.value);
         const setVal = () => {
-            proxyData[nameOf(inputEl)] = readGroup ? readGroup() : read(inputEl);
+            proxyData[inputEl.name] = read();
         };
 
-        if (!hasName(rawData, nameOf(inputEl))) define(rawData, nameOf(inputEl), undefined);
+        if (!hasName(rawData, name)) define(rawData, name, undefined);
         setVal();
         inputEl.addEventListener("input", setVal);
         inputEl.addEventListener("change", setVal);
         const { form } = inputEl;
-        if (form instanceof HTMLFormElement) {
+        if (form) {
             const onReset = () => setTimeout(() => inputEl.isConnected && setVal());
             form.addEventListener("reset", onReset);
             (inputEl.nagiCleanup ||= []).push(() => form.removeEventListener("reset", onReset));
         }
-        return setVal;
+        return { key: listed ? group()[0] : inputEl, setVal };
     };
 
     const propOf = (obj, name) => {
@@ -690,8 +680,8 @@
 
         const fields = queryAttr(baseEl, "[name]").filter(isField).flatMap((inputEl) => {
             const scopeEl = formScope(inputEl);
-            if (!scopeEl || reserved(nameOf(inputEl), inputEl)) return [];
-            return [fieldOf(inputEl, scopeEl)];
+            if (!scopeEl || reserved(inputEl.name, inputEl)) return [];
+            return [fieldOf(inputEl, scopeEl)].filter(Boolean);
         });
 
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
@@ -727,7 +717,7 @@
             dispatch(bindEl, "init", { bubbles: false });
         });
 
-        fields.forEach((setVal) => setVal());
+        new Map(fields.map(({ key, setVal }) => [key, setVal])).forEach((setVal) => setVal());
     };
 
     document.addEventListener("DOMContentLoaded", () => init(document.body));
