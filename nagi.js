@@ -503,6 +503,15 @@
 
     const isField = (el) => /^(SELECT|TEXTAREA)$/.test(el.tagName) || (el.tagName === "INPUT" && !/^(submit|image|button|reset)$/.test(el.type));
 
+    const formFields = new Set();
+    document.addEventListener("reset", (e) =>
+        setTimeout(() =>
+            formFields.forEach((field) => {
+                if (!field.inputEl.isConnected) formFields.delete(field);
+                else if (field.inputEl.form === e.target) field.setVal();
+            }),
+        ), true);
+
     const hasName = (raw, name) => {
         for (let o = raw; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) if (Object.hasOwn(o, name)) return true;
         return false;
@@ -534,17 +543,18 @@
             "select-multiple": () => [...inputEl.selectedOptions].map((option) => option.value),
         }[type] ?? (() => inputEl.value);
         const setVal = () => {
-            proxyData[name] = read();
+            if (group.members.has(inputEl)) proxyData[name] = read();
         };
+        const field = { inputEl, setVal };
 
         setVal();
         inputEl.addEventListener("input", setVal);
         inputEl.addEventListener("change", setVal);
-        const cleanup = (inputEl.nagiCleanup ||= []);
-        cleanup.push(() => group.members.delete(inputEl));
-        const onReset = (e) => e.target === inputEl.form && setTimeout(() => inputEl.isConnected && setVal());
-        document.addEventListener("reset", onReset, true);
-        cleanup.push(() => document.removeEventListener("reset", onReset, true));
+        formFields.add(field);
+        (inputEl.nagiCleanup ||= []).push(() => {
+            group.members.delete(inputEl);
+            formFields.delete(field);
+        });
     };
 
     const propOf = (obj, name) => {

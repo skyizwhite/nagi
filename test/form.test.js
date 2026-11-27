@@ -380,6 +380,21 @@ describe("n-form", () => {
         expect(page.$("#d").nagiProxy.q).toBe("x");
     });
 
+    it("stops reading a field that left the page once another field has taken its name", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form><input id="a" name="q" value="1"><div id="w"></div><button id="b" type="button" n-on-click="$get('/x')"></button></form>`,
+            { server: () => `<div id="w"><input name="q" value="2"></div>` },
+        );
+        const a = page.$("#a");
+        a.remove();
+        page.$("#b").click();
+        await page.settle();
+        page.$("#f").append(a);
+        a.value = "3";
+        a.dispatchEvent(new page.window.Event("input"));
+        expect(page.$("#f").nagiProxy.q).toBe("2");
+    });
+
     it("keeps the checked radio's value when an unchecked one comes after it", async () => {
         const page = await mount(`
             <form id="f" n-scope="{}" n-form>
