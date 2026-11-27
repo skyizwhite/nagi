@@ -477,27 +477,35 @@
     };
 
     const makeScope = (dataEl) => {
-        if (dataEl.nagiProxy) return;
-        const attrs = [...dataEl.attributes];
-        if (!dataEl.hasAttribute("n-scope")) {
-            if (attrs.some(({ name }) => name.startsWith("n-let-"))) console.error("[Nagi] n-let-* needs n-scope on its element:", dataEl);
-            return;
-        }
+        if (dataEl.nagiProxy || !dataEl.hasAttribute("n-scope")) return;
 
         const rawData = baseOf(dataEl);
         Object.entries({ ...helpers(), _nagiEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
 
         const outer = closestScope(dataEl.parentElement)?.nagiProxy;
-        const proxyData = reactive(rawData, outer);
-
-        dataEl.nagiProxy = proxyData;
+        dataEl.nagiProxy = reactive(rawData, outer);
         dataEl.nagiRaw = rawData;
+    };
 
-        attrs.forEach(({ name, value }) => {
+    const addLets = (letEl) => {
+        const lets = [...letEl.attributes].flatMap(({ name, value }) => {
             const key = name.match(/^n-let-(.+)$/)?.[1];
-            if (!key || reserved(key, dataEl)) return;
-            const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, proxyData, dataEl)) : undefined;
+            return key ? [[key, value]] : [];
+        });
+        if (!lets.length) return;
+        const scopeEl = closestScope(letEl);
+        if (!scopeEl) return console.error("[Nagi] n-let-* needs a scope:", letEl);
+        const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
+        const owners = (scopeEl.nagiLets ||= new Map());
+
+        lets.forEach(([key, value]) => {
+            if (reserved(key, letEl)) return;
+            const owner = owners.get(key);
+            const taken = owner ? owner !== letEl && owner.isConnected : letEl !== scopeEl && hasName(rawData, key);
+            if (taken) return console.error("[Nagi] another element already gives the scope this name:", key, letEl);
+            const result = value.trim() ? runWithEl(letEl, () => evaluate(value, proxyData, proxyData, letEl)) : undefined;
             if (result === failed) return;
+            owners.set(key, letEl);
             if (!(key in rawData) || !Reflect.set(proxyData, key, result)) define(rawData, key, result);
         });
     };
@@ -680,6 +688,7 @@
             const before = dataEl.previousElementSibling;
             seen.add(dataEl);
             makeScope(dataEl);
+            addLets(dataEl);
             const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
             walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
             do dataEl = walker.nextNode();

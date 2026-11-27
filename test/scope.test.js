@@ -236,17 +236,70 @@ describe("n-let-*", () => {
         expect(page.$("#s").textContent).toBe("3");
     });
 
-    it("logs an n-let-* on an element without n-scope, and makes no scope of it", async () => {
+    it("adds the names of a descendant to the closest scope, in document order", async () => {
         const page = await mount(`
-            <div n-let-a="1"></div>
             <div id="outer" n-scope="{ n: 1 }">
-                <div id="d" n-let-b="2"><span id="s" n-bind-textcontent="n + (this.b ?? 0)"></span></div>
+                <div id="d" n-let-a="n + 1">
+                    <p id="p" n-let-b="a + 1" n-let-self="$el.id" n-let-same="this === $el.parentElement.parentElement.nagiProxy"></p>
+                    <span id="s" n-bind-textcontent="a + b"></span>
+                </div>
             </div>
         `);
+        const scope = page.$("#outer").nagiProxy;
         expect(page.$("#d").nagiProxy).toBeUndefined();
-        expect(page.$("#outer").nagiProxy.b).toBeUndefined();
+        expect([scope.a, scope.b, scope.self, scope.same]).toEqual([2, 3, "p", true]);
+        expect(page.$("#s").textContent).toBe("5");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("logs an n-let-* outside any scope", async () => {
+        const page = await mount(`<div id="d" n-let-a="1"></div>`);
+        expect(page.$("#d").nagiProxy).toBeUndefined();
+        expect(page.errors).toHaveLength(1);
+    });
+
+    it("logs a name another element already gives the scope, and keeps the first value", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ v: 1 }" n-let-w="1">
+                <p n-let-v="2"></p>
+                <p n-let-w="2"></p>
+                <p n-let-x="1"></p>
+                <p n-let-x="2"></p>
+            </div>
+        `);
+        const scope = page.$("#d").nagiProxy;
+        expect([scope.v, scope.w, scope.x]).toEqual([1, 1, 1]);
+        expect(page.errors).toHaveLength(3);
+    });
+
+    it("lets a swapped-in element take over the name of one that left, and updates its readers", async () => {
+        const page = await mount(
+            `<div n-scope>
+                <div id="target"><p n-let-count="1"></p></div>
+                <span id="s" n-bind-textcontent="count"></span>
+                <button id="b" n-on-click="$get('/x')"></button>
+            </div>`,
+            { server: () => `<div id="target"><p n-let-count="5"></p></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#s").textContent).toBe("5");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("keeps the name and its value after its element leaves", async () => {
+        const page = await mount(
+            `<div id="d" n-scope>
+                <div id="target"><p n-let-count="1"></p></div>
+                <span id="s" n-bind-textcontent="count"></span>
+                <button id="b" n-on-click="$get('/x')"></button>
+            </div>`,
+            { server: () => `<div id="target"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#d").nagiProxy.count).toBe(1);
         expect(page.$("#s").textContent).toBe("1");
-        expect(page.errors).toHaveLength(2);
     });
 
     it("runs with the scope's element as $el", async () => {

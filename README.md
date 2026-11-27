@@ -61,16 +61,21 @@ Makes a reactive scope from an object. Elements inside it can read and write its
 - Scopes nest. Inner elements can use the names of outer scopes too.
 
 #### `n-let-<name>`
-Adds one name to the scope of its element from an expression, which can use the names of outer scopes. The element needs `n-scope`; Nagi logs an error otherwise.
+Adds one name to the closest scope, the one of its own element or of an ancestor, from an expression. Only `n-scope` makes a scope; an `n-let-*` outside any scope logs an error.
 
 ```html
 <div n-scope n-let-open="false" n-let-toggle="() => open = !open">
   <button n-on-click="toggle()">Menu</button>
-  <nav n-bind-hidden="!open">…</nav>
+  <nav n-bind-hidden="!open">
+    <ul n-let-items="['Home', 'About']">…</ul>
+  </nav>
 </div>
 ```
 
-Names starting with `$` or `_nagi` are reserved for Nagi.
+- The names run in document order, so an `n-let-*` can use the names of its ancestors and of the elements before it. `$el` is the element it is written on.
+- An `n-let-*` on the element of `n-scope` overrides the same name of its object. A name that another element already gives the scope logs an error and keeps its value, unless that element has left the page: then the new element takes the name over and sets it, as when a response swaps a part in.
+- A name stays in the scope after its element leaves. A name that a response brings in does not rerun the bindings that already failed to read it.
+- Names starting with `$` or `_nagi` are reserved for Nagi.
 
 #### `n-bind-<property>`
 Sets a property of the element to an expression, and keeps it up to date. `n-bind-textcontent` sets `textContent`, and so on. A promise sets the property when it resolves.
