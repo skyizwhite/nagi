@@ -76,7 +76,6 @@ Adds one name from an expression to the closest scope it is in, its own element'
 - On the element of `n-scope`, it overrides the name of the same name there.
 - Give each name from one element. When a response replaces that element, the new one gives the name again. Nagi logs an error otherwise.
 - The name keeps its value after its element is removed.
-- Elements already on the page do not see a name that only a response brings in. Give it a first value in the page.
 - Names starting with `$` or `_nagi` are reserved for Nagi.
 
 #### `n-bind-<property>`

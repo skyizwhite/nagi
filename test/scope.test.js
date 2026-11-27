@@ -287,6 +287,40 @@ describe("n-let-*", () => {
         expect(page.errors).toEqual([]);
     });
 
+    it("switches what the page shows to a name a response brings into an inner scope", async () => {
+        const page = await mount(
+            `<div n-scope="{ v: 'outer' }">
+                <div id="inner" n-scope>
+                    <span id="s" n-bind-textcontent="v"></span>
+                    <button id="w" n-on-click="v = 'changed'"></button>
+                    <div id="target"></div>
+                    <button id="b" n-on-click="$get('/x')"></button>
+                </div>
+            </div>`,
+            { server: () => `<div id="target"><p n-let-v="'inner'"></p></div>` },
+        );
+        expect(page.$("#s").textContent).toBe("outer");
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#s").textContent).toBe("inner");
+        page.$("#w").click();
+        expect(page.$("#s").textContent).toBe("changed");
+    });
+
+    it("shows a name a response brings in where the page could not read it before", async () => {
+        const page = await mount(
+            `<div n-scope>
+                <span id="s" n-bind-textcontent="count"></span>
+                <div id="target"></div>
+                <button id="b" n-on-click="$get('/x')"></button>
+            </div>`,
+            { server: () => `<div id="target"><p n-let-count="5"></p></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#s").textContent).toBe("5");
+    });
+
     it("keeps the name and its value after its element leaves", async () => {
         const page = await mount(
             `<div id="d" n-scope>

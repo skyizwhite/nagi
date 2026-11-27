@@ -20,6 +20,19 @@ describe("n-form", () => {
         await page.settle();
     };
 
+    it("shows the value of a field a response brings in where the page could not read it before", async () => {
+        const page = await mount(
+            `<form n-scope n-form>
+                <span id="s" n-bind-textcontent="extra"></span>
+                <div id="target"></div>
+                <button type="button" id="b" n-on-click="$get('/x')"></button>
+            </form>`,
+            { server: () => `<div id="target"><input name="extra" value="hi"></div>` },
+        );
+        await swapOnce(page);
+        expect(page.$("#s").textContent).toBe("hi");
+    });
+
     it("copies each named field into the scope, typed by input type", async () => {
         const page = await mount(form);
         const scope = page.$("#f").nagiProxy;
