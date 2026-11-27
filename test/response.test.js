@@ -236,6 +236,19 @@ describe("errors", () => {
         expect(page.errors).toEqual([]);
     });
 
+    it("sends fetcherr for a read whose error answer swaps out the scope that asked", async () => {
+        const page = await mount(
+            `<div id="w" n-scope><button id="b" n-on-click="$get('/x')"></button></div>`,
+            { server: () => ({ status: 500, body: `<div id="w">failed</div>` }) },
+        );
+        const got = [];
+        page.window.addEventListener("fetcherr", (e) => got.push(e.detail.status));
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#w").textContent).toBe("failed");
+        expect(got).toEqual([500]);
+    });
+
     it("sends fetcherr to document when the element that asked is gone", async () => {
         let answer;
         const page = await mount(

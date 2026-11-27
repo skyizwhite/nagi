@@ -926,6 +926,22 @@ describe("elements outside any scope", () => {
         expect(signals.map((s) => s.aborted)).toEqual([false, false]);
         await page.settle();
     });
+
+    it("keep their n-ref in one $refs for the page", async () => {
+        const page = await mount(`<input id="i" n-ref="field"><button id="b" n-on-click="$refs.field.value = 'set'"></button>`);
+        page.$("#b").click();
+        expect(page.$("#i").value).toBe("set");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("bind $fetching for the requests of the page", async () => {
+        const { page, answers } = await mountWaiting(`<button id="b" n-on-click="$post('/x')" n-bind-disabled="$fetching"></button>`);
+        page.$("#b").click();
+        expect(page.$("#b").disabled).toBe(true);
+        answers.forEach((answer) => answer(""));
+        await page.settle();
+        expect(page.$("#b").disabled).toBe(false);
+    });
 });
 
 describe("options", () => {

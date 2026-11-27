@@ -57,6 +57,24 @@ describe("n-form", () => {
         expect(page.$("#send").disabled).toBe(false);
     });
 
+    it("disables only the submit buttons, and leaves a button disabled in the HTML alone", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <button id="submit"></button>
+                <input id="image" type="image">
+                <button id="plain" type="button"></button>
+                <button id="off" disabled></button>
+            </form>
+        `);
+        page.$("#f").nagiProxy.$fetching = true;
+        await page.settle();
+        expect(["submit", "image", "plain", "off"].map((id) => page.$(`#${id}`).disabled)).toEqual([true, true, false, true]);
+
+        page.$("#f").nagiProxy.$fetching = false;
+        await page.settle();
+        expect(["submit", "image", "plain", "off"].map((id) => page.$(`#${id}`).disabled)).toEqual([false, false, false, true]);
+    });
+
     it("keeps the checked radio's value when an unchecked one comes after it", async () => {
         const page = await mount(`
             <form id="f" n-scope="{}" n-form>
