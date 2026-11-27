@@ -12,10 +12,7 @@
     let currentHandler = null;
 
     // Utility functions
-    const dispatch = (el, name, opts) => {
-        opts = { bubbles: true, detail: {}, ...opts };
-        return el.dispatchEvent(new CustomEvent(name, opts));
-    };
+    const dispatch = (el, name, opts) => el.dispatchEvent(new CustomEvent(name, { bubbles: true, detail: {}, ...opts }));
 
     const failed = Symbol();
 
@@ -221,9 +218,7 @@
             }
             return datasets;
         },
-        $watch: (fn) => {
-            watch(fn);
-        },
+        $watch: (fn) => void watch(fn),
         $dispatch(evt, detail, opts) {
             dispatch(hostOf(this) ?? document, evt, { detail, ...opts });
         },
@@ -353,23 +348,11 @@
 
     const swap = (text) => {
         for (const fragment of fragmentsOf(text)) {
-            if (!fragment.id) {
-                console.warn("[Nagi] Fragment is missing an id: ", fragment);
-                continue;
-            }
-
             const strategy = fragment.getAttribute("n-swap") || "outer";
-            const target = document.getElementById(fragment.id);
-
-            if (!target) {
-                console.warn("[Nagi] Swap target not found: #", fragment.id);
-                continue;
-            }
-
-            if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) {
-                console.error("[Nagi] Invalid swap strategy: ", strategy);
-                continue;
-            }
+            const target = fragment.id && document.getElementById(fragment.id);
+            if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
+            if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
+            if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
 
             const kids = [...fragment.childNodes];
 
@@ -497,8 +480,7 @@
                     return typeof value === "function" ? bindToOuter(value) : value;
                 }
                 if (currentBind) {
-                    if (!trackedDeps.has(prop)) trackedDeps.set(prop, new Set());
-                    const deps = trackedDeps.get(prop);
+                    const deps = trackedDeps.get(prop) ?? trackedDeps.set(prop, new Set()).get(prop);
                     deps.add(currentBind);
                     currentBind.deps.add(deps);
                 }
