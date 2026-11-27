@@ -18,7 +18,7 @@ describe("tracking", () => {
     it("has written a bind by the time the element's init runs", async () => {
         const page = await mount(`
             <div n-scope="{ n: 1, seen: null }">
-                <span id="s" n-bind-textcontent="n" n-on-init="seen = this.textContent"></span>
+                <span id="s" n-bind-textcontent="n" n-on-init="seen = $el.textContent"></span>
             </div>
         `);
         expect(page.scope("#s").seen).toBe("1");
@@ -261,7 +261,7 @@ describe("elements a swap removes", () => {
         const page = await mount(
             `<div id="d" n-scope="{ n: 1, ran: [] }">
                 <button id="b" n-on-click="$get('/x')"></button>
-                <div id="target"><span n-bind-textcontent="(ran.push(this.isConnected), n)"></span></div>
+                <div id="target"><span n-bind-textcontent="(ran.push($el.isConnected), n)"></span></div>
             </div>`,
             { server: () => `<div id="target"></div>` },
         );

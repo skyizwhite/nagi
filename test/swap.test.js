@@ -302,7 +302,7 @@ describe("cssMorph", () => {
                 <button id="b" n-on-click="$get('/x')"></button>
                 <div id="t" class="old" style="color: blue"></div>
             </div>`,
-            { server: () => `<div id="t" class="new" style="margin: 1px" n-on-init="this.classList.add('ready'); this.style.padding = '2px'"></div>` },
+            { server: () => `<div id="t" class="new" style="margin: 1px" n-on-init="$el.classList.add('ready'); $el.style.padding = '2px'"></div>` },
         );
         page.$("#b").click();
         await page.settle();
@@ -315,14 +315,14 @@ describe("cssMorph", () => {
     });
 
     it("keeps what init sets when the old element had it too", async () => {
-        const page = await swapTwice(`<div id="t" class="new" n-on-init="this.classList.add('ready'); this.style.padding = '2px'"></div>`);
+        const page = await swapTwice(`<div id="t" class="new" n-on-init="$el.classList.add('ready'); $el.style.padding = '2px'"></div>`);
         const t = page.$("#t");
         expect([...t.classList].sort()).toEqual(["new", "ready"]);
         expect(t.style.padding).toBe("2px");
     });
 
     it("keeps a class init takes away from the answer's markup", async () => {
-        const page = await swapTwice(`<div id="t" class="loading" n-on-init="this.classList.remove('loading')"></div>`);
+        const page = await swapTwice(`<div id="t" class="loading" n-on-init="$el.classList.remove('loading')"></div>`);
         expect(page.$("#t").classList.contains("loading")).toBe(false);
     });
 });

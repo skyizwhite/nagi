@@ -26,9 +26,9 @@
     const define = (obj, key, value) =>
         Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
 
-    const evaluate = (expression, data, thisArg) => {
+    const evaluate = (expression, data, thisArg, el) => {
         try {
-            return new Function("__data", `with(__data) {return (${expression}\n)}`).call(thisArg, data);
+            return new Function("__data", "$el", `with(__data) {return (${expression}\n)}`).call(thisArg, data, el);
         } catch (err) {
             console.error("[Nagi] failed to evaluate:", expression, "\n", err);
             return failed;
@@ -417,7 +417,7 @@
 
     const baseOf = (dataEl) => {
         const base = dataEl.getAttribute("n-scope")?.trim();
-        const made = base ? evaluate(base, {}, dataEl) : {};
+        const made = base ? evaluate(base, {}, Object.freeze({}), dataEl) : {};
         try {
             if (made !== null && typeof made === "object" && typeof made.then !== "function" && !builtIn(made)) {
                 const descriptors = Object.getOwnPropertyDescriptors(made);
@@ -488,7 +488,7 @@
         attrs.forEach(({ name, value }) => {
             const key = name.match(/^n-let-(.+)$/)?.[1];
             if (!key || reserved(key, dataEl)) return;
-            const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, dataEl)) : undefined;
+            const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, proxyData, dataEl)) : undefined;
             if (result === failed) return;
             if (!(key in rawData) || !Reflect.set(proxyData, key, result)) define(rawData, key, result);
         });
@@ -682,7 +682,7 @@
             bindEl.nagiBound = true;
 
             const proxyData = getClosestProxy(bindEl);
-            const props = Object.assign({}, ...entries.map((entry) => evaluate(`{${entry}}`, proxyData, bindEl)));
+            const props = Object.assign({}, ...entries.map((entry) => evaluate(`{${entry}}`, proxyData, proxyData, bindEl)));
 
             Object.entries(props).forEach(([key, val]) =>
                 key.startsWith("@") ? listen(bindEl, key.slice(1), val, proxyData) : bindProp(bindEl, key, val),
