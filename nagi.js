@@ -514,6 +514,7 @@
         const radio = type === "radio";
         const owned = (scopeEl.nagiFields ||= new Map());
         let group = owned.get(name);
+        group?.members.forEach((el) => el.isConnected || group.members.delete(el));
         if (group?.members.size && !(radio && group.radio && group.form === form))
             return console.error("[Nagi] another field of the form has this name:", name, inputEl);
         if (!group) {
@@ -525,7 +526,7 @@
         group.members.add(inputEl);
 
         const read = {
-            radio: () => [...group.members].find((el) => el.checked)?.value,
+            radio: () => [...group.members].find((el) => el.isConnected && el.form === inputEl.form && el.checked)?.value,
             checkbox: () => inputEl.checked,
             file: () => inputEl.files,
             number: () => (inputEl.value === "" ? undefined : +inputEl.value),
@@ -541,11 +542,9 @@
         inputEl.addEventListener("change", setVal);
         const cleanup = (inputEl.nagiCleanup ||= []);
         cleanup.push(() => group.members.delete(inputEl));
-        if (form) {
-            const onReset = () => setTimeout(() => inputEl.isConnected && setVal());
-            form.addEventListener("reset", onReset);
-            cleanup.push(() => form.removeEventListener("reset", onReset));
-        }
+        const onReset = (e) => e.target === inputEl.form && setTimeout(() => inputEl.isConnected && setVal());
+        document.addEventListener("reset", onReset, true);
+        cleanup.push(() => document.removeEventListener("reset", onReset, true));
     };
 
     const propOf = (obj, name) => {
@@ -719,7 +718,6 @@
 
             dispatch(bindEl, "init", { bubbles: false });
         });
-
     };
 
     document.addEventListener("DOMContentLoaded", () => init(document.body));

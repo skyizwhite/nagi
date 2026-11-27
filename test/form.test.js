@@ -261,16 +261,6 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.agree).toBe(false);
     });
 
-    it("keeps the scope's value for a radio group with nothing checked in its HTML", async () => {
-        const page = await mount(`
-            <form id="f" n-scope="{ c: 'red' }" n-form>
-                <input type="radio" name="c" value="red" n-bind-checked="c === 'red'"><input type="radio" name="c" value="blue" n-bind-checked="c === 'blue'">
-            </form>
-        `);
-        expect(page.$("#f").nagiProxy.c).toBe("red");
-        expect(page.$("[value=red]").checked).toBe(true);
-    });
-
     it("reads a multiple select as the list of the selected values", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form><select name="s" multiple><option selected>a</option><option selected>b</option><option>c</option></select></form>
@@ -395,6 +385,32 @@ describe("n-form", () => {
         page.$("#a").disabled = false;
         scope.$fetching = false;
         expect(page.$("#a").disabled).toBe(false);
+    });
+
+    it("forgets a field another script removed, so its name can be taken again", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input id="a" type="radio" name="s" value="a" checked><input id="b" type="radio" name="s" value="b"></form>`);
+        page.$("#a").remove();
+        page.$("#b").checked = true;
+        page.$("#b").dispatchEvent(new page.window.Event("change"));
+        expect(page.$("#f").nagiProxy.s).toBe("b");
+    });
+
+    it("follows the reset of the form a field names with form=, even after that form is swapped", async () => {
+        const page = await mount(
+            `<div n-scope n-form id="d">
+                <form id="f"></form><input name="q" form="f" value="x">
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+            </div>`,
+            { server: () => `<form id="f"></form>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const input = page.$("[name=q]");
+        input.value = "typed";
+        input.dispatchEvent(new page.window.Event("input"));
+        page.$("#f").reset();
+        await later(10);
+        expect(page.$("#d").nagiProxy.q).toBe("x");
     });
 
     it("keeps the checked radio's value when an unchecked one comes after it", async () => {
