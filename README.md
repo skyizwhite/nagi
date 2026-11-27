@@ -34,7 +34,7 @@ npm install
 npm test        # or `mise run test`
 ```
 
-`scripts/build.sh` writes `dist/nagi.min.js`.
+`sh scripts/build.sh` writes `dist/nagi.min.js`.
 
 ## License
 
