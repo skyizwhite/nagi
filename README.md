@@ -61,7 +61,7 @@ Makes a reactive scope from an object. Elements inside it can read and write its
 - Scopes nest. Inner elements can use the names of outer scopes too.
 
 #### `n-let-<name>`
-Adds one name to the closest scope, the one of its own element or of an ancestor, from an expression. Only `n-scope` makes a scope; an `n-let-*` outside any scope logs an error.
+Adds one name from an expression to the closest scope it is in, its own element's included. Only `n-scope` makes a scope; an `n-let-*` outside any scope logs an error.
 
 ```html
 <div n-scope n-let-open="false" n-let-toggle="() => open = !open">
@@ -72,9 +72,11 @@ Adds one name to the closest scope, the one of its own element or of an ancestor
 </div>
 ```
 
-- The names run in document order, so an `n-let-*` can use the names of its ancestors and of the elements before it. `$el` is the element it is written on.
-- An `n-let-*` on the element of `n-scope` overrides the same name of its object. A name that another element already gives the scope logs an error and keeps its value, unless that element has left the page: then the new element takes the name over and sets it, as when a response swaps a part in.
-- A name stays in the scope after its element leaves. A name that a response brings in does not rerun the bindings that already failed to read it.
+- An `n-let-*` can use the names of its ancestors and of the elements before it. `$el` is the element it is written on.
+- On the element of `n-scope`, it overrides the name of the same name there.
+- Give each name from one element. When a response replaces that element, the new one gives the name again. Nagi logs an error otherwise.
+- The name keeps its value after its element is removed.
+- Elements already on the page do not see a name that only a response brings in. Give it a first value in the page.
 - Names starting with `$` or `_nagi` are reserved for Nagi.
 
 #### `n-bind-<property>`
