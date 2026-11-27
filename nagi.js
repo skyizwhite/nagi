@@ -109,7 +109,7 @@
     };
 
     // Helpers that are included with every data object
-    const helpers = (pending = 0, writing = new Set(), controllers = new Set()) => ({
+    const helpers = (pending = 0, writing = new Set(), controllers = new Set(), reads = new Map()) => ({
         $refs: {},
         $fetching: false,
         _nagiAbort: new AbortController(),
@@ -123,6 +123,11 @@
         ),
         $abort() {
             controllers.forEach((controller) => controller.abort());
+            this._nagiStop();
+        },
+        _nagiStop() {
+            reads.forEach((controller) => controller.abort());
+            reads.clear();
             this._nagiAbort.abort();
             this._nagiAbort = new AbortController();
         },
@@ -153,13 +158,15 @@
                 write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sentOf(entries)) : ""}`;
                 if (dedupe && writing.has(write)) return;
 
+                reads.get(el)?.abort();
                 this._nagiAbort.abort();
                 return opts;
             });
 
             if (!opts) return report("fetchskip", { method, url });
 
-            this._nagiAbort = reading ? controller : new AbortController();
+            this._nagiAbort = new AbortController();
+            if (reading) reads.set(el, controller);
             const deduped = write && dedupe;
             if (deduped) writing.add(write);
             controllers.add(controller);
@@ -169,7 +176,6 @@
             const timer = Number.isFinite(timeout) && timeout > 0 && setTimeout(() => {
                 timedOut = true;
                 controller.abort();
-                if (this._nagiAbort === controller) this._nagiAbort = new AbortController();
             }, Math.min(timeout, 2147483647));
             pending++;
             this.$fetching = true;
@@ -209,16 +215,14 @@
                 .finally(() => {
                     clearTimeout(timer);
                     controllers.delete(controller);
+                    if (reads.get(el) === controller) reads.delete(el);
                     if (deduped) writing.delete(write);
                     if (!--pending) this.$fetching = false;
                 });
         },
         $dataset() {
             let datasets = {};
-            for (let el = hostOf(this); el?.nodeType === 1; el = el.parentElement) {
-                datasets = { ...el.dataset, ...datasets };
-                if (el.nagiProxy) break;
-            }
+            for (let el = hostOf(this); el?.nodeType === 1; el = el.parentElement) datasets = { ...el.dataset, ...datasets };
             return datasets;
         },
         $watch: (fn) => void watch(fn),
@@ -334,7 +338,7 @@
             if (refs?.[name] === node) delete refs[name];
         });
         [el, ...el.querySelectorAll("*")].forEach((node) => {
-            (node.nagiProxy ?? ownScopes.get(node))?._nagiAbort.abort();
+            (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
             node.nagiRuns?.forEach(kill);
             node.nagiCleanup?.forEach((clean) => clean());
             node.nagiTimers?.forEach(clearTimeout);

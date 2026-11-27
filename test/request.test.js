@@ -464,24 +464,52 @@ describe("reads and writes", () => {
         expect(page.$("#done").textContent).toBe("deleted");
     });
 
-    it("aborts a read when a write starts", async () => {
+    it("lets the read of another element finish when a write starts", async () => {
         const answers = {};
         const page = await mountWrites(answers);
         page.$("#search").click();
         page.$("#order").click();
+        answers["/search"](`<div id="results">found</div>`);
+        answers["/order"]("");
+        await page.settle();
+        expect(page.$("#results").textContent).toBe("found");
+    });
+
+    it("aborts the read of an element when the element makes a write", async () => {
+        const answers = {};
+        const page = await mount(
+            `<div n-scope="{}"><button id="b" n-on-click="$get('/search'); $post('/order')"></button></div>
+            <div id="results">old</div>`,
+            { server: ({ url }) => new Promise((resolve) => (answers[new URL(url).pathname] = resolve)) },
+        );
+        page.$("#b").click();
         answers["/search"](`<div id="results">stale</div>`);
         answers["/order"]("");
         await page.settle();
         expect(page.$("#results").textContent).toBe("old");
     });
 
-    it("takes OPTIONS as a read, aborted by a newer request", async () => {
+    it("lets the reads of different elements in a scope run together", async () => {
         const signals = [];
         const page = await mount(
-            `<div n-scope="{}">
-                <button id="o" n-on-click="$fetch('/x', 'OPTIONS')"></button>
-                <button id="g" n-on-click="$get('/y')"></button>
-            </div>`,
+            `<div n-scope="{}"><button id="a" n-on-click="$get('/a')"></button><button id="b" n-on-click="$get('/b')"></button></div>`,
+            { server: () => "" },
+        );
+        const fetch = page.window.fetch;
+        page.window.fetch = (url, opts) => {
+            signals.push(opts.signal);
+            return fetch(url, opts);
+        };
+        page.$("#a").click();
+        page.$("#b").click();
+        expect(signals.map((s) => s.aborted)).toEqual([false, false]);
+        await page.settle();
+    });
+
+    it("takes OPTIONS as a read, aborted by a newer request of its element", async () => {
+        const signals = [];
+        const page = await mount(
+            `<div n-scope="{}"><button id="o" n-on-click="$fetch('/x', 'OPTIONS')"></button></div>`,
             { server: () => "" },
         );
         const fetch = page.window.fetch;
@@ -490,7 +518,7 @@ describe("reads and writes", () => {
             return fetch(url, opts);
         };
         page.$("#o").click();
-        page.$("#g").click();
+        page.$("#o").click();
         expect(signals[0].aborted).toBe(true);
         await page.settle();
     });

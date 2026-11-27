@@ -181,14 +181,14 @@ describe("data-* of the scope's element", () => {
         expect(page.$("#d").nagiProxy.mode).toBe("b");
     });
 
-    it("stops $dataset at the scope", async () => {
+    it("gathers $dataset from every ancestor, past the scope", async () => {
         const page = await mount(`
             <div data-outside="x">
                 <div n-let-got="null" data-in="y"><button id="b" n-on-click="got = $dataset()"></button></div>
             </div>
         `);
         page.$("#b").click();
-        expect({ ...page.scope("#b").got }).toEqual({ in: "y" });
+        expect({ ...page.scope("#b").got }).toEqual({ in: "y", outside: "x" });
     });
 });
 
