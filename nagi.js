@@ -44,13 +44,11 @@
         for (; el; el = el.parentElement) if (el.nagiProxy) return el;
     };
 
-    const pageWriting = new Set();
-    const pageRefs = {};
     const ownScopes = new WeakMap();
     const getClosestProxy = (el) => {
         const scope = closestScope(el)?.nagiProxy;
         if (scope) return scope;
-        if (!ownScopes.has(el)) ownScopes.set(el, reactive(helpers(pageWriting, pageRefs)));
+        if (!ownScopes.has(el)) ownScopes.set(el, reactive(helpers()));
         return ownScopes.get(el);
     };
 
@@ -111,8 +109,8 @@
     };
 
     // Helpers that are included with every data object
-    const helpers = (writing = new Set(), $refs = {}, pending = 0, controllers = new Set()) => ({
-        $refs,
+    const helpers = (pending = 0, writing = new Set(), controllers = new Set()) => ({
+        $refs: {},
         $fetching: false,
         _nagiAbort: new AbortController(),
         ...Object.fromEntries(
@@ -331,9 +329,9 @@
     const drop = (el) => {
         queryAttr(el, "*").forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
         queryAttr(el, "[n-ref]").forEach((node) => {
-            const refs = getClosestProxy(node).$refs;
+            const refs = closestScope(node)?.nagiProxy.$refs;
             const name = node.getAttribute("n-ref");
-            if (refs[name] === node) delete refs[name];
+            if (refs?.[name] === node) delete refs[name];
         });
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             node.nagiProxy?._nagiAbort.abort();
@@ -628,7 +626,9 @@
         }
 
         queryAttr(baseEl, "[n-ref]").forEach((el) => {
-            getClosestProxy(el).$refs[el.getAttribute("n-ref")] = el;
+            const scope = closestScope(el)?.nagiProxy;
+            if (!scope) return console.warn("[Nagi] n-ref needs a scope:", el);
+            scope.$refs[el.getAttribute("n-ref")] = el;
         });
 
         queryAttr(baseEl, "[name]").forEach((inputEl) => {

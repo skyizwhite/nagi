@@ -898,14 +898,15 @@ describe("elements outside any scope", () => {
         return mount(html, { server: () => new Promise((resolve) => answers.push(resolve)) }).then((page) => ({ page, answers }));
     };
 
-    it("share one state for requests", async () => {
+    it("each dedupe their own writes", async () => {
         const { page, answers } = await mountWaiting(`
             <button id="a" n-on-click="$post('/order')"></button>
             <button id="b" n-on-click="$post('/order')"></button>
         `);
         page.$("#a").click();
+        page.$("#a").click();
         page.$("#b").click();
-        expect(page.requests).toHaveLength(1);
+        expect(page.requests).toHaveLength(2);
         answers.forEach((answer) => answer(""));
         await page.settle();
     });
@@ -969,13 +970,6 @@ describe("elements outside any scope", () => {
         await later(40);
         await page.settle();
         expect(page.requests.map((r) => r.url)).toEqual(["http://localhost/now"]);
-    });
-
-    it("keep their n-ref in one $refs for the page", async () => {
-        const page = await mount(`<input id="i" n-ref="field"><button id="b" n-on-click="$refs.field.value = 'set'"></button>`);
-        page.$("#b").click();
-        expect(page.$("#i").value).toBe("set");
-        expect(page.errors).toEqual([]);
     });
 
     it("bind $fetching for their own requests", async () => {
