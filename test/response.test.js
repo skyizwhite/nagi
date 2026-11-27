@@ -361,7 +361,7 @@ describe("headers", () => {
 
     it("has replaced the URL by the time the swapped content inits", async () => {
         const page = await mountAsking({
-            body: `<div id="target" n-let-path="location.pathname"><span id="p" n-bind-textcontent="path"></span></div>`,
+            body: `<div n-scope id="target" n-let-path="location.pathname"><span id="p" n-bind-textcontent="path"></span></div>`,
             headers: { "n-replace-url": "/list" },
         });
         page.$("#b").click();

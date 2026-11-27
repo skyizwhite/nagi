@@ -479,7 +479,10 @@
     const makeScope = (dataEl) => {
         if (dataEl.nagiProxy) return;
         const attrs = [...dataEl.attributes];
-        if (!attrs.some(({ name }) => /^n-(scope$|let-)/.test(name))) return;
+        if (!dataEl.hasAttribute("n-scope")) {
+            if (attrs.some(({ name }) => name.startsWith("n-let-"))) console.error("[Nagi] n-let-* needs n-scope on its element:", dataEl);
+            return;
+        }
 
         const rawData = baseOf(dataEl);
         Object.entries({ ...helpers(), _nagiEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));

@@ -61,10 +61,10 @@ Makes a reactive scope from an object. Elements inside it can read and write its
 - Scopes nest. Inner elements can use the names of outer scopes too.
 
 #### `n-let-<name>`
-Adds one name to the scope from an expression, which can use the names of outer scopes. An element with `n-let-*` is a scope even without `n-scope`.
+Adds one name to the scope of its element from an expression, which can use the names of outer scopes. The element needs `n-scope`; Nagi logs an error otherwise.
 
 ```html
-<div n-let-open="false" n-let-toggle="() => open = !open">
+<div n-scope n-let-open="false" n-let-toggle="() => open = !open">
   <button n-on-click="toggle()">Menu</button>
   <nav n-bind-hidden="!open">…</nav>
 </div>

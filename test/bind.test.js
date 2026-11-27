@@ -87,7 +87,7 @@ describe("values", () => {
     });
 
     it("takes a value that ends in a semicolon", async () => {
-        const page = await mount(`<div n-let-n="1"><span id="s" n-bind-textcontent="n;"></span></div>`);
+        const page = await mount(`<div n-scope n-let-n="1"><span id="s" n-bind-textcontent="n;"></span></div>`);
         expect(page.$("#s").textContent).toBe("1");
         expect(page.errors).toEqual([]);
     });
@@ -99,13 +99,13 @@ describe("values", () => {
     });
 
     it("takes a value whose first line is a comment", async () => {
-        const page = await mount(`<div n-let-name="'Ann'"><span id="s" n-bind-textcontent="// label
+        const page = await mount(`<div n-scope n-let-name="'Ann'"><span id="s" n-bind-textcontent="// label
             name"></span></div>`);
         expect(page.$("#s").textContent).toBe("Ann");
     });
 
     it("logs a value with more than one statement", async () => {
-        const page = await mount(`<div n-let-n="1"><span id="s" n-bind-textcontent="n; n + 1">x</span></div>`);
+        const page = await mount(`<div n-scope n-let-n="1"><span id="s" n-bind-textcontent="n; n + 1">x</span></div>`);
         expect(page.$("#s").textContent).toBe("x");
         expect(page.errors).toHaveLength(1);
     });
@@ -162,13 +162,13 @@ describe("classes", () => {
     });
 
     it("splits the keys of a class object on spaces", async () => {
-        const page = await mount(`<div n-let-on="true"><span id="s" n-bind-class="{ 'btn primary': on }"></span></div>`);
+        const page = await mount(`<div n-scope n-let-on="true"><span id="s" n-bind-class="{ 'btn primary': on }"></span></div>`);
         expect([...page.$("#s").classList]).toEqual(["btn", "primary"]);
     });
 
     it("keeps a class off while its value is undefined", async () => {
         const page = await mount(`
-            <div n-let-sel="undefined" n-let-n="0"><span id="s" n-bind-class.active="(n, sel?.on)"></span></div>
+            <div n-scope n-let-sel="undefined" n-let-n="0"><span id="s" n-bind-class.active="(n, sel?.on)"></span></div>
         `);
         const scope = page.scope("#s");
         scope.n = 1;
@@ -179,7 +179,7 @@ describe("classes", () => {
 
     it("splits the items of a class array on spaces", async () => {
         const page = await mount(`
-            <div n-let-list="['x', 'a b']"><span id="s" n-bind-class="list"></span></div>
+            <div n-scope n-let-list="['x', 'a b']"><span id="s" n-bind-class="list"></span></div>
         `);
         const span = page.$("#s");
         expect([...span.classList]).toEqual(["x", "a", "b"]);

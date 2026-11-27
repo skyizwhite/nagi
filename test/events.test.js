@@ -132,7 +132,7 @@ describe("modifiers", () => {
 
     it("takes the name before the first dot as the event, and warns about modifiers it does not know", async () => {
         const page = await mount(`
-            <div n-let-got="0"><button id="b" n-on-click.self="got++"></button></div>
+            <div n-scope n-let-got="0"><button id="b" n-on-click.self="got++"></button></div>
         `);
         page.$("#b").click();
         expect(page.scope("#b").got).toBe(1);
@@ -181,7 +181,7 @@ describe("debounce", () => {
 
     it("debounces in a watcher made again by its parent", async () => {
         const page = await mount(`
-            <div n-let-q="''" n-let-saved="0">
+            <div n-scope n-let-q="''" n-let-saved="0">
                 <span id="s" n-on-init="$watch(() => { q; $watch(() => $debounce(() => saved++, 20)) })"></span>
             </div>
         `);
@@ -195,7 +195,7 @@ describe("debounce", () => {
 
     it("keeps apart debounces from different code with no handler or watcher", async () => {
         const page = await mount(`
-            <div n-let-a="0" n-let-b="0">
+            <div n-scope n-let-a="0" n-let-b="0">
                 <button id="x" n-on-click="await 0; $debounce(() => a++, 10)"></button>
                 <button id="y" n-on-click="await 0; $debounce(() => b++, 10)"></button>
             </div>
@@ -209,7 +209,7 @@ describe("debounce", () => {
 
     it("keeps apart debounces of sibling watchers with the same code", async () => {
         const page = await mount(`
-            <div n-let-a="0" n-let-b="0" n-let-saved="[]">
+            <div n-scope n-let-a="0" n-let-b="0" n-let-saved="[]">
                 <span id="s" n-on-init="[['a', () => a], ['b', () => b]].forEach(([name, read]) => $watch(() => { read(); $debounce(() => saved.push(name), 20) }))"></span>
             </div>
         `);
@@ -224,7 +224,7 @@ describe("debounce", () => {
 
     it("still runs a debounce whose watcher a parent made again without debouncing", async () => {
         const page = await mount(`
-            <div n-let-mode="0" n-let-q="''" n-let-saved="0">
+            <div n-scope n-let-mode="0" n-let-q="''" n-let-saved="0">
                 <span id="s" n-on-init="let last = ''; $watch(() => { mode; $watch(() => { const v = q; if (v !== last) { last = v; $debounce(() => saved++, 20) } }) })"></span>
             </div>
         `);

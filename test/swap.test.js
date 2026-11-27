@@ -228,7 +228,7 @@ describe("cssMorph", () => {
 
     it("keeps the classes and styles binds set after an outer swap", async () => {
         const page = await mount(
-            `<div n-let-on="true">
+            `<div n-scope n-let-on="true">
                 <button id="b" n-on-click="$get('/x')"></button>
                 <div id="target" class="card" n-bind-class.active="on" n-bind-style.color="'red'"></div>
             </div>`,
@@ -244,7 +244,7 @@ describe("cssMorph", () => {
 
     it("settles the class of an outer swap's bound target, and puts the bound classes back", async () => {
         const page = await mount(
-            `<div n-let-on="true">
+            `<div n-scope n-let-on="true">
                 <button id="b" n-on-click="$get('/x')"></button>
                 <div id="target" class="card collapsed" n-bind-class.active="on"></div>
             </div>`,
@@ -258,7 +258,7 @@ describe("cssMorph", () => {
 
     it("puts back a className bind after an outer swap", async () => {
         const page = await mount(
-            `<div n-let-cls="'card open'">
+            `<div n-scope n-let-cls="'card open'">
                 <button id="b" n-on-click="$get('/x')"></button>
                 <div id="target" class="card" n-bind-classname="cls"></div>
             </div>`,

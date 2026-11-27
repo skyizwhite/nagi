@@ -148,7 +148,7 @@ describe("async binds", () => {
 
     it("keeps the value of the newest run when an older one resolves last", async () => {
         const page = await mount(
-            `<div n-let-n="1"><span id="s" n-bind-textcontent="(async () => { const v = n; await wait(v === 1 ? 40 : 5); return v })()"></span></div>`,
+            `<div n-scope n-let-n="1"><span id="s" n-bind-textcontent="(async () => { const v = n; await wait(v === 1 ? 40 : 5); return v })()"></span></div>`,
             { beforeInit: (window) => (window.wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))) },
         );
         page.scope("#s").n = 2;
