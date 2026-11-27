@@ -43,7 +43,7 @@ Copy `dist/nagi.min.js` into your project and load it with a normal or `defer` s
 </div>
 ```
 
-`n-scope`, `n-let-*`, `n-bind-*` and `n-on-*` hold plain JavaScript, and the names of the scope can be used in them as variables. `this` is the element.
+`n-scope`, `n-let-*`, `n-bind-*` and `n-on-*` hold plain JavaScript, and the names of the scope can be used in them as variables. In them, `this` is the scope and `$el` is the element the attribute is written on.
 
 ### Attributes
 
@@ -56,8 +56,8 @@ Makes a reactive scope from an object. Elements inside it read and write its nam
 </div>
 ```
 
-- The value can be any expression that gives a plain object or a class instance, such as `n-scope="makeCart(this)"`. Methods and getters keep working, with `this` as the scope. The scope is a copy, so later changes to the original object are not seen.
-- `n-scope` cannot read the names of outer scopes. Use `n-let-*` for values made from them.
+- The value can be any expression that gives a plain object or a class instance, such as `n-scope="makeCart($el)"`. Methods and getters keep working, with `this` as the scope; write them as methods (`inc() { this.n++ }`), since an arrow function here does not get the scope as `this`. The scope is a copy, so later changes to the original object are not seen.
+- `n-scope` runs before its scope exists, so it cannot read the names of outer scopes, and `this` there is not the scope. Use `$el` for the element, and `n-let-*` for values made from outer names.
 - `n-scope` with no value makes an empty scope.
 - Scopes nest. A name is read from the nearest scope that has it, and written back to that scope.
 
@@ -114,7 +114,7 @@ Modifiers follow the event name:
 
 ```html
 <form n-on-submit.prevent="$post('/save', e)">…</form>
-<input n-on-input.debounce300="$get('/search', { q: this.value })">
+<input n-on-input.debounce300="$get('/search', { q: $el.value })">
 ```
 
 #### `n-ref`
@@ -146,9 +146,9 @@ Nagi leaves the element and everything inside it alone.
 
 ### `data-*` attributes
 
-`data-*` attributes are not names in a scope. Read them where you need them:
+Use `data-*` for constant values the server writes into the HTML; values that change belong in `n-scope` or `n-let-*`. `data-*` attributes are not names in a scope. Read them where you need them:
 
-- `this.dataset.<name>` reads the element's own. In `n-let-*`, `this` is the scope's element, so `n-let-id="this.dataset.id"` turns one into a name.
+- `$el.dataset.<name>` reads the element's own. In `n-let-*`, `$el` is the scope's element, so `n-let-id="$el.dataset.id"` turns one into a name.
 - `$dataset()` merges the `data-*` of the element and all its ancestors, up to `<html>`, the nearer ones winning. Keys are camelCase, as in `dataset`.
 
 ```html
@@ -192,7 +192,7 @@ GET, HEAD and DELETE put the data in the query string, leaving out files. Other 
 
 ```html
 <button n-on-click="$delete(`/items/${id}`)">Delete</button>
-<button n-on-click="$get('/items', { page: this.dataset.page })" data-page="2">More</button>
+<button n-on-click="$get('/items', { page: $el.dataset.page })" data-page="2">More</button>
 ```
 
 `options` can hold:
@@ -253,8 +253,8 @@ These response headers change what happens:
 
 - HTML lowercases attribute names, so what follows `n-let-`, `n-on-`, `class.` and `style.` is lowercase. `n-let-isOpen` defines `isopen`, and a name after `n-let-` must be a valid identifier to be used as a variable.
 - Only assigning a name is tracked. Write `items = [...items, x]`, not `items.push(x)`.
-- Declare every name you assign in a scope. Assigning a name no scope has makes a global variable, and nothing updates.
-- In a handler, "the element" for `$dispatch`, `$dataset` and the request events is the handler's element until the first `await`, and the scope's element after it.
+- Assigning a bare name no scope has makes a global variable, and nothing updates. Declare it in the scope, or write `this.name = …` to add it.
+- `$el` stays the handler's element after an `await`, but `$dispatch`, `$dataset()` and the request events use the scope's element after the first `await`.
 - Elements added by other scripts are not set up. Only the page at `DOMContentLoaded` and what a response swaps in are.
 - Outside any scope, a name in `n-bind-*` is read from `window`, and the binding does not update when it changes.
 
