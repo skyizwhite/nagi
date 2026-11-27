@@ -514,21 +514,15 @@
         const found = descriptorOf(rawData, name);
         if (found?.get && !found.set) return console.error("[Nagi] this field's name is a getter of the scope:", name, inputEl);
 
-        const formEl = inputEl.closest("[n-form]");
-        const listed = type === "radio" || (type === "checkbox" && inputEl.hasAttribute("value"));
-        const group = () =>
-            queryAttr(formEl, `input[type=${type}]`).filter(
-                (el) => el.name === inputEl.name && el.form === inputEl.form && formScope(el) === scopeEl && (type === "radio" || el.hasAttribute("value")),
-            );
         const read = {
-            radio: () => group().find((el) => el.checked)?.value,
-            checkbox: () => (listed ? group().filter((el) => el.checked).map((el) => el.value) : inputEl.checked),
+            checkbox: () => inputEl.checked,
             file: () => inputEl.files,
             number: () => (inputEl.value === "" ? undefined : +inputEl.value),
             range: () => +inputEl.value,
+            "select-multiple": () => [...inputEl.selectedOptions].map((option) => option.value),
         }[type] ?? (() => inputEl.value);
         const setVal = () => {
-            proxyData[inputEl.name] = read();
+            if (type !== "radio" || inputEl.checked) proxyData[inputEl.name] = read();
         };
 
         if (!hasName(rawData, name)) define(rawData, name, undefined);
@@ -541,7 +535,7 @@
             form.addEventListener("reset", onReset);
             (inputEl.nagiCleanup ||= []).push(() => form.removeEventListener("reset", onReset));
         }
-        return { key: listed ? group()[0] : inputEl, setVal };
+        return setVal;
     };
 
     const propOf = (obj, name) => {
@@ -717,7 +711,7 @@
             dispatch(bindEl, "init", { bubbles: false });
         });
 
-        new Map(fields.map(({ key, setVal }) => [key, setVal])).forEach((setVal) => setVal());
+        fields.forEach((setVal) => setVal());
     };
 
     document.addEventListener("DOMContentLoaded", () => init(document.body));

@@ -246,9 +246,26 @@ describe("n-form", () => {
         expect(["total" in page.$("#f").nagiRaw, "pick" in page.$("#f").nagiRaw]).toEqual([false, false]);
     });
 
-    it("reads a checkbox with a value as a list, however many share its name", async () => {
-        const page = await mount(`<form id="f" n-scope n-form><input type="checkbox" name="t" value="a" checked></form>`);
-        expect([...page.$("#f").nagiProxy.t]).toEqual(["a"]);
+    it("reads a checkbox as a boolean, whether or not it has a value", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input type="checkbox" name="agree" value="yes"></form>`);
+        expect(page.$("#f").nagiProxy.agree).toBe(false);
+    });
+
+    it("keeps the scope's value for a radio group with nothing checked in its HTML", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ c: 'red' }" n-form>
+                <input type="radio" name="c" value="red" n-bind-checked="c === 'red'"><input type="radio" name="c" value="blue" n-bind-checked="c === 'blue'">
+            </form>
+        `);
+        expect(page.$("#f").nagiProxy.c).toBe("red");
+        expect(page.$("[value=red]").checked).toBe(true);
+    });
+
+    it("reads a multiple select as the list of the selected values", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form><select name="s" multiple><option selected>a</option><option selected>b</option><option>c</option></select></form>
+        `);
+        expect([...page.$("#f").nagiProxy.s]).toEqual(["a", "b"]);
     });
 
     it("logs a field named like a getter of the scope", async () => {
@@ -304,20 +321,6 @@ describe("n-form", () => {
         b.checked = true;
         b.dispatchEvent(new page.window.Event("change"));
         expect(page.$("#d").nagiProxy.s).toBe("b");
-    });
-
-    it("reads checkboxes that share a name as the list of the checked values", async () => {
-        const page = await mount(`
-            <form id="f" n-scope n-form>
-                <input type="checkbox" name="t" value="a" checked><input id="b" type="checkbox" name="t" value="b"><input type="checkbox" name="one">
-            </form>
-        `);
-        const scope = page.$("#f").nagiProxy;
-        expect([...scope.t]).toEqual(["a"]);
-        expect(scope.one).toBe(false);
-        page.$("#b").checked = true;
-        page.$("#b").dispatchEvent(new page.window.Event("change"));
-        expect([...scope.t]).toEqual(["a", "b"]);
     });
 
     it("has read the fields by the time binds and init handlers first run", async () => {
