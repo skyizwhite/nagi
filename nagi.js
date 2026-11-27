@@ -109,7 +109,7 @@
     };
 
     // Helpers that are included with every data object
-    const helpers = (pending = 0, writing = new Set(), controllers = new Set(), reads = new Set()) => ({
+    const helpers = (pending = 0, writing = new Set(), controllers = new Set(), read = null) => ({
         $refs: {},
         $fetching: false,
         _nagiAbort: new AbortController(),
@@ -126,8 +126,7 @@
             this._nagiStop();
         },
         _nagiStop() {
-            reads.forEach((controller) => controller.abort());
-            reads.clear();
+            read?.abort();
             this._nagiAbort.abort();
             this._nagiAbort = new AbortController();
         },
@@ -158,6 +157,7 @@
                 write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sentOf(entries)) : ""}`;
                 if (dedupe && writing.has(write)) return;
 
+                read?.abort();
                 this._nagiAbort.abort();
                 return opts;
             });
@@ -165,10 +165,8 @@
             if (!opts) return report("fetchskip", { method, url });
 
             this._nagiAbort = new AbortController();
-            const order = ++requestCount;
-            const elReads = reading && el && (el.nagiReads ||= new Set());
-            if (reading) reads.add(controller);
-            if (elReads) elReads.add(controller);
+            if (reading) read = controller;
+            if (reading && el) el.nagiRead = controller;
             const deduped = write && dedupe;
             if (deduped) writing.add(write);
             controllers.add(controller);
@@ -205,7 +203,7 @@
                             console.warn("[Nagi] cannot replace the URL with", replace, err);
                         }
                     }
-                    if (swapped) swap(text, order);
+                    if (swapped) swap(text);
                     if (!res.ok)
                         throw Object.assign(new Error(`${res.status} ${res.statusText}`), { status: res.status, text, swapped });
                 })
@@ -217,8 +215,8 @@
                 .finally(() => {
                     clearTimeout(timer);
                     controllers.delete(controller);
-                    reads.delete(controller);
-                    if (elReads) elReads.delete(controller);
+                    if (read === controller) read = null;
+                    if (el?.nagiRead === controller) el.nagiRead = null;
                     if (deduped) writing.delete(write);
                     if (!--pending) this.$fetching = false;
                 });
@@ -342,7 +340,7 @@
         });
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
-            node.nagiReads?.forEach((controller) => controller.abort());
+            node.nagiRead?.abort();
             node.nagiRuns?.forEach(kill);
             node.nagiCleanup?.forEach((clean) => clean());
             node.nagiTimers?.forEach(clearTimeout);
@@ -352,19 +350,13 @@
 
     const initAll = (nodes) => nodes.forEach((node) => node.nodeType === 1 && init(node));
 
-    let requestCount = 0;
-    const swappedBy = new Map();
-
-    const swap = (text, order) => {
+    const swap = (text) => {
         for (const fragment of fragmentsOf(text)) {
             const strategy = fragment.getAttribute("n-swap") || "outer";
             const target = fragment.id && document.getElementById(fragment.id);
             if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
             if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
             if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
-            const replacing = strategy === "outer" || strategy === "inner";
-            if (replacing && swappedBy.get(fragment.id) > order) continue;
-            if (replacing) swappedBy.set(fragment.id, order);
 
             const kids = [...fragment.childNodes];
 
