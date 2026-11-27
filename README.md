@@ -10,11 +10,11 @@ Nagi lets you:
 - Add lightweight reactive state directly in your HTML
 - Bind DOM properties and classes with automatic dependency tracking
 - Listen to any event with inline handlers
-- Make requests and swap their answers into any part of the page
+- Make requests and swap their responses into any part of the page
 - Keep everything declarative and local
 
 ## Why Nagi?
-- Write plain JavaScript, no special DSLs to learn
+- Values are plain JavaScript, and the only syntax to learn is a handful of attribute names
 - One attribute per binding, so templates can add, leave out or pass along each one
 - Event handlers with modifiers and access to reactive variables
 - Requests send exactly what you give them
