@@ -61,7 +61,7 @@ Makes a reactive scope from an object. Elements inside it can read and write its
 - Scopes nest. Inner elements can use the names of outer scopes too.
 
 #### `n-let-<name>`
-Adds one name to the scope from an expression, which can use the names of outer scopes. Write it on the element of `n-scope`; Nagi logs an error otherwise. Elements inside the scope read and write the name as any other.
+Adds one name to the scope from an expression, which can use the names of outer scopes. Write it on the element of `n-scope`; elsewhere Nagi logs an error and ignores it. Elements inside the scope read and write the name as any other.
 
 ```html
 <div n-scope n-let-open="false" n-let-toggle="() => open = !open">
@@ -70,7 +70,7 @@ Adds one name to the scope from an expression, which can use the names of outer 
 </div>
 ```
 
-- It wins over a key of the same name in the `n-scope` object.
+- It replaces a key of the same name in the `n-scope` object. A key with a setter gets the value through the setter.
 - Names starting with `$` or `_nagi` are reserved for Nagi.
 
 #### `n-bind-<property>`
