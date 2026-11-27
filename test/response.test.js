@@ -161,8 +161,8 @@ describe("aborted requests", () => {
         const page = await mount(
             `<div n-scope>
                 <div id="list"><button id="slow" n-on-click="$get('/slow')"></button></div>
-                <button id="swap" n-on-click="$get('/swap')"></button>
             </div>
+            <div n-scope><button id="swap" n-on-click="$get('/swap')"></button></div>
             <div id="late">old</div>`,
             {
                 server: ({ url }) =>
