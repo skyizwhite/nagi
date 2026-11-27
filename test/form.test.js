@@ -238,10 +238,18 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.coupon).toBe("gone");
     });
 
-    it("reads a named output and a named custom element", async () => {
-        const page = await mount(`<form id="f" n-scope n-form><output name="total">3</output><x-pick name="pick"></x-pick></form>`);
+    it("reads a named output and a named custom element that has a value", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form><output name="total">3</output><x-pick name="pick"></x-pick></form>`,
+            { beforeInit: (window) => window.customElements.define("x-pick", class extends window.HTMLElement { value = "p"; }) },
+        );
         expect(page.$("#f").nagiProxy.total).toBe("3");
-        expect("pick" in page.$("#f").nagiRaw).toBe(true);
+        expect(page.$("#f").nagiProxy.pick).toBe("p");
+    });
+
+    it("leaves alone a named custom element that is not a field, such as an icon", async () => {
+        const page = await mount(`<form id="f" n-scope="{ search: 'foo' }" n-form><sl-icon name="search"></sl-icon></form>`);
+        expect(page.$("#f").nagiProxy.search).toBe("foo");
     });
 
     it("reads a select whose options a bind adds once the bind has run", async () => {
@@ -266,13 +274,40 @@ describe("n-form", () => {
         expect([a.checked, b.checked, page.$("#f").nagiProxy.s]).toEqual([false, true, "b"]);
     });
 
-    it("lets a number field be cleared", async () => {
-        const page = await mount(`<form id="f" n-scope n-form><input type="number" name="n" value="5"></form>`);
+    it("reads an empty number field as undefined, so it can be cleared", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input type="number" name="n" value="5" n-bind-value="n ?? ''"></form>`);
         const input = page.$("[name=n]");
         input.value = "";
         input.dispatchEvent(new page.window.Event("input"));
         expect(input.value).toBe("");
-        expect(page.$("#f").nagiProxy.n).toBe(0);
+        expect(page.$("#f").nagiProxy.n).toBeUndefined();
+    });
+
+    it("reads a radio group within its own form, leaving out ignored radios", async () => {
+        const page = await mount(`
+            <div id="d" n-scope n-form>
+                <form><input type="radio" name="s" value="a" checked></form>
+                <form><input id="b" type="radio" name="s" value="b"><div n-ignore><input type="radio" name="s" value="z" checked></div></form>
+            </div>
+        `);
+        const b = page.$("#b");
+        b.checked = true;
+        b.dispatchEvent(new page.window.Event("change"));
+        expect(page.$("#d").nagiProxy.s).toBe("b");
+    });
+
+    it("reads checkboxes that share a name as the list of the checked values", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input type="checkbox" name="t" value="a" checked><input id="b" type="checkbox" name="t" value="b"><input type="checkbox" name="one">
+            </form>
+        `);
+        const scope = page.$("#f").nagiProxy;
+        expect([...scope.t]).toEqual(["a"]);
+        expect(scope.one).toBe(false);
+        page.$("#b").checked = true;
+        page.$("#b").dispatchEvent(new page.window.Event("change"));
+        expect([...scope.t]).toEqual(["a", "b"]);
     });
 
     it("has read the fields by the time binds and init handlers first run", async () => {

@@ -506,14 +506,15 @@
         checkbox: (el) => el.checked,
         radio: (el) => el.value,
         file: (el) => el.files,
-        number: (el) => +el.value,
+        number: (el) => (el.value === "" ? undefined : +el.value),
         range: (el) => +el.value,
     };
 
     const nameOf = (el) => el.name ?? el.getAttribute("name");
 
     const isField = (el) =>
-        el.tagName.includes("-") || /^(SELECT|TEXTAREA|OUTPUT)$/.test(el.tagName)
+        (el.tagName.includes("-") && (el.constructor.formAssociated || "value" in el))
+            || /^(SELECT|TEXTAREA|OUTPUT)$/.test(el.tagName)
             || (el.tagName === "INPUT" && !/^(submit|image|button|reset)$/.test(el.type));
 
     const hasName = (raw, name) => {
@@ -526,9 +527,18 @@
         const formEl = inputEl.closest("[n-form]");
         const read = inputReaders[inputEl.type] ?? ((el) => el.value);
         const group = () =>
-            [...formEl.querySelectorAll("input[type=radio]")].filter((el) => nameOf(el) === nameOf(inputEl) && formScope(el) === scopeEl);
+            queryAttr(formEl, `input[type=${inputEl.type}]`).filter(
+                (el) => nameOf(el) === nameOf(inputEl) && el.form === inputEl.form && formScope(el) === scopeEl,
+            );
+        const readGroup = {
+            radio: () => group().find((el) => el.checked)?.value,
+            checkbox: () => {
+                const boxes = group();
+                return boxes.length > 1 ? boxes.filter((el) => el.checked).map((el) => el.value) : inputEl.checked;
+            },
+        }[inputEl.type];
         const setVal = () => {
-            proxyData[nameOf(inputEl)] = inputEl.type === "radio" ? group().find((el) => el.checked)?.value : read(inputEl);
+            proxyData[nameOf(inputEl)] = readGroup ? readGroup() : read(inputEl);
         };
 
         if (!hasName(rawData, nameOf(inputEl))) define(rawData, nameOf(inputEl), undefined);
@@ -536,7 +546,7 @@
         inputEl.addEventListener("input", setVal);
         inputEl.addEventListener("change", setVal);
         const { form } = inputEl;
-        if (form) {
+        if (form instanceof HTMLFormElement) {
             const onReset = () => setTimeout(() => inputEl.isConnected && setVal());
             form.addEventListener("reset", onReset);
             (inputEl.nagiCleanup ||= []).push(() => form.removeEventListener("reset", onReset));
