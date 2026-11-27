@@ -510,11 +510,22 @@
 
     const fieldOf = (inputEl, scopeEl) => {
         const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
-        const { name, type } = inputEl;
-        const found = descriptorOf(rawData, name);
-        if (found?.get && !found.set) return console.error("[Nagi] this field's name is a getter of the scope:", name, inputEl);
+        const { name, type, form } = inputEl;
+        const radio = type === "radio";
+        const owned = (scopeEl.nagiFields ||= new Map());
+        let group = owned.get(name);
+        if (group?.members.size && !(radio && group.radio && group.form === form))
+            return console.error("[Nagi] another field of the form has this name:", name, inputEl);
+        if (!group) {
+            if (hasName(rawData, name)) return console.error("[Nagi] this field's name is already a name of the scope:", name, inputEl);
+            define(rawData, name, undefined);
+            owned.set(name, (group = { members: new Set() }));
+        }
+        Object.assign(group, { radio, form });
+        group.members.add(inputEl);
 
         const read = {
+            radio: () => [...group.members].find((el) => el.checked)?.value,
             checkbox: () => inputEl.checked,
             file: () => inputEl.files,
             number: () => (inputEl.value === "" ? undefined : +inputEl.value),
@@ -522,25 +533,19 @@
             "select-multiple": () => [...inputEl.selectedOptions].map((option) => option.value),
         }[type] ?? (() => inputEl.value);
         const setVal = () => {
-            if (type !== "radio" || inputEl.checked) proxyData[inputEl.name] = read();
-        };
-        const syncRadio = () => {
-            proxyData[inputEl.name] = queryAttr(scopeEl, "input[type=radio]").find(
-                (el) => el.name === inputEl.name && el.checked && formScope(el) === scopeEl,
-            )?.value;
+            proxyData[name] = read();
         };
 
-        if (!hasName(rawData, name)) define(rawData, name, undefined);
         setVal();
         inputEl.addEventListener("input", setVal);
         inputEl.addEventListener("change", setVal);
-        const { form } = inputEl;
+        const cleanup = (inputEl.nagiCleanup ||= []);
+        cleanup.push(() => group.members.delete(inputEl));
         if (form) {
-            const onReset = () => setTimeout(() => inputEl.isConnected && (type === "radio" ? syncRadio() : setVal()));
+            const onReset = () => setTimeout(() => inputEl.isConnected && setVal());
             form.addEventListener("reset", onReset);
-            (inputEl.nagiCleanup ||= []).push(() => form.removeEventListener("reset", onReset));
+            cleanup.push(() => form.removeEventListener("reset", onReset));
         }
-
     };
 
     const propOf = (obj, name) => {

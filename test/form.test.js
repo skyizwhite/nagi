@@ -38,12 +38,13 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.text).toBe("bye");
     });
 
-    it("writes to the name the field has when it changes, though a bind changed it", async () => {
+    it("keeps writing to the name a field had when it was set up", async () => {
         const page = await mount(`<form id="f" n-scope="{ k: 'b' }" n-form><input name="a" n-bind-name="k"></form>`);
         const input = page.$("[name=b]");
         input.value = "z";
         input.dispatchEvent(new page.window.Event("input"));
-        expect(page.$("#f").nagiProxy.b).toBe("z");
+        expect(page.$("#f").nagiProxy.a).toBe("z");
+        expect("b" in page.$("#f").nagiRaw).toBe(false);
     });
 
     it("disables the submit buttons while the scope is fetching", async () => {
@@ -128,10 +129,13 @@ describe("n-form", () => {
         expect(page.errors).toHaveLength(1);
     });
 
-    it("takes a field's value from its HTML, over a value the scope gave the name", async () => {
-        const page = await mount(`<form id="f" n-scope="{ email: 'a@b.c' }" n-form><input name="email" value="html"></form>`);
-        expect(page.$("[name=email]").value).toBe("html");
-        expect(page.$("#f").nagiProxy.email).toBe("html");
+    it("logs a field whose name n-scope or n-let-* already gave the scope, and leaves it out", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ email: 'a@b.c' }" n-let-q="'x'" n-form><input name="email" value="html"><input name="q" value="y"></form>
+        `);
+        const scope = page.$("#f").nagiProxy;
+        expect([scope.email, scope.q]).toEqual(["a@b.c", "x"]);
+        expect(page.errors).toHaveLength(2);
     });
 
     it("writes a scope value into a field only through n-bind-value, and reads it back", async () => {
@@ -182,16 +186,27 @@ describe("n-form", () => {
         expect([page.$("#a").disabled, page.$("#b").disabled]).toEqual([false, false]);
     });
 
-    it("leaves fields that share a name, such as a checkbox group, to their own values", async () => {
+    it("logs fields other than radios that share a name, and reads only the first", async () => {
         const page = await mount(`
-            <form n-scope n-form>
+            <form id="f" n-scope n-form>
                 <input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b">
                 <input type="hidden" name="ids" value="1"><input type="hidden" name="ids" value="2">
             </form>
         `);
-        const all = (name) => [...page.window.document.querySelectorAll(`[name=${name}]`)];
-        expect(all("t").map((el) => el.checked)).toEqual([true, false]);
-        expect(all("ids").map((el) => el.value)).toEqual(["1", "2"]);
+        const scope = page.$("#f").nagiProxy;
+        expect([scope.t, scope.ids]).toEqual([true, "1"]);
+        expect(page.errors).toHaveLength(2);
+    });
+
+    it("lets a field a swap brings in take the name of the one it replaced", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form><div id="g"><input name="q" value="old"></div><button id="b" type="button" n-on-click="$get('/x')"></button></form>`,
+            { server: () => `<div id="g"><input name="q" value="new"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#f").nagiProxy.q).toBe("new");
+        expect(page.errors).toEqual([]);
     });
 
     it("does not copy named input buttons, and leaves their values alone", async () => {
@@ -296,17 +311,25 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.n).toBeUndefined();
     });
 
-    it("reads a radio group within its own form, leaving out ignored radios", async () => {
+    it("leaves ignored radios out of a radio group", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form><input id="a" type="radio" name="s" value="a"><div n-ignore><input type="radio" name="s" value="z" checked></div></form>
+        `);
+        expect(page.$("#f").nagiProxy.s).toBeUndefined();
+        page.$("#a").checked = true;
+        page.$("#a").dispatchEvent(new page.window.Event("change"));
+        expect(page.$("#f").nagiProxy.s).toBe("a");
+    });
+
+    it("logs radios of one name in different forms of a scope, and keeps the first form's", async () => {
         const page = await mount(`
             <div id="d" n-scope n-form>
                 <form><input type="radio" name="s" value="a" checked></form>
-                <form><input id="b" type="radio" name="s" value="b"><div n-ignore><input type="radio" name="s" value="z" checked></div></form>
+                <form><input type="radio" name="s" value="b" checked></form>
             </div>
         `);
-        const b = page.$("#b");
-        b.checked = true;
-        b.dispatchEvent(new page.window.Event("change"));
-        expect(page.$("#d").nagiProxy.s).toBe("b");
+        expect(page.$("#d").nagiProxy.s).toBe("a");
+        expect(page.errors).toHaveLength(1);
     });
 
     it("has read the fields by the time binds and init handlers first run", async () => {
@@ -358,18 +381,6 @@ describe("n-form", () => {
         page.$("#f").reset();
         await later(10);
         expect(page.$("#f").nagiProxy.s).toBeUndefined();
-    });
-
-    it("reads a radio group across the forms of its scope when one of them is reset", async () => {
-        const page = await mount(`
-            <div id="d" n-scope n-form>
-                <form id="A"><input type="radio" name="s" value="a"></form>
-                <form><input type="radio" name="s" value="b" checked></form>
-            </div>
-        `);
-        page.$("#A").reset();
-        await later(10);
-        expect(page.$("#d").nagiProxy.s).toBe("b");
     });
 
     it("keeps the type of a value an init handler set when a bind writes it into its field", async () => {
