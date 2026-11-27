@@ -136,7 +136,7 @@ describe("what is sent", () => {
 
     it("sends the fields of a form element as FormData", async () => {
         const page = await mount(
-            `<form id="f" n-scope n-on-submit.prevent="$post('/save', this)">
+            `<form id="f" n-scope n-on-submit.prevent="$post('/save', $el)">
                 <input name="title" value="Hi">
                 <input name="tag" value="a"><input name="tag" value="b">
             </form>`,
@@ -213,7 +213,7 @@ describe("what is sent", () => {
 
     it("sends the form an element is in when the element is passed", async () => {
         const page = await mount(
-            `<form n-scope><input name="q" value="hi"><button id="b" type="button" n-on-click="$post('/x', this)"></button></form>`,
+            `<form n-scope><input name="q" value="hi"><button id="b" type="button" n-on-click="$post('/x', $el)"></button></form>`,
             { server: () => "" },
         );
         page.$("#b").click();
@@ -222,7 +222,7 @@ describe("what is sent", () => {
     });
 
     it("warns about an element or event in no form, and sends no data", async () => {
-        const page = await send(`$post('/x', this); $get('/y', e)`);
+        const page = await send(`$post('/x', $el); $get('/y', e)`);
         expect(page.requests.map((r) => [r.url, r.body])).toEqual([
             ["http://localhost/x", ""],
             ["http://localhost/y", undefined],
@@ -675,7 +675,7 @@ describe("dedupe", () => {
     it("skips a second submit of a form with an empty file input", async () => {
         const answers = [];
         const page = await mount(
-            `<form id="f" n-scope n-on-submit.prevent="$post('/save', this)"><input name="t" value="x"><input type="file" name="doc"></form>`,
+            `<form id="f" n-scope n-on-submit.prevent="$post('/save', $el)"><input name="t" value="x"><input type="file" name="doc"></form>`,
             { server: () => new Promise((resolve) => answers.push(resolve)) },
         );
         const submit = () => page.$("#f").dispatchEvent(new page.window.Event("submit", { cancelable: true }));

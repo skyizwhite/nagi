@@ -3,9 +3,9 @@ import { mount } from "./helpers.js";
 import { later } from "./support.js";
 
 describe("handlers", () => {
-    it("listens with on<event> and runs the handler with this as the element", async () => {
+    it("listens with on<event> and runs the handler with $el as the element", async () => {
         const page = await mount(`
-            <div n-scope="{ id: null }"><button id="b" n-on-click="id = this.id + ':' + e.type"></button></div>
+            <div n-scope="{ id: null }"><button id="b" n-on-click="id = $el.id + ':' + e.type"></button></div>
         `);
         page.$("#b").click();
         expect(page.scope("#b").id).toBe("b:click");
@@ -19,9 +19,9 @@ describe("handlers", () => {
         expect(page.scope("#s").got).toBe(42);
     });
 
-    it("runs statements with the event as e and the element as this", async () => {
+    it("runs statements with the event as e and the element as $el", async () => {
         const page = await mount(`
-            <div n-scope="{ got: null }"><button id="b" n-on-click="const t = e.type; got = this.id + ':' + t"></button></div>
+            <div n-scope="{ got: null }"><button id="b" n-on-click="const t = e.type; got = $el.id + ':' + t"></button></div>
         `);
         page.$("#b").click();
         expect(page.scope("#b").got).toBe("b:click");
@@ -143,7 +143,7 @@ describe("modifiers", () => {
 describe("debounce", () => {
     it("runs only the last of quick events with .debounce<ms>", async () => {
         const page = await mount(`
-            <div n-scope="{ got: [] }"><input id="i" n-on-input.debounce30="got = [...got, this.value]"></div>
+            <div n-scope="{ got: [] }"><input id="i" n-on-input.debounce30="got = [...got, $el.value]"></div>
         `);
         const input = page.$("#i");
         for (const value of ["a", "ab", "abc"]) {
