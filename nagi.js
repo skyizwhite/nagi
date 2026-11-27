@@ -44,8 +44,15 @@
         for (; el; el = el.parentElement) if (el.nagiProxy) return el;
     };
 
-    let pageScope;
-    const getClosestProxy = (el) => closestScope(el)?.nagiProxy ?? (pageScope ||= reactive(helpers(true)));
+    const pageWriting = new Set();
+    const pageRefs = {};
+    const ownScopes = new WeakMap();
+    const getClosestProxy = (el) => {
+        const scope = closestScope(el)?.nagiProxy;
+        if (scope) return scope;
+        if (!ownScopes.has(el)) ownScopes.set(el, reactive(helpers(pageWriting, pageRefs)));
+        return ownScopes.get(el);
+    };
 
     const hostOf = (scope) => currentEl ?? scope._nagiEl;
 
@@ -104,8 +111,8 @@
     };
 
     // Helpers that are included with every data object
-    const helpers = (independent = false, pending = 0, writing = new Set(), controllers = new Set()) => ({
-        $refs: {},
+    const helpers = (writing = new Set(), $refs = {}, pending = 0, controllers = new Set()) => ({
+        $refs,
         $fetching: false,
         _nagiAbort: new AbortController(),
         ...Object.fromEntries(
@@ -148,13 +155,13 @@
                 write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sentOf(entries)) : ""}`;
                 if (dedupe && writing.has(write)) return;
 
-                if (!independent) this._nagiAbort.abort();
+                this._nagiAbort.abort();
                 return opts;
             });
 
             if (!opts) return report("fetchskip", { method, url });
 
-            if (!independent) this._nagiAbort = reading ? controller : new AbortController();
+            this._nagiAbort = reading ? controller : new AbortController();
             const deduped = write && dedupe;
             if (deduped) writing.add(write);
             controllers.add(controller);

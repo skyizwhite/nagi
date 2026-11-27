@@ -927,6 +927,50 @@ describe("elements outside any scope", () => {
         await page.settle();
     });
 
+    it("abort an older read of the same element", async () => {
+        const signals = [];
+        const page = await mount(`<button id="a" n-on-click="$get('/a')"></button>`, { server: () => "" });
+        const fetch = page.window.fetch;
+        page.window.fetch = (url, opts) => {
+            signals.push(opts.signal);
+            return fetch(url, opts);
+        };
+        page.$("#a").click();
+        page.$("#a").click();
+        expect(signals.map((s) => s.aborted)).toEqual([true, false]);
+        await page.settle();
+    });
+
+    it("$abort only the requests of the element that calls it", async () => {
+        const { page, answers } = await mountWaiting(`
+            <button id="save" n-on-click="$post('/save')"></button>
+            <button id="cancel" n-on-click="$abort()"></button>
+        `);
+        const signals = [];
+        const fetch = page.window.fetch;
+        page.window.fetch = (url, opts) => {
+            signals.push(opts.signal);
+            return fetch(url, opts);
+        };
+        page.$("#save").click();
+        page.$("#cancel").click();
+        expect(signals.map((s) => s.aborted)).toEqual([false]);
+        answers.forEach((answer) => answer(""));
+        await page.settle();
+    });
+
+    it("drop an abortable debounce of the element when it makes a request", async () => {
+        const page = await mount(
+            `<input id="i" n-on-input="$debounce(() => $get('/late'), 20, true)" n-on-change="$post('/now')">`,
+            { server: () => "" },
+        );
+        page.$("#i").dispatchEvent(new page.window.Event("input"));
+        page.$("#i").dispatchEvent(new page.window.Event("change"));
+        await later(40);
+        await page.settle();
+        expect(page.requests.map((r) => r.url)).toEqual(["http://localhost/now"]);
+    });
+
     it("keep their n-ref in one $refs for the page", async () => {
         const page = await mount(`<input id="i" n-ref="field"><button id="b" n-on-click="$refs.field.value = 'set'"></button>`);
         page.$("#b").click();
@@ -934,7 +978,7 @@ describe("elements outside any scope", () => {
         expect(page.errors).toEqual([]);
     });
 
-    it("bind $fetching for the requests of the page", async () => {
+    it("bind $fetching for their own requests", async () => {
         const { page, answers } = await mountWaiting(`<button id="b" n-on-click="$post('/x')" n-bind-disabled="$fetching"></button>`);
         page.$("#b").click();
         expect(page.$("#b").disabled).toBe(true);
