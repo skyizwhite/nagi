@@ -625,17 +625,17 @@
             const proxyData = formProxy(inputEl);
             if (!proxyData) return;
 
-            const { name, type } = inputEl;
+            const { type } = inputEl;
             const rawData = closestScope(inputEl.closest("[n-form]"))?.nagiRaw;
-            if (rawData && !(name in rawData)) define(rawData, name, undefined);
+            if (rawData && !(inputEl.name in rawData)) define(rawData, inputEl.name, undefined);
 
             const read = inputReaders[type] ?? ((el) => el.value);
             const setVal = () => {
                 if (type === "radio" && !inputEl.checked) {
-                    if (!(name in proxyData)) proxyData[name] = undefined;
+                    if (!(inputEl.name in proxyData)) proxyData[inputEl.name] = undefined;
                     return;
                 }
-                proxyData[name] = read(inputEl);
+                proxyData[inputEl.name] = read(inputEl);
             };
 
             setVal();

@@ -37,6 +37,14 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.text).toBe("bye");
     });
 
+    it("writes to the name the field has when it changes, though a bind changed it", async () => {
+        const page = await mount(`<form id="f" n-scope="{ k: 'b' }" n-form><input name="a" n-bind-name="k"></form>`);
+        const input = page.$("[name=b]");
+        input.value = "z";
+        input.dispatchEvent(new page.window.Event("input"));
+        expect(page.$("#f").nagiProxy.b).toBe("z");
+    });
+
     it("disables the submit buttons while the scope is fetching", async () => {
         const page = await mount(form);
         const scope = page.$("#f").nagiProxy;
