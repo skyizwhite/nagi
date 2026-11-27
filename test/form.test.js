@@ -128,33 +128,24 @@ describe("n-form", () => {
         expect(page.errors).toHaveLength(1);
     });
 
-    it("fills a field from a value the scope already has, and reads the field otherwise", async () => {
-        const page = await mount(`
-            <form id="f" n-scope="{ email: 'a@b.c' }" n-form>
-                <input name="email" value="html"><input name="other" value="mine">
-            </form>
-        `);
-        expect(page.$("[name=email]").value).toBe("a@b.c");
-        expect(page.$("#f").nagiProxy.other).toBe("mine");
+    it("takes a field's value from its HTML, over a value the scope gave the name", async () => {
+        const page = await mount(`<form id="f" n-scope="{ email: 'a@b.c' }" n-form><input name="email" value="html"></form>`);
+        expect(page.$("[name=email]").value).toBe("html");
+        expect(page.$("#f").nagiProxy.email).toBe("html");
     });
 
-    it("writes scope changes back to text, checkbox, radio and select fields", async () => {
-        const page = await mount(`
-            <form id="f" n-scope n-form>
-                <input name="text" value="a"><input name="agree" type="checkbox">
-                <input name="size" type="radio" value="s" checked><input name="size" type="radio" value="m">
-                <select name="pick"><option>a</option><option>b</option></select>
-            </form>
-        `);
+    it("writes a scope value into a field only through n-bind-value, and reads it back", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input name="q" value="a" n-bind-value="q"><input name="other" value="o"></form>`);
         const scope = page.$("#f").nagiProxy;
-        scope.text = "b";
-        scope.agree = true;
-        scope.size = "m";
-        scope.pick = "b";
-        expect(page.$("[name=text]").value).toBe("b");
-        expect(page.$("[name=agree]").checked).toBe(true);
-        expect([...page.window.document.querySelectorAll("[name=size]")].map((r) => r.checked)).toEqual([false, true]);
-        expect(page.$("[name=pick]").value).toBe("b");
+        scope.q = "b";
+        scope.other = "x";
+        expect(page.$("[name=q]").value).toBe("b");
+        expect(page.$("[name=other]").value).toBe("o");
+    });
+
+    it("reads a field again after its binds have run", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input name="q" n-bind-value="'x'"></form>`);
+        expect(page.$("#f").nagiProxy.q).toBe("x");
     });
 
     it("leaves what is typed in a number field alone when it reads as the same number", async () => {
@@ -247,41 +238,19 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.coupon).toBe("gone");
     });
 
-    it("checks the radio whose value matches a number in the scope", async () => {
-        const page = await mount(`
-            <form n-scope="{ qty: 2 }" n-form><input type="radio" name="qty" value="1" checked><input type="radio" name="qty" value="2"></form>
-        `);
-        expect([...page.window.document.querySelectorAll("[name=qty]")].map((el) => el.checked)).toEqual([false, true]);
-    });
-
-    it("binds a named output and a named custom element", async () => {
-        const page = await mount(`
-            <form id="f" n-scope="{ total: '3' }" n-form><output name="total"></output><x-pick name="pick"></x-pick></form>
-        `);
-        expect(page.$("output").value).toBe("3");
+    it("reads a named output and a named custom element", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><output name="total">3</output><x-pick name="pick"></x-pick></form>`);
+        expect(page.$("#f").nagiProxy.total).toBe("3");
         expect("pick" in page.$("#f").nagiRaw).toBe(true);
     });
 
-    it("selects the scope's value in a select whose options a bind adds", async () => {
+    it("reads a select whose options a bind adds once the bind has run", async () => {
         const page = await mount(`
-            <form n-scope="{ city: 'b', opts: '<option>a</option><option>b</option>' }" n-form>
+            <form id="f" n-scope="{ opts: '<option>a</option><option>b</option>' }" n-form>
                 <select name="city" n-bind-innerhtml="opts"></select>
             </form>
         `);
-        expect(page.$("select").value).toBe("b");
-    });
-
-    it("shows a 0 from the scope in an empty number field", async () => {
-        const page = await mount(`<form n-scope="{ n: 0 }" n-form><input type="number" name="n"></form>`);
-        expect(page.$("[name=n]").value).toBe("0");
-    });
-
-    it("resets a field to the value the scope filled it with", async () => {
-        const page = await mount(`<form id="f" n-scope="{ email: 'a@b.c' }" n-form><input name="email" value="html"></form>`);
-        page.$("#f").reset();
-        await later(10);
-        expect(page.$("[name=email]").value).toBe("a@b.c");
-        expect(page.$("#f").nagiProxy.email).toBe("a@b.c");
+        expect(page.$("#f").nagiProxy.city).toBe("a");
     });
 
     it("resets a radio group to its default whatever order the radios come in", async () => {
@@ -321,26 +290,6 @@ describe("n-form", () => {
         const page = await mount(`<form id="f" n-scope="{ a: 1 }" n-form><input name="constructor" value="x"></form>`);
         expect(page.$("[name=constructor]").value).toBe("x");
         expect(page.$("#f").nagiProxy.constructor).toBe("x");
-    });
-
-    it("does not count a field of an inner n-form scope as sharing the outer field's name", async () => {
-        const page = await mount(`
-            <form id="f" n-scope="{ q: 'outer' }" n-form>
-                <input id="o" name="q"><div n-scope="{ q: 'inner' }" n-form><input name="q"></div>
-            </form>
-        `);
-        expect(page.$("#o").value).toBe("outer");
-        page.$("#f").nagiProxy.q = "changed";
-        expect(page.$("#o").value).toBe("changed");
-    });
-
-    it("selects the scope's value once the select gets an option for it", async () => {
-        const page = await mount(`<form n-scope="{ city: 'b' }" n-form><select id="s" name="city"><option>a</option></select></form>`);
-        const option = page.window.document.createElement("option");
-        option.textContent = "b";
-        page.$("#s").append(option);
-        await later(10);
-        expect(page.$("#s").value).toBe("b");
     });
 
     it("keeps the checked radio's value when an unchecked one comes after it", async () => {

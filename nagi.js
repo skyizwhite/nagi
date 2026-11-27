@@ -510,88 +510,38 @@
         range: (el) => +el.value,
     };
 
-    const inputWriters = {
-        __proto__: null,
-        checkbox: (el, value) => (el.checked = !!value),
-        radio: (el, value) => (el.checked = value != null && el.value === String(value)),
-        file: () => {},
-    };
-
     const nameOf = (el) => el.name ?? el.getAttribute("name");
 
     const isField = (el) =>
         el.tagName.includes("-") || /^(SELECT|TEXTAREA|OUTPUT)$/.test(el.tagName)
             || (el.tagName === "INPUT" && !/^(submit|image|button|reset)$/.test(el.type));
 
-    const keepAsDefault = (el) => {
-        if (/^(checkbox|radio)$/.test(el.type)) el.defaultChecked = el.checked;
-        else if (el.options) [...el.options].forEach((option) => (option.defaultSelected = option.selected));
-        else if ("defaultValue" in el) el.defaultValue = el.value;
-    };
-
     const hasName = (raw, name) => {
         for (let o = raw; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) if (Object.hasOwn(o, name)) return true;
         return false;
     };
 
-    const fieldOf = (inputEl, scopeEl, fresh) => {
-        const name = nameOf(inputEl);
+    const fieldOf = (inputEl, scopeEl) => {
         const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
-        const kin = (el) => el !== inputEl && nameOf(el) === name && isField(el) && !el.closest("[n-ignore]") && formScope(el) === scopeEl;
         const formEl = inputEl.closest("[n-form]");
-        const field = {
-            inputEl,
-            scopeEl,
-            shared: inputEl.type !== "radio" && [...formEl.querySelectorAll("[name]")].some(kin),
-            group: () => [inputEl, ...formEl.querySelectorAll("input[type=radio]")].filter((el, i) => i === 0 || kin(el)),
-            read: inputReaders[inputEl.type] ?? ((el) => el.value),
-            lastRead: undefined,
+        const read = inputReaders[inputEl.type] ?? ((el) => el.value);
+        const group = () =>
+            [...formEl.querySelectorAll("input[type=radio]")].filter((el) => nameOf(el) === nameOf(inputEl) && formScope(el) === scopeEl);
+        const setVal = () => {
+            proxyData[nameOf(inputEl)] = inputEl.type === "radio" ? group().find((el) => el.checked)?.value : read(inputEl);
         };
-        field.setVal = () => {
-            if (inputEl.type === "radio") return (proxyData[nameOf(inputEl)] = field.group().find((el) => el.checked)?.value);
-            field.lastRead = field.read(inputEl);
-            proxyData[nameOf(inputEl)] = field.lastRead;
-        };
-        if (!hasName(rawData, name)) define(rawData, name, undefined);
-        field.fromScope = !field.shared && fresh && rawData[name] !== undefined;
-        if (!field.fromScope) field.setVal();
-        return field;
-    };
 
-    const bindField = (field) => {
-        const { inputEl, scopeEl, shared, read, setVal, fromScope } = field;
-        const { type } = inputEl;
-        const proxyData = scopeEl.nagiProxy;
-        const write = inputWriters[type] ?? ((el, value) => (el.value = value ?? ""));
-        const writeScope = () => write(inputEl, proxyData[nameOf(inputEl)]);
-
-        if (fromScope) {
-            writeScope();
-            if (inputEl.tagName !== "SELECT" || inputEl.value === String(proxyData[nameOf(inputEl)])) keepAsDefault(inputEl);
-        }
-
-        if (!shared)
-            watch(() => {
-                const value = proxyData[nameOf(inputEl)];
-                if (type in inputWriters) return write(inputEl, value);
-                if (Object.is(value, field.lastRead)) return;
-                if ((value != null && inputEl.value === "") || !Object.is(read(inputEl), value)) write(inputEl, value);
-            }, inputEl);
-
-        const cleanup = (inputEl.nagiCleanup ||= []);
-        if (inputEl.tagName === "SELECT" && !shared) {
-            const observer = new MutationObserver(() => writeScope());
-            observer.observe(inputEl, { childList: true, subtree: true });
-            cleanup.push(() => observer.disconnect());
-        }
-
+        if (!hasName(rawData, nameOf(inputEl))) define(rawData, nameOf(inputEl), undefined);
+        setVal();
         inputEl.addEventListener("input", setVal);
         inputEl.addEventListener("change", setVal);
         const { form } = inputEl;
-        if (!form) return;
-        const onReset = () => setTimeout(() => inputEl.isConnected && setVal());
-        form.addEventListener("reset", onReset);
-        cleanup.push(() => form.removeEventListener("reset", onReset));
+        if (form) {
+            const onReset = () => setTimeout(() => inputEl.isConnected && setVal());
+            form.addEventListener("reset", onReset);
+            (inputEl.nagiCleanup ||= []).push(() => form.removeEventListener("reset", onReset));
+        }
+        return setVal;
     };
 
     const propOf = (obj, name) => {
@@ -708,16 +658,12 @@
             acceptNode: (node) => (node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
         });
         const seen = new Set();
-        const made = new Set();
         let dataEl = baseEl.closest("[n-ignore]") ? null : baseEl;
         while (dataEl) {
             const parent = dataEl.parentElement;
             const before = dataEl.previousElementSibling;
             seen.add(dataEl);
-            if (!dataEl.nagiProxy) {
-                makeScope(dataEl);
-                if (dataEl.nagiProxy) made.add(dataEl);
-            }
+            makeScope(dataEl);
             const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
             walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
             do dataEl = walker.nextNode();
@@ -735,7 +681,7 @@
         const fields = queryAttr(baseEl, "[name]").filter(isField).flatMap((inputEl) => {
             const scopeEl = formScope(inputEl);
             if (!scopeEl || reserved(nameOf(inputEl), inputEl)) return [];
-            return [fieldOf(inputEl, scopeEl, made.has(scopeEl))];
+            return [fieldOf(inputEl, scopeEl)];
         });
 
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
@@ -771,7 +717,7 @@
             dispatch(bindEl, "init", { bubbles: false });
         });
 
-        fields.forEach(bindField);
+        fields.forEach((setVal) => setVal());
     };
 
     document.addEventListener("DOMContentLoaded", () => init(document.body));
