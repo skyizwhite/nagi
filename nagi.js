@@ -524,18 +524,26 @@
         const setVal = () => {
             if (type !== "radio" || inputEl.checked) proxyData[inputEl.name] = read();
         };
+        const snapshot = () => (type === "radio" ? inputEl.checked : String(read()));
 
         if (!hasName(rawData, name)) define(rawData, name, undefined);
         setVal();
+        const first = snapshot();
         inputEl.addEventListener("input", setVal);
         inputEl.addEventListener("change", setVal);
         const { form } = inputEl;
         if (form) {
-            const onReset = () => setTimeout(() => inputEl.isConnected && setVal());
+            const afterReset = () => {
+                if (!inputEl.isConnected) return;
+                const groupChecked = [...form.elements].some((el) => el.type === "radio" && el.name === inputEl.name && el.checked);
+                if (type === "radio" && !groupChecked) proxyData[inputEl.name] = undefined;
+                else setVal();
+            };
+            const onReset = () => setTimeout(afterReset);
             form.addEventListener("reset", onReset);
             (inputEl.nagiCleanup ||= []).push(() => form.removeEventListener("reset", onReset));
         }
-        return setVal;
+        return () => snapshot() === first || setVal();
     };
 
     const propOf = (obj, name) => {
@@ -680,7 +688,7 @@
 
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
             const proxyData = formScope(submitEl)?.nagiProxy;
-            if (!proxyData) return;
+            if (!proxyData || !submitEl.form) return;
             let wasDisabled = false;
             watch(() => {
                 const fetching = proxyData.$fetching;
@@ -711,7 +719,7 @@
             dispatch(bindEl, "init", { bubbles: false });
         });
 
-        fields.forEach((setVal) => setVal());
+        fields.forEach((reread) => reread());
     };
 
     document.addEventListener("DOMContentLoaded", () => init(document.body));
