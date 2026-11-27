@@ -40,6 +40,31 @@ describe("what is sent", () => {
         expect(request.body).toBe("q=a");
     });
 
+    it.each([
+        ["$put", "PUT"],
+        ["$patch", "PATCH"],
+    ])("%s sends the data as a urlencoded body", async (helper, method) => {
+        const page = await mount(button(`${helper}('/x', { q: 'a' })`), { server: () => "" });
+        page.$("#b").click();
+        await page.settle();
+
+        const [request] = page.requests;
+        expect(request.method).toBe(method);
+        expect(request.url).toBe("http://localhost/x");
+        expect(request.body).toBe("q=a");
+    });
+
+    it("$delete sends the data in the query string", async () => {
+        const page = await mount(button(`$delete('/x', { q: 'a' })`), { server: () => "" });
+        page.$("#b").click();
+        await page.settle();
+
+        const [request] = page.requests;
+        expect(request.method).toBe("DELETE");
+        expect(request.url).toBe("http://localhost/x?q=a");
+        expect(request.body ?? "").toBe("");
+    });
+
     it("sends none of the scope's values unless they are passed", async () => {
         const page = await mount(button(`$get('/x')`, "{ name: 'n', list: [1, 2] }"), { server: () => "" });
         page.$("#b").click();

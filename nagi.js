@@ -121,6 +121,15 @@
         $post(url, data, options) {
             this.$fetch(url, "POST", data, options);
         },
+        $put(url, data, options) {
+            this.$fetch(url, "PUT", data, options);
+        },
+        $patch(url, data, options) {
+            this.$fetch(url, "PATCH", data, options);
+        },
+        $delete(url, data, options) {
+            this.$fetch(url, "DELETE", data, options);
+        },
         $abort() {
             controllers.forEach((controller) => controller.abort());
             this._nagiAbort.abort();
