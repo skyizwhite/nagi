@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/logo.svg" alt="" width="120">
+</p>
+
 # Nagi (凪)
 
 Nagi is a small library for reactive HTML and partial page updates. It is a fork of [Nomini](https://github.com/nonnorm/nomini) by nonnorm, reworked so that every binding is an attribute of its own and easy to write from a template engine.
