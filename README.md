@@ -43,7 +43,7 @@ Copy `dist/nagi.min.js` into your project and load it with a normal or `defer` s
 </div>
 ```
 
-`n-scope`, `n-let-*`, `n-bind-*` and `n-on-*` hold plain JavaScript, and the names of the scope can be used in them as variables. In them, `this` is the scope and `$el` is the element the attribute is written on.
+`n-let-*`, `n-bind-*` and `n-on-*` hold plain JavaScript, and the names of the scope can be used in them as variables. In them, `this` is the scope and `$el` is the element the attribute is written on. `n-scope` holds JavaScript too, but runs before its scope exists; see below.
 
 ### Attributes
 
@@ -56,7 +56,7 @@ Makes a reactive scope from an object. Elements inside it read and write its nam
 </div>
 ```
 
-- The value can be any expression that gives a plain object or a class instance, such as `n-scope="makeCart($el)"`. Methods and getters keep working, with `this` as the scope; write them as methods (`inc() { this.n++ }`), since an arrow function here does not get the scope as `this`. The scope is a copy, so later changes to the original object are not seen.
+- The value can be any expression that gives a plain object or a class instance, such as `n-scope="makeCart($el)"`. Methods and getters keep working, with `this` as the scope; write them as methods (`inc() { this.n++ }`), since an arrow function here does not get the scope as `this`. The scope is a copy, so later changes to the original object are not seen, and private `#fields` are not copied.
 - `n-scope` runs before its scope exists, so it cannot read the names of outer scopes, and `this` there is not the scope. Use `$el` for the element, and `n-let-*` for values made from outer names.
 - `n-scope` with no value makes an empty scope.
 - Scopes nest. A name is read from the nearest scope that has it, and written back to that scope.
@@ -71,7 +71,7 @@ Adds one name to the scope, from an expression that can read outer scopes. An el
 </div>
 ```
 
-Names starting with `$` or `_nagi` belong to Nagi and cannot be used.
+Names starting with `$` or `_nagi` belong to Nagi. `n-let-*` and `n-form` refuse them; in an `n-scope` object they may clash with Nagi's own.
 
 #### `n-bind-<property>`
 Sets a property of the element to the value of an expression, and sets it again when what the expression read changes. The property is found by its name in lowercase, so `n-bind-textcontent` sets `textContent`. An expression that gives a promise sets the property when it resolves.
@@ -86,8 +86,8 @@ A dot reaches one level further:
 |---|---|
 | `n-bind-class="…"` | Adds the classes of a string, an array, or the keys of an object whose values are truthy, and removes the ones it added before. Classes written in the HTML stay |
 | `n-bind-class.<name>="…"` | Toggles one class |
-| `n-bind-style.<css-name>="…"` | Sets one style, `--custom` properties included. `null` or `false` removes it |
-| `n-bind-dataset.<name>="…"` | Sets `data-<name>`. `null` or `false` removes it |
+| `n-bind-style.<css-name>="…"` | Sets one style, `--custom` properties included. `null`, `undefined` or `false` removes it |
+| `n-bind-dataset.<name>="…"` | Sets `data-<name>`. `null`, `undefined` or `false` removes it |
 | `n-bind-<property>.<sub>="…"` | Sets a property of an object the element's property holds |
 
 ```html
@@ -118,7 +118,7 @@ Modifiers follow the event name:
 ```
 
 #### `n-ref`
-Puts the element in its scope's `$refs` under the given name. It needs a scope, and logs an error outside any.
+Puts the element in its scope's `$refs` under the given name. On an element that is itself a scope, that is its own `$refs`. It needs a scope, and logs an error outside any.
 
 ```html
 <div n-scope>
@@ -131,7 +131,8 @@ Puts the element in its scope's `$refs` under the given name. It needs a scope, 
 Copies each named field inside it into its scope, and updates it on `input` and `change`. It needs a scope, and logs an error outside any. The copy goes one way, from the field to the scope; use `n-bind-value` to write back.
 
 - A checkbox gives a boolean, a number or range field a number (`0` when empty), a file field its `FileList`, a radio group the value of the checked one, and any other field its `value`.
-- Submit buttons inside it are disabled while the scope has a request in flight. A button already disabled when the request starts is left alone, and its `n-bind-disabled` runs again when the request ends.
+- Every element with a `name` is copied, named buttons included. Checkboxes that share a name overwrite one another, and `form.reset()` does not update the scope.
+- Submit buttons inside it are disabled while the scope has any request in flight. A button already disabled when the request starts is left alone. When the request ends, the buttons Nagi disabled are enabled again and their `n-bind-disabled` runs again. An `n-bind-disabled` that changes during the request still takes effect.
 
 ```html
 <form n-scope n-form n-on-submit.prevent="$post('/signup', e)">
@@ -161,11 +162,11 @@ Use `data-*` for constant values the server writes into the HTML; values that ch
 </body>
 ```
 
-Pass a request only the values it needs. `$dataset()` as a whole also holds what the page's outer elements carry.
+Pass a request only the values it needs. Don't send `$dataset()` whole: it also holds the `data-*` of every outer element, such as a token on `<body>`.
 
 ### Helpers
 
-Every scope has these names. An element outside any scope has a set of its own: its requests, `$fetching` and debounces belong to it alone.
+Every scope has these names. An element outside any scope has a set of its own: its requests, `$fetching` and debounces belong to it alone, and its `$refs` stays empty.
 
 | Helper | Description |
 |---|---|
@@ -178,7 +179,7 @@ Every scope has these names. An element outside any scope has a set of its own: 
 | `$dispatch(name, detail, options)` | Dispatches a bubbling event from the element |
 | `$watch(fn)` | Runs `fn`, and runs it again when what it read changes |
 | `$debounce(fn, ms, abortable)` | Waits until it has not been called for `ms`, then runs `fn`. With `abortable`, a new request of the scope drops it |
-| `$persist(name, key)` | Restores a name of the scope from `localStorage`, and saves it there as it changes. Call it from `n-on-init` |
+| `$persist(name, key)` | Restores a name of the scope from `localStorage`, and saves it there as it changes. Call it from `n-on-init`. The default key is the same for every scope, so pass `key` when more than one scope persists the same name |
 
 ### Requests
 
@@ -200,7 +201,7 @@ GET, HEAD and DELETE put the data in the query string, leaving out files. Other 
 - `timeout`: aborts the request after this many milliseconds, and sends `fetcherr` with a `TimeoutError`
 - `dedupe: false`: sends a write even while the same one is in flight
 
-A scope has one read (GET, HEAD, OPTIONS) in flight at a time: a new request of the scope aborts it, so the newest response wins. To run reads side by side, put them in separate scopes; an element outside any scope counts as one. Writes are never aborted, since the server may already have done them. A write that is the same as one still in flight is skipped, and `fetchskip` is dispatched. A swap that removes the element that made a read aborts the read.
+A scope has one read (GET, HEAD, OPTIONS) in flight at a time: a new request of the scope aborts it, so the newest read wins. To run reads side by side, put them in separate scopes; an element outside any scope counts as one. A new request never aborts a write, since the server may already have done it; only `$abort()` and `timeout` do. A write that is the same as one the scope still has in flight is skipped, and `fetchskip` is dispatched. A swap that removes the element that made a read, or its scope's element, aborts the read.
 
 The request helpers return nothing. React to the result through what the response swaps in, or through the events below.
 
@@ -253,9 +254,9 @@ These response headers change what happens:
 
 - HTML lowercases attribute names, so what follows `n-let-`, `n-on-`, `class.` and `style.` is lowercase. `n-let-isOpen` defines `isopen`, and a name after `n-let-` must be a valid identifier to be used as a variable.
 - Only assigning a name is tracked. Write `items = [...items, x]`, not `items.push(x)`.
-- Assigning a bare name no scope has makes a global variable, and nothing updates. Declare it in the scope, or write `this.name = …` to add it.
-- `$el` stays the handler's element after an `await`, but `$dispatch`, `$dataset()` and the request events use the scope's element after the first `await`.
-- Elements added by other scripts are not set up. Only the page at `DOMContentLoaded` and what a response swaps in are.
+- Assigning a bare name no scope has makes a global variable, and nothing updates. Declare every name in the scope. A name added later with `this.name = …` updates only bindings that read it as `this.name`.
+- `$el` stays the handler's element after an `await`, but `$dispatch`, `$dataset()`, `$debounce`, `$watch` and the request events use the scope's element after the first `await`.
+- Elements added by other scripts are not set up. Only `<body>` at `DOMContentLoaded` and what a response swaps in are.
 - Outside any scope, a name in `n-bind-*` is read from `window`, and the binding does not update when it changes.
 
 ## Development
