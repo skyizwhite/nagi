@@ -30,7 +30,7 @@ Nagi stays small by keeping the mental model simple: **Boring HTML + islands of 
 
 ## Usage
 
-Copy `dist/nagi.min.js` into your project and load it with `defer`, or at the end of `<body>`. Nagi sets up the page on `DOMContentLoaded`.
+Copy `dist/nagi.min.js` into your project and load it with a normal or `defer` script tag, not `async`. Nagi sets up the page once on `DOMContentLoaded`, and after that only what a response swaps in.
 
 ```html
 <script defer src="/js/nagi.min.js"></script>
@@ -43,12 +43,12 @@ Copy `dist/nagi.min.js` into your project and load it with `defer`, or at the en
 </div>
 ```
 
-Every attribute holds plain JavaScript. Inside `n-bind-*` and `n-on-*`, `this` is the element, and the names of the scope can be used as variables.
+`n-scope`, `n-let-*`, `n-bind-*` and `n-on-*` hold plain JavaScript, and the names of the scope can be used in them as variables. `this` is the element.
 
 ### Attributes
 
 #### `n-scope`
-Makes a reactive scope from an object. Elements inside it read and write its names, and binds that read a name run again when it changes.
+Makes a reactive scope from an object. Elements inside it read and write its names, and bindings that read a name update when it changes.
 
 ```html
 <div n-scope="{ first: 'Ada', last: 'Lovelace', full() { return `${this.first} ${this.last}` } }">
@@ -56,13 +56,14 @@ Makes a reactive scope from an object. Elements inside it read and write its nam
 </div>
 ```
 
-- The value can be any expression that gives an object, such as `n-scope="makeCart(this)"`. Methods and getters keep working, with `this` as the scope.
+- The value can be any expression that gives a plain object or a class instance, such as `n-scope="makeCart(this)"`. Methods and getters keep working, with `this` as the scope. The scope is a copy, so later changes to the original object are not seen.
+- `n-scope` cannot read the names of outer scopes. Use `n-let-*` for values made from them.
 - `n-scope` with no value makes an empty scope.
-- The `data-*` attributes of the scope's element are added to it as strings, named as `dataset` names them.
+- The `data-*` attributes of the scope's element are added to it as strings, named as `dataset` names them. They win over `n-scope`.
 - Scopes nest. A name is read from the nearest scope that has it, and written back to that scope.
 
 #### `n-let-<name>`
-Adds one name to the scope, from an expression. An element with `n-let-*` is a scope even without `n-scope`. An `n-let-*` wins over `n-scope` and `data-*` of the same name.
+Adds one name to the scope, from an expression that can read outer scopes. An element with `n-let-*` is a scope even without `n-scope`. An `n-let-*` wins over `data-*` and `n-scope` of the same name.
 
 ```html
 <div n-let-open="false" n-let-toggle="() => open = !open">
@@ -84,11 +85,11 @@ A dot reaches one level further:
 
 | Attribute | Effect |
 |---|---|
-| `n-bind-class="…"` | Adds the classes of a string, an array, or the keys of an object whose values are true, and removes the ones it added before |
+| `n-bind-class="…"` | Adds the classes of a string, an array, or the keys of an object whose values are truthy, and removes the ones it added before. Classes written in the HTML stay |
 | `n-bind-class.<name>="…"` | Toggles one class |
 | `n-bind-style.<css-name>="…"` | Sets one style, `--custom` properties included. `null` or `false` removes it |
 | `n-bind-dataset.<name>="…"` | Sets `data-<name>`. `null` or `false` removes it |
-| `n-bind-<property>.<sub>="…"` | Sets a property of a property |
+| `n-bind-<property>.<sub>="…"` | Sets a property of an object the element's property holds |
 
 ```html
 <li n-bind-class="{ done: item.done, active: item.id === current }"
@@ -96,7 +97,7 @@ A dot reaches one level further:
 ```
 
 #### `n-on-<event>`
-Runs statements when the event fires. The event is `e`, and the handler can `await`. Custom events and events from other libraries work too.
+Runs statements when the event fires. The event is `e`, and the handler can `await`. Custom events and events from other libraries work too, as long as their names are lowercase.
 
 ```html
 <button n-on-click="count++; $dispatch('changed', { count })">+1</button>
@@ -110,7 +111,7 @@ Modifiers follow the event name:
 | `.stop` | Calls `e.stopPropagation()` |
 | `.once` | Runs only the first time |
 | `.window` | Listens on `window` |
-| `.debounce<ms>` | Runs only the last of events that come within `<ms>` |
+| `.debounce<ms>` | Waits until no event has fired for `<ms>`, then runs once with the last one |
 
 ```html
 <form n-on-submit.prevent="$post('/save', e)">…</form>
@@ -128,7 +129,10 @@ Puts the element in its scope's `$refs` under the given name.
 ```
 
 #### `n-form`
-Copies each named field inside it into the scope, and updates it on `input` and `change`. A checkbox gives a boolean, a number or range field a number, a file field its `FileList`, and a radio group the value of the checked one. Submit buttons inside it are disabled while the scope has a request out.
+Copies each named field inside it into the scope, and updates it on `input` and `change`. The copy goes one way, from the field to the scope; use `n-bind-value` to write back.
+
+- A checkbox gives a boolean, a number or range field a number (`0` when empty), a file field its `FileList`, a radio group the value of the checked one, and any other field its `value`.
+- Buttons inside it are disabled while the scope has any request in flight, and enabled otherwise.
 
 ```html
 <form n-scope n-form n-on-submit.prevent="$post('/signup', e)">
@@ -143,30 +147,30 @@ Nagi leaves the element and everything inside it alone.
 
 ### Helpers
 
-Every scope has these names. Elements outside any scope can use them too.
+Every scope has these names. Put elements that use them inside a scope: outside any scope, `$refs` and `$fetching` do not work, and requests do not abort each other.
 
 | Helper | Description |
 |---|---|
 | `$get(url, data, options)` | Sends a GET request. `$post`, `$put`, `$patch` and `$delete` send the other methods |
 | `$fetch(url, method, data, options)` | Sends a request with any method |
 | `$abort()` | Aborts every request of the scope |
-| `$fetching` | `true` while the scope has a request out |
+| `$fetching` | `true` while the scope has a request in flight |
 | `$refs` | The elements named by `n-ref` |
-| `$dataset()` | The `data-*` of the element and its ancestors up to the scope, the nearest first |
+| `$dataset()` | The `data-*` of the element and its ancestors up to the scope, merged with the nearer ones winning. Keys are camelCase, as in `dataset` |
 | `$dispatch(name, detail, options)` | Dispatches a bubbling event from the element |
 | `$watch(fn)` | Runs `fn`, and runs it again when what it read changes |
-| `$debounce(fn, ms, abortable)` | Runs `fn` after `ms`, only the last of calls that come within it. With `abortable`, a new request of the scope drops it |
-| `$persist(name, key)` | Restores a name of the scope from `localStorage`, and saves it there as it changes |
+| `$debounce(fn, ms, abortable)` | Waits until it has not been called for `ms`, then runs `fn`. With `abortable`, a new request of the scope drops it |
+| `$persist(name, key)` | Restores a name of the scope from `localStorage`, and saves it there as it changes. Call it from `n-on-init` |
 
 ### Requests
 
 A request sends only the data it is given. The data can be:
 
-- An object. Arrays repeat the key, and files make it `FormData`
-- A form, an element inside a form, or a submit event. Its fields are sent, with the button that submitted it
+- An object. Arrays repeat the key, `null` and `undefined` are left out, and files make it `FormData`
+- A form, an element inside a form, or an event whose target is in a form. The form's fields are sent, with the button that was clicked or that submitted it
 - `FormData`, `URLSearchParams`, or a query string
 
-GET, HEAD and DELETE put the data in the query string. Other methods send it as the body. Every request has the `n-request: true` header.
+GET, HEAD and DELETE put the data in the query string, leaving out files. Other methods send it as the body. Every request has the `n-request: true` header.
 
 ```html
 <button n-on-click="$delete(`/items/${id}`)">Delete</button>
@@ -175,14 +179,16 @@ GET, HEAD and DELETE put the data in the query string. Other methods send it as 
 
 `options` can hold:
 
-- `timeout`: aborts the request after this many milliseconds
-- `dedupe: false`: sends a write even while the same one is out
+- `timeout`: aborts the request after this many milliseconds, and sends `fetcherr` with a `TimeoutError`
+- `dedupe: false`: sends a write even while the same one is in flight
 
-Within a scope, a new request aborts a read (GET, HEAD, OPTIONS) that is still out, so the newest answer wins. A write is not aborted by a read. A write that is the same as one still out is skipped, and `fetchskip` is dispatched.
+Within a scope, a new request aborts a read (GET, HEAD, OPTIONS) that is still in flight, so the newest response wins. A write is not aborted by a read. A write that is the same as one still in flight is skipped, and `fetchskip` is dispatched.
+
+The request helpers return nothing. React to the result through what the response swaps in, or through the events below.
 
 ### Responses
 
-The answer is HTML. Each top-level element with an `id` replaces the element of the same `id` on the page. `n-swap` on the answer's element picks how:
+The response is HTML. Each top-level element with an `id` is swapped into the element of the same `id` on the page. `n-swap` on the response's element picks how:
 
 | `n-swap` | Effect |
 |---|---|
@@ -191,6 +197,8 @@ The answer is HTML. Each top-level element with an `id` replaces the element of 
 | `before` / `after` | Puts the children before or after the target |
 | `prepend` / `append` | Puts the children at the start or end of the target |
 
+Except with `outer`, the element in the response is only a wrapper, and its children are what goes in.
+
 ```html
 <div id="cart-count">3</div>
 <ul id="items" n-swap="append">
@@ -198,30 +206,38 @@ The answer is HTML. Each top-level element with an `id` replaces the element of 
 </ul>
 ```
 
-What is swapped in is set up as if it had been on the page. `style`, `class`, `width` and `height` of an element that keeps its `id` start from their old values and move to the new ones in the next frame, so CSS transitions run. An error answer is swapped only when one of its elements matches an `id` on the page.
+What is swapped in is set up as if it had been on the page. A scope replaced by an `outer` swap starts over from its attributes. For an element whose `id` and tag stay the same, `style`, `class`, `width` and `height` start from their old values and move to the new ones in the next frame, so CSS transitions run. An error response is swapped only when one of its elements matches an `id` on the page.
 
 These response headers change what happens:
 
 | Header | Effect |
 |---|---|
-| `n-redirect: <url>` | Goes to the URL instead of swapping |
-| `n-replace-url: <url>` | Replaces the URL in the address bar |
+| `n-redirect: <url>` | Goes to the URL instead of swapping. Use it on a 2xx response, since `fetch` follows 3xx redirects itself |
+| `n-replace-url: <url>` | Replaces the URL in the address bar, swapped or not |
 
 ### Events
 
 | Event | Sent to | When |
 |---|---|---|
-| `init` | An element with `n-bind-*` or `n-on-*` | After its binds and handlers are set up. Does not bubble |
+| `init` | An element with `n-bind-*` or `n-on-*` | After its bindings and handlers are set up, so `n-on-init` on the same element runs. Does not bubble |
 | `destroy` | An element with `n-bind-*` or `n-on-*` | Before a swap removes it. Does not bubble |
-| `fetcherr` | The element that made the request | When the request fails or the answer is not 2xx. `detail` has `err`, `url`, `status`, `text` and `swapped` |
+| `fetcherr` | The element that made the request | When the request fails, times out, or the response is not 2xx. `detail` has `err`, `url`, `status`, `text` and `swapped` |
 | `fetchskip` | The element that made the request | When a write is skipped as a duplicate. `detail` has `method` and `url` |
 | `fetchredirect` | The element that made the request | Before `n-redirect` is followed. Cancel it to stay. `detail` has `url` |
 
-`fetcherr`, `fetchskip` and `fetchredirect` bubble, so one handler on an outer element can catch them all. They go to `document` when the element is no longer on the page.
+`fetcherr`, `fetchskip` and `fetchredirect` bubble. When the element is no longer on the page they go to `document` instead, so listen on `window` to catch them all.
 
 ```html
-<body n-on-fetcherr="alert(`Failed: ${e.detail.status ?? e.detail.err}`)">
+<body n-on-fetcherr.window="alert(`Failed: ${e.detail.status ?? e.detail.err}`)">
 ```
+
+### Things to know
+
+- HTML lowercases attribute names, so what follows `n-let-`, `n-on-`, `class.` and `style.` is lowercase. `n-let-isOpen` defines `isopen`, and a name after `n-let-` must be a valid identifier to be used as a variable.
+- Only assigning a name is tracked. Write `items = [...items, x]`, not `items.push(x)`.
+- Declare every name you assign in a scope. Assigning a name no scope has makes a global variable, and nothing updates.
+- In a handler, "the element" for `$dispatch`, `$dataset` and the request events is the handler's element until the first `await`, and the scope's element after it.
+- Elements added by other scripts are not set up. Only the page at `DOMContentLoaded` and what a response swaps in are.
 
 ## Development
 
