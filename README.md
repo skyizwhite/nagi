@@ -70,7 +70,7 @@ Adds one name to the scope from an expression, which can use the names of outer 
 </div>
 ```
 
-- It replaces a key of the same name in the `n-scope` object. A key with a setter gets the value through the setter.
+- It sets a key of the same name in the `n-scope` object.
 - Names starting with `$` or `_nagi` are reserved for Nagi.
 
 #### `n-bind-<property>`

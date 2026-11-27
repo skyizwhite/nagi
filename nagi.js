@@ -488,9 +488,11 @@
         return proxy;
     };
 
+    const announceName = (scopeEl, key) => announcers.get(scopeEl.nagiProxy)(key);
+
     const giveName = (scopeEl, key, value) => {
         define(scopeEl.nagiRaw, key, value);
-        announcers.get(scopeEl.nagiProxy)(key);
+        announceName(scopeEl, key);
     };
 
     const makeScope = (dataEl) => {
@@ -515,7 +517,11 @@
             if (!key || reserved(key, dataEl)) return;
             const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, proxyData, dataEl)) : undefined;
             if (result === failed) return;
-            if (!(key in rawData) || !Reflect.set(proxyData, key, result)) giveName(dataEl, key, result);
+            try {
+                if (!(key in rawData) || !Reflect.set(proxyData, key, result)) giveName(dataEl, key, result);
+            } catch (err) {
+                console.error("[Nagi] failed to set:", key, dataEl, "\n", err);
+            }
         });
     };
 
@@ -543,12 +549,13 @@
         const radio = type === "radio";
         const owned = (scopeEl.nagiFields ||= new Map());
         let group = owned.get(name);
+        const fresh = !group;
         group?.members.forEach((el) => el.isConnected || group.members.delete(el));
         if (group?.members.size && !(radio && group.radio && group.form === form))
             return console.error("[Nagi] another field of the form has this name:", name, inputEl);
         if (!group) {
             if (hasName(rawData, name)) return console.error("[Nagi] this field's name is already a name of the scope:", name, inputEl);
-            giveName(scopeEl, name, undefined);
+            define(rawData, name, undefined);
             owned.set(name, (group = { members: new Set() }));
         }
         Object.assign(group, { radio, form });
@@ -568,6 +575,7 @@
         const field = { inputEl, setVal };
 
         setVal();
+        if (fresh && rawData[name] === undefined) announceName(scopeEl, name);
         inputEl.addEventListener("input", setVal);
         inputEl.addEventListener("change", setVal);
         formFields.add(field);
