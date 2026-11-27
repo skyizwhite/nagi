@@ -45,7 +45,7 @@ describe("n-scope", () => {
 
     it("logs an object that throws when read, and goes on with the page", async () => {
         const page = await mount(
-            `<div id="a" n-scope="bad()"></div><div id="b" n-let-x="1"></div>`,
+            `<div id="a" n-scope="bad()"></div><div n-scope id="b" n-let-x="1"></div>`,
             { beforeInit: (window) => (window.bad = () => ({ get then() { throw new Error("no"); } })) },
         );
         expect(page.$("#b").nagiProxy?.x).toBe(1);
@@ -67,7 +67,7 @@ describe("this and $el", () => {
     });
 
     it("takes this as the scope in n-let-*", async () => {
-        const page = await mount(`<div id="d" n-let-a="1" n-let-b="this.a + 1"></div>`);
+        const page = await mount(`<div n-scope id="d" n-let-a="1" n-let-b="this.a + 1"></div>`);
         expect(page.$("#d").nagiProxy.b).toBe(2);
     });
 
@@ -81,7 +81,7 @@ describe("this and $el", () => {
     it("updates an inner bind when an outer scope adds the name it reads", async () => {
         const page = await mount(`
             <div n-scope><button id="b" n-on-click="this.msg = 'hi'"></button>
-                <div n-let-a="1"><span id="s" n-bind-textcontent="this.msg ?? ''"></span></div>
+                <div n-scope n-let-a="1"><span id="s" n-bind-textcontent="this.msg ?? ''"></span></div>
             </div>
         `);
         page.$("#b").click();
@@ -160,7 +160,7 @@ describe("n-scope objects", () => {
 
     it("keeps going when a factory's object has a getter named like a helper", async () => {
         const page = await mount(
-            `<div id="a" n-scope="new S()"></div><div id="b" n-let-x="1"></div>`,
+            `<div id="a" n-scope="new S()"></div><div n-scope id="b" n-let-x="1"></div>`,
             { beforeInit: (window) => (window.S = class { get $refs() { return {}; } }) },
         );
         expect(page.$("#b").nagiProxy?.x).toBe(1);
@@ -198,14 +198,14 @@ describe("data-* of the scope's element", () => {
     });
 
     it("are read with $el.dataset", async () => {
-        const page = await mount(`<div id="d" data-user-id="42" n-let-user="$el.dataset.userId"></div>`);
+        const page = await mount(`<div n-scope id="d" data-user-id="42" n-let-user="$el.dataset.userId"></div>`);
         expect(page.$("#d").nagiProxy.user).toBe("42");
     });
 
     it("gathers $dataset from every ancestor, past the scope", async () => {
         const page = await mount(`
             <div data-outside="x">
-                <div n-let-got="null" data-in="y"><button id="b" n-on-click="got = $dataset()"></button></div>
+                <div n-scope n-let-got="null" data-in="y"><button id="b" n-on-click="got = $dataset()"></button></div>
             </div>
         `);
         page.$("#b").click();
@@ -216,7 +216,7 @@ describe("data-* of the scope's element", () => {
 describe("n-let-*", () => {
     it("adds values of any kind from expressions", async () => {
         const page = await mount(`
-            <div id="d" n-let-count="3" n-let-open="false" n-let-ids="[1, 2]" n-let-name="'Ann'"></div>
+            <div n-scope id="d" n-let-count="3" n-let-open="false" n-let-ids="[1, 2]" n-let-name="'Ann'"></div>
         `);
         const scope = page.$("#d").nagiProxy;
         expect(scope.count).toBe(3);
@@ -227,7 +227,7 @@ describe("n-let-*", () => {
 
     it("adds a function that reads and writes the scope by name", async () => {
         const page = await mount(`
-            <div n-let-count="1" n-let-add="(n) => count += n">
+            <div n-scope n-let-count="1" n-let-add="(n) => count += n">
                 <button id="b" n-on-click="add(2)"></button>
                 <span id="s" n-bind-textcontent="count"></span>
             </div>
@@ -236,8 +236,21 @@ describe("n-let-*", () => {
         expect(page.$("#s").textContent).toBe("3");
     });
 
+    it("logs an n-let-* on an element without n-scope, and makes no scope of it", async () => {
+        const page = await mount(`
+            <div n-let-a="1"></div>
+            <div id="outer" n-scope="{ n: 1 }">
+                <div id="d" n-let-b="2"><span id="s" n-bind-textcontent="n + (this.b ?? 0)"></span></div>
+            </div>
+        `);
+        expect(page.$("#d").nagiProxy).toBeUndefined();
+        expect(page.$("#outer").nagiProxy.b).toBeUndefined();
+        expect(page.$("#s").textContent).toBe("1");
+        expect(page.errors).toHaveLength(2);
+    });
+
     it("runs with the scope's element as $el", async () => {
-        const page = await mount(`<div id="d" n-let-x="$el.id"></div>`);
+        const page = await mount(`<div n-scope id="d" n-let-x="$el.id"></div>`);
         expect(page.$("#d").nagiProxy.x).toBe("d");
     });
 
@@ -247,7 +260,7 @@ describe("n-let-*", () => {
     });
 
     it("keeps a name with a dash as written", async () => {
-        const page = await mount(`<div id="d" n-let-is-open="true"></div>`);
+        const page = await mount(`<div n-scope id="d" n-let-is-open="true"></div>`);
         expect(page.$("#d").nagiProxy["is-open"]).toBe(true);
     });
 
@@ -263,7 +276,7 @@ describe("n-let-*", () => {
         const page = await mount(
             `<div n-scope="{}">
                 <button id="b" n-on-click="$get('/x')"></button>
-                <div id="target" n-let-n="1" n-let-start="$persist('n')"></div>
+                <div n-scope id="target" n-let-n="1" n-let-start="$persist('n')"></div>
             </div>`,
             { server: () => `<div id="target"></div>` },
         );
@@ -276,15 +289,23 @@ describe("n-let-*", () => {
 
     it("tells the watchers started before an n-let-* what it sets", async () => {
         const page = await mount(
-            `<div id="d" n-let-start="$persist('n')" n-let-n="1"></div>`,
+            `<div n-scope id="d" n-let-start="$persist('n')" n-let-n="1"></div>`,
             { beforeInit: (window) => (window.localStorage["_nagiProp-n"] = "5") },
         );
         expect(page.$("#d").nagiProxy.n).toBe(1);
         expect(page.window.localStorage["_nagiProp-n"]).toBe("1");
     });
 
+    it("tells the watchers started before an n-let-* that overrides a getter what it sets", async () => {
+        const page = await mount(
+            `<div n-scope="{ get v() { return 1 } }" id="d" n-let-start="$watch(() => { window.seen = v })" n-let-v="2"></div>`,
+        );
+        expect(page.$("#d").nagiProxy.v).toBe(2);
+        expect(page.window.seen).toBe(2);
+    });
+
     it("defines a name for an n-let-* with no value", async () => {
-        const page = await mount(`<div id="d" n-let-selected><button id="b" n-on-click="selected = 1"></button></div>`);
+        const page = await mount(`<div n-scope id="d" n-let-selected><button id="b" n-on-click="selected = 1"></button></div>`);
         page.$("#b").click();
         expect(page.$("#d").nagiProxy.selected).toBe(1);
         expect(page.window.selected).toBeUndefined();
@@ -328,7 +349,7 @@ describe("names kept for Nagi", () => {
 describe("outer scopes", () => {
     const html = `
         <div id="outer" n-scope="{ count: 1, name: 'outer', items: [1, 2, 3], remove(id) { this.items = this.items.filter((i) => i !== id) } }">
-            <section id="inner" n-let-name="'inner'" n-let-id="2">
+            <section n-scope id="inner" n-let-name="'inner'" n-let-id="2">
                 <span id="name" n-bind-textcontent="name"></span>
                 <span id="count" n-bind-textcontent="count"></span>
                 <span id="items" n-bind-textcontent="items.join(',')"></span>
@@ -380,13 +401,13 @@ describe("outer scopes", () => {
 
     it("goes out more than one scope", async () => {
         const page = await mount(`
-            <div n-let-a="1"><div n-let-b="2"><div n-let-c="3"><span id="s" n-bind-textcontent="a + b + c"></span></div></div></div>
+            <div n-scope n-let-a="1"><div n-scope n-let-b="2"><div n-scope n-let-c="3"><span id="s" n-bind-textcontent="a + b + c"></span></div></div></div>
         `);
         expect(page.$("#s").textContent).toBe("6");
     });
 
     it("evaluates an inner n-let-* with the outer names", async () => {
-        const page = await mount(`<div n-let-base="10"><div id="d" n-let-twice="base * 2"></div></div>`);
+        const page = await mount(`<div n-scope n-let-base="10"><div n-scope id="d" n-let-twice="base * 2"></div></div>`);
         expect(page.$("#d").nagiProxy.twice).toBe(20);
     });
 
@@ -408,7 +429,7 @@ describe("outer scopes", () => {
         const page = await mount(
             `<div id="outer" n-scope="{ open() { this.isOpen = true }, save() { this.$get('/s') } }">
                 <span id="s" n-bind-hidden="!isOpen"></span>
-                <section n-let-x="1"><button id="b" n-on-click="open(); save()"></button></section>
+                <section n-scope n-let-x="1"><button id="b" n-on-click="open(); save()"></button></section>
             </div>`,
             { server: () => new Promise((resolve) => (answer = resolve)) },
         );
@@ -422,7 +443,7 @@ describe("outer scopes", () => {
     });
 
     it("gives the same function each time an outer method is read", async () => {
-        const page = await mount(`<div n-scope="{ f() {} }"><div id="i" n-let-x="1"></div></div>`);
+        const page = await mount(`<div n-scope="{ f() {} }"><div n-scope id="i" n-let-x="1"></div></div>`);
         const inner = page.$("#i").nagiProxy;
         expect(inner.f).toBe(inner.f);
     });
@@ -441,18 +462,18 @@ describe("finding scopes", () => {
 
     it("finds the nearest scope from inside nested ones", async () => {
         const page = await mount(`
-            <div n-let-a="'outer'"><div n-let-a="'inner'"><span id="s" n-bind-textcontent="a"></span></div></div>
+            <div n-scope n-let-a="'outer'"><div n-scope n-let-a="'inner'"><span id="s" n-bind-textcontent="a"></span></div></div>
         `);
         expect(page.$("#s").textContent).toBe("inner");
     });
 
     it("makes the scopes in what a factory adds, and none for what it takes away", async () => {
         const page = await mount(
-            `<div n-scope="build($el)"><div id="gone" n-let-x="window.ran = true"></div></div>`,
+            `<div n-scope="build($el)"><div n-scope id="gone" n-let-x="window.ran = true"></div></div>`,
             {
                 beforeInit: (window) =>
                     (window.build = (el) => {
-                        el.innerHTML = `<div n-let-a="'inner'"><span id="s" n-bind-textcontent="a"></span></div>`;
+                        el.innerHTML = `<div n-scope n-let-a="'inner'"><span id="s" n-bind-textcontent="a"></span></div>`;
                         return { a: "outer" };
                     }),
             },
@@ -477,7 +498,7 @@ describe("finding scopes", () => {
 
     it("goes on after a scope replaces its own element", async () => {
         const page = await mount(
-            `<div id="a" n-scope="swapOut($el)"></div><div id="b" n-let-x="1"></div>`,
+            `<div id="a" n-scope="swapOut($el)"></div><div n-scope id="b" n-let-x="1"></div>`,
             {
                 beforeInit: (window) =>
                     (window.swapOut = (el) => {
@@ -492,7 +513,7 @@ describe("finding scopes", () => {
     it("makes the scopes between an element a factory moves later and where it lands", async () => {
         const page = await mount(
             `<div id="a" n-scope="moveAfter($el)"></div>
-            <div id="b" n-let-x="1"><span id="s" n-bind-textcontent="x"></span></div>`,
+            <div n-scope id="b" n-let-x="1"><span id="s" n-bind-textcontent="x"></span></div>`,
             {
                 beforeInit: (window) =>
                     (window.moveAfter = (el) => {
@@ -507,14 +528,14 @@ describe("finding scopes", () => {
     it("goes on after a scope takes its element's parent out of the page", async () => {
         const page = await mount(
             `<section id="w"><div n-scope="(document.getElementById('w').replaceWith(document.createElement('section')), {})"></div></section>
-            <div n-let-x="1"><span id="s" n-bind-textcontent="x"></span></div>`,
+            <div n-scope n-let-x="1"><span id="s" n-bind-textcontent="x"></span></div>`,
         );
         expect(page.$("#s").textContent).toBe("1");
     });
 
     it("leaves the scope and binds of an element a factory moves in", async () => {
         const page = await mount(
-            `<div id="cart" n-let-items="1"><button id="b" n-on-click="items++"></button><span id="s" n-bind-textcontent="items"></span></div>
+            `<div n-scope id="cart" n-let-items="1"><button id="b" n-on-click="items++"></button><span id="s" n-bind-textcontent="items"></span></div>
             <div n-scope><button id="load" n-on-click="$get('/x')"></button></div>
             <div id="target"></div>`,
             {
@@ -527,12 +548,13 @@ describe("finding scopes", () => {
             },
         );
         const scope = page.$("#cart").nagiProxy;
+        page.$("#b").click();
         page.$("#load").click();
         await page.settle();
         expect(page.$("#cart").nagiProxy).toBe(scope);
         page.$("#b").click();
-        expect(scope.items).toBe(2);
-        expect(page.$("#s").textContent).toBe("2");
+        expect(scope.items).toBe(3);
+        expect(page.$("#s").textContent).toBe("3");
     });
 
     it("makes the scopes inside an element a factory moves earlier", async () => {
@@ -540,7 +562,7 @@ describe("finding scopes", () => {
             <div id="x"></div>
             <section>
                 <div n-scope="(document.getElementById('x').append($el), {})">
-                    <div n-let-a="1"><span id="s" n-bind-textcontent="a"></span></div>
+                    <div n-scope n-let-a="1"><span id="s" n-bind-textcontent="a"></span></div>
                 </div>
             </section>
         `);

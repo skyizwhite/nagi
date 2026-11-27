@@ -98,7 +98,7 @@ describe("what is sent", () => {
 
     it("is not called to make a request's data", async () => {
         const page = await mount(
-            `<div n-let-count="1" n-let-add="(n) => count += n">
+            `<div n-scope n-let-count="1" n-let-add="(n) => count += n">
                 <button id="b" n-on-click="$post('/x', { count })"></button>
             </div>`,
             { server: () => "" },
