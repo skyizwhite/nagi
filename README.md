@@ -43,7 +43,7 @@ Copy `dist/nagi.min.js` into your project and load it with a normal or `defer` s
 </div>
 ```
 
-Attribute values are plain JavaScript. In them, the names of the scope are variables, `this` is the scope, and `$el` is the element.
+The values of `n-let-*`, `n-bind-*` and `n-on-*` are plain JavaScript. In them, the names of the scope are variables, `this` is the scope, and `$el` is the element.
 
 ### Attributes
 
@@ -132,9 +132,10 @@ Copies the value of each named field inside it into the scope, as the user chang
 </form>
 ```
 
-- Reads `input`, `select` and `textarea`. A checkbox gives `true` or `false`, a radio group the checked value, a number field a number (`undefined` when empty), a multiple select a list, and other fields a string.
+- Reads `input`, `select` and `textarea`. A checkbox gives `true` or `false`, a radio group the checked value, a number field a number (`undefined` when empty), a file field its `FileList`, a multiple select a list, and other fields a string.
 - Values flow one way, from the fields to the scope. Write the first value in the field's HTML, and use `n-bind-value` to change a field from the scope.
 - The form owns the names of its fields. Don't also define them in `n-scope` or `n-let-*`, and give each field its own name, except radios of one group. Nagi logs an error otherwise.
+- A name like `first-name` is not a valid variable name; read it as `this['first-name']`, or use names like `firstName`.
 - For custom elements, use `n-on-*`, as in `n-on-input="this.date = $el.value"`.
 
 #### `n-ignore`
@@ -196,7 +197,7 @@ GET, HEAD and DELETE put the data in the query string; other methods send it as 
 
 ### Responses
 
-The response is HTML. Each top-level element with an `id` updates the element with the same `id` on the page, as `n-swap` says:
+The response is HTML. Each top-level element with an `id` updates the element with the same `id` on the page, as `n-swap` on the response's element says:
 
 | `n-swap` | Effect |
 |---|---|
@@ -204,6 +205,8 @@ The response is HTML. Each top-level element with an `id` updates the element wi
 | `inner` | Replaces its children |
 | `before` / `after` | Inserts the response's children before or after it |
 | `prepend` / `append` | Inserts them at the start or end of it |
+
+For example, the server responds with:
 
 ```html
 <div id="cart-count">3</div>
@@ -238,8 +241,9 @@ The `fetch*` events bubble. Listen with `.window` to catch them all:
 ### Things to know
 
 - HTML lowercases attribute names, so `n-let-isOpen` defines `isopen`.
-- Changes are tracked when a name is assigned: write `items = [...items, x]`, not `items.push(x)`.
+- Changes are tracked when a name is assigned: write `items = [...items, x]`, not `items.push(x)`, and `user = { ...user, name }`, not `user.name = name`.
 - Declare the names you assign in a scope. Assigning an undeclared name makes a global variable.
+- In a handler, call `$dispatch` and `$dataset()` before the first `await`; after it they act from the scope's element. `$el` stays the handler's element.
 - Nagi sets up the page when it loads, and what responses bring in. Elements added by other scripts are not set up.
 
 ## Development
