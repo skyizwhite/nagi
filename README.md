@@ -71,7 +71,7 @@ Adds one name to the scope, from an expression that can read outer scopes. An el
 </div>
 ```
 
-Names starting with `$` or `_nagi` belong to Nagi. `n-let-*` and `n-form` refuse them; in an `n-scope` object they may clash with Nagi's own.
+Names starting with `$` or `_nagi` belong to Nagi, and `n-scope`, `n-let-*` and `n-form` refuse them. Only the object's own keys are checked in `n-scope`, so a class's methods with such names are not.
 
 #### `n-bind-<property>`
 Sets a property of the element to the value of an expression, and sets it again when what the expression read changes. The property is found by its name in lowercase, so `n-bind-textcontent` sets `textContent`. An expression that gives a promise sets the property when it resolves.
@@ -128,11 +128,32 @@ Puts the element in its scope's `$refs` under the given name. On an element that
 ```
 
 #### `n-form`
-Copies each named field inside it into its scope, and updates it on `input` and `change`. It needs a scope, and logs an error outside any. The copy goes one way, from the field to the scope; use `n-bind-value` to write back. When it is set up, a field's value in the HTML replaces any value the scope gave that name, so write the first value in the field's HTML.
+Copies the fields inside it into the nearest scope of the `n-form` element, which it needs (it logs an error outside any). The copy goes one way, from field to scope; to set a field, use `n-bind-value` or `n-bind-checked`.
 
-- A checkbox gives a boolean, a number or range field a number (`0` when empty), a file field its `FileList`, a radio group the value of the checked one, and any other field its `value`.
-- Every element with a `name` is copied, named buttons included. Checkboxes that share a name overwrite one another, and `form.reset()` does not update the scope.
-- Submit buttons inside it are disabled while the scope has any request in flight. A button already disabled when the request starts is left alone. When the request ends, the buttons Nagi disabled are enabled again and their `n-bind-disabled` runs again. An `n-bind-disabled` that changes during the request still takes effect.
+- **Fields:** named `input` (other than `submit`, `image`, `button` and `reset`), `select` and `textarea`. Read `output` and custom elements with `n-on-*`, as in `n-on-input="this.date = $el.value"`.
+- **When:** at setup, before the bindings, so binds and `n-on-init` see the values, then on `input`, `change`, and a reset of the field's form. A value that a binding writes into a field does not come back to the scope.
+- **Values:**
+
+  | Field | Value |
+  |---|---|
+  | checkbox | `true` or `false` |
+  | radio group | the checked radio's value, or `undefined` when none is checked |
+  | number | a number, or `undefined` when empty |
+  | range | a number |
+  | file | its `FileList` |
+  | `select multiple` | the list of selected values |
+  | any other | its `value` |
+
+- **Names belong to the form:**
+  - The first value comes from the field's HTML.
+  - A field whose name the scope already has, from `n-scope`, `n-let-*` or a getter, is logged and left out.
+  - So are the second and later fields with one name. The exception is radios of the same form, which make one group. A checkbox group, or a hidden field paired with a checkbox, needs a name for each field.
+  - A field that leaves the page gives up its name, which keeps its last value until another field takes it.
+  - Only the `n-form`'s own scope is checked, so a name in an outer scope is shadowed.
+  - A field keeps the name it had at setup.
+- **Submit buttons:**
+  - Buttons that have a form are disabled while the scope has a request in flight, and `n-bind-disabled` cannot enable them then.
+  - When the request ends, the buttons Nagi disabled are enabled again, and their `n-bind-disabled` runs again.
 
 ```html
 <form n-scope n-form n-on-submit.prevent="$post('/signup', e)">
