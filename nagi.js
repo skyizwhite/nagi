@@ -513,8 +513,55 @@
     const inputWriters = {
         __proto__: null,
         checkbox: (el, value) => (el.checked = !!value),
-        radio: (el, value) => (el.checked = el.value === value),
+        radio: (el, value) => (el.checked = value != null && el.value === String(value)),
         file: () => {},
+    };
+
+    const nameOf = (el) => el.name ?? el.getAttribute("name");
+
+    const isField = (el) =>
+        el.tagName.includes("-") || /^(SELECT|TEXTAREA|OUTPUT)$/.test(el.tagName)
+            || (el.tagName === "INPUT" && !/^(submit|image|button|reset)$/.test(el.type));
+
+    const keepAsDefault = (el) => {
+        if (/^(checkbox|radio)$/.test(el.type)) el.defaultChecked = el.checked;
+        else if (el.options) [...el.options].forEach((option) => (option.defaultSelected = option.selected));
+        else if ("defaultValue" in el) el.defaultValue = el.value;
+    };
+
+    const bindField = (inputEl, scopeEl, fresh) => {
+        const { type } = inputEl;
+        const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
+        const formEl = inputEl.closest("[n-form]");
+        const shared = type !== "radio"
+            && [...formEl.querySelectorAll("[name]")].some((el) => el !== inputEl && nameOf(el) === nameOf(inputEl) && isField(el));
+        const read = inputReaders[type] ?? ((el) => el.value);
+        const write = inputWriters[type] ?? ((el, value) => (el.value = value ?? ""));
+        const setVal = () => {
+            const name = nameOf(inputEl);
+            if (type !== "radio" || inputEl.checked) proxyData[name] = read(inputEl);
+            else if (proxyData[name] === inputEl.value) proxyData[name] = undefined;
+        };
+
+        if (!shared && fresh && rawData[nameOf(inputEl)] !== undefined) {
+            write(inputEl, proxyData[nameOf(inputEl)]);
+            keepAsDefault(inputEl);
+        } else setVal();
+
+        if (!shared)
+            watch(() => {
+                const value = proxyData[nameOf(inputEl)];
+                if (type in inputWriters || (value != null && inputEl.value === "") || !Object.is(read(inputEl), value))
+                    write(inputEl, value);
+            }, inputEl);
+
+        inputEl.addEventListener("input", setVal);
+        inputEl.addEventListener("change", setVal);
+        const { form } = inputEl;
+        if (!form) return;
+        const onReset = () => setTimeout(() => inputEl.isConnected && setVal());
+        form.addEventListener("reset", onReset);
+        (inputEl.nagiCleanup ||= []).push(() => form.removeEventListener("reset", onReset));
     };
 
     const propOf = (obj, name) => {
@@ -631,12 +678,16 @@
             acceptNode: (node) => (node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
         });
         const seen = new Set();
+        const made = new Set();
         let dataEl = baseEl.closest("[n-ignore]") ? null : baseEl;
         while (dataEl) {
             const parent = dataEl.parentElement;
             const before = dataEl.previousElementSibling;
             seen.add(dataEl);
-            makeScope(dataEl);
+            if (!dataEl.nagiProxy) {
+                makeScope(dataEl);
+                if (dataEl.nagiProxy) made.add(dataEl);
+            }
             const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
             walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
             do dataEl = walker.nextNode();
@@ -651,30 +702,11 @@
 
         queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
 
-        queryAttr(baseEl, "input[name], select[name], textarea[name]").forEach((inputEl) => {
+        const fields = queryAttr(baseEl, "[name]").filter(isField).flatMap((inputEl) => {
             const scopeEl = formScope(inputEl);
-            if (!scopeEl || reserved(inputEl.name, inputEl)) return;
-
-            const { type } = inputEl;
-            const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
-            const read = inputReaders[type] ?? ((el) => el.value);
-            const write = inputWriters[type] ?? ((el, value) => (el.value = value ?? ""));
-            const setVal = () => {
-                const { name } = inputEl;
-                if (type !== "radio" || inputEl.checked) proxyData[name] = read(inputEl);
-                else if (proxyData[name] === inputEl.value) proxyData[name] = undefined;
-            };
-
-            if (!(inputEl.name in rawData)) define(rawData, inputEl.name, undefined);
-            if (rawData[inputEl.name] === undefined) setVal();
-            watch(() => {
-                const value = proxyData[inputEl.name];
-                if (type in inputWriters || !Object.is(read(inputEl), value)) write(inputEl, value);
-            }, inputEl);
-
-            inputEl.addEventListener("input", setVal);
-            inputEl.addEventListener("change", setVal);
-            inputEl.form?.addEventListener("reset", () => setTimeout(setVal));
+            if (!scopeEl || reserved(nameOf(inputEl), inputEl)) return [];
+            if (!(nameOf(inputEl) in scopeEl.nagiRaw)) define(scopeEl.nagiRaw, nameOf(inputEl), undefined);
+            return [[inputEl, scopeEl]];
         });
 
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
@@ -709,6 +741,8 @@
 
             dispatch(bindEl, "init", { bubbles: false });
         });
+
+        fields.forEach(([inputEl, scopeEl]) => bindField(inputEl, scopeEl, made.has(scopeEl)));
     };
 
     document.addEventListener("DOMContentLoaded", () => init(document.body));
