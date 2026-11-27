@@ -593,12 +593,33 @@ describe("finding scopes", () => {
             },
         );
         const scope = page.$("#cart").nagiProxy;
+        page.$("#b").click();
         page.$("#load").click();
         await page.settle();
         expect(page.$("#cart").nagiProxy).toBe(scope);
         page.$("#b").click();
-        expect(scope.items).toBe(2);
-        expect(page.$("#s").textContent).toBe("2");
+        expect(scope.items).toBe(3);
+        expect(page.$("#s").textContent).toBe("3");
+    });
+
+    it("does not run again the n-let-* of an element a factory moves in", async () => {
+        const page = await mount(
+            `<div id="old" n-scope><p id="p" n-let-x="window.runs = (window.runs ?? 0) + 1"></p></div>
+            <div n-scope><button id="load" n-on-click="$get('/x')"></button></div>
+            <div id="target"></div>`,
+            {
+                server: () => `<div id="target" n-scope="take($el)"></div>`,
+                beforeInit: (window) =>
+                    (window.take = (el) => {
+                        el.append(el.ownerDocument.getElementById("p"));
+                        return {};
+                    }),
+            },
+        );
+        page.$("#load").click();
+        await page.settle();
+        expect(page.window.runs).toBe(1);
+        expect(page.$("#target").nagiProxy.x).toBeUndefined();
     });
 
     it("makes the scopes inside an element a factory moves earlier", async () => {

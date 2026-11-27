@@ -72,7 +72,7 @@ Adds one name from an expression to the closest scope it is in, its own element'
 </div>
 ```
 
-- An `n-let-*` can use the names of its ancestors and of the elements before it. `$el` is the element it is written on.
+- An `n-let-*` can use the names given before it to its scope and the scopes around it. `$el` is the element it is written on.
 - On the element of `n-scope`, it overrides the name of the same name there.
 - Give each name from one element. When a response replaces that element, the new one gives the name again. Nagi logs an error otherwise.
 - The name keeps its value after its element is removed.

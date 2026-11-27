@@ -487,7 +487,10 @@
         dataEl.nagiRaw = rawData;
     };
 
+    const letsDone = new WeakSet();
     const addLets = (letEl) => {
+        if (letsDone.has(letEl)) return;
+        letsDone.add(letEl);
         const lets = [...letEl.attributes].flatMap(({ name, value }) => {
             const key = name.match(/^n-let-(.+)$/)?.[1];
             return key ? [[key, value]] : [];
