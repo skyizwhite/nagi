@@ -167,6 +167,7 @@
 
             this._nagiAbort = new AbortController();
             if (reading) reads.set(el, controller);
+            if (reading && el) el.nagiRead = controller;
             const deduped = write && dedupe;
             if (deduped) writing.add(write);
             controllers.add(controller);
@@ -339,6 +340,7 @@
         });
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
+            node.nagiRead?.abort();
             node.nagiRuns?.forEach(kill);
             node.nagiCleanup?.forEach((clean) => clean());
             node.nagiTimers?.forEach(clearTimeout);

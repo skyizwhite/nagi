@@ -156,6 +156,27 @@ describe("aborted requests", () => {
         expect(page.$("#late").textContent).toBe("old");
     });
 
+    it("aborts the read of an element inside a scope that a swap removes", async () => {
+        let answerSlow;
+        const page = await mount(
+            `<div n-scope>
+                <div id="list"><button id="slow" n-on-click="$get('/slow')"></button></div>
+                <button id="swap" n-on-click="$get('/swap')"></button>
+            </div>
+            <div id="late">old</div>`,
+            {
+                server: ({ url }) =>
+                    url.endsWith("/slow") ? new Promise((resolve) => (answerSlow = resolve)) : `<div id="list"></div>`,
+            },
+        );
+        page.$("#slow").click();
+        page.$("#swap").click();
+        await later(20);
+        answerSlow(`<div id="late">late</div>`);
+        await page.settle();
+        expect(page.$("#late").textContent).toBe("old");
+    });
+
     it("aborts the read of an element outside any scope that a swap removes", async () => {
         let answerSlow;
         const page = await mount(
