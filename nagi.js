@@ -468,7 +468,8 @@
     const makeScope = (dataEl) => {
         if (dataEl.nagiProxy) return;
         const attrs = [...dataEl.attributes];
-        if (!attrs.some(({ name }) => /^n-(scope$|let-)/.test(name))) return;
+        const ownForm = dataEl.hasAttribute("n-form") && !closestScope(dataEl.parentElement);
+        if (!ownForm && !attrs.some(({ name }) => /^n-(scope$|let-)/.test(name))) return;
 
         const rawData = baseOf(dataEl);
         Object.entries({ ...helpers(), _nagiEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
@@ -627,7 +628,7 @@
 
         queryAttr(baseEl, "[n-ref]").forEach((el) => {
             const scope = closestScope(el)?.nagiProxy;
-            if (!scope) return console.warn("[Nagi] n-ref needs a scope:", el);
+            if (!scope) return console.error("[Nagi] n-ref needs a scope:", el);
             scope.$refs[el.getAttribute("n-ref")] = el;
         });
 
@@ -652,8 +653,6 @@
             inputEl.addEventListener("input", setVal);
             inputEl.addEventListener("change", setVal);
         });
-
-        queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.warn("[Nagi] n-form needs a scope:", form));
 
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
             const proxyData = formScope(submitEl)?.nagiProxy;

@@ -38,8 +38,8 @@ describe("n-ref", () => {
         expect(page.$("#target").nagiProxy.$refs.box).toBe(page.$("#new"));
     });
 
-    it("warns about an n-ref outside any scope", async () => {
+    it("logs an n-ref outside any scope", async () => {
         const page = await mount(`<input id="i" n-ref="field">`);
-        expect(page.warnings).toHaveLength(1);
+        expect(page.errors).toHaveLength(1);
     });
 });

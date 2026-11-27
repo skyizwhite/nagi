@@ -99,20 +99,32 @@ describe("n-form", () => {
         expect(page.$("#b").disabled).toBe(false);
     });
 
-    it("warns about an n-form outside any scope, and leaves its fields and buttons alone", async () => {
+    it("makes an n-form outside any scope a scope of its own, kept to the form", async () => {
         const answers = [];
         const page = await mount(
-            `<form n-form><input name="q" value="a"><button id="send"></button></form>
-            <span id="s" n-bind-textcontent="typeof q"></span>
-            <button id="b" n-on-click="$get('/x')"></button>`,
+            `<form id="f" n-form n-on-submit.prevent="$post('/x', e)">
+                <input name="q" value="a"><span id="in" n-bind-textcontent="q"></span><button id="send"></button>
+            </form>
+            <span id="out" n-bind-textcontent="typeof q"></span>
+            <button id="b" n-on-click="$get('/y')"></button>`,
             { server: () => new Promise((resolve) => answers.push(resolve)) },
         );
-        expect(page.$("#s").textContent).toBe("undefined");
-        expect(page.warnings).toHaveLength(1);
+        expect(page.$("#in").textContent).toBe("a");
+        expect(page.$("#out").textContent).toBe("undefined");
         page.$("#b").click();
         expect(page.$("#send").disabled).toBe(false);
+        page.$("#send").click();
+        expect(page.$("#send").disabled).toBe(true);
         answers.forEach((answer) => answer(""));
         await page.settle();
+        expect(page.$("#send").disabled).toBe(false);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("keeps the fields of an n-form inside a scope in that scope", async () => {
+        const page = await mount(`<div id="d" n-scope><form n-form><input name="q" value="a"></form></div>`);
+        expect(page.$("#d").nagiProxy.q).toBe("a");
+        expect(page.$("form").nagiProxy).toBeUndefined();
     });
 
     it("logs a field named like a helper, and keeps the helper", async () => {
