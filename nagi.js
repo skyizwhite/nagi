@@ -486,7 +486,7 @@
     };
 
     const drop = (el) => {
-        [el, ...el.querySelectorAll("*")].forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
+        [el, ...el.querySelectorAll("*")].forEach((node) => node.nagiBound && !node.nagiInitDue && dispatch(node, "destroy", { bubbles: false }));
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
             node.nagiRead?.abort();
@@ -968,7 +968,7 @@
         });
 
         queryAttr(baseEl, "*").forEach((bindEl) => {
-            if (bindEl.nagiBound) return;
+            if (bindEl.nagiBound) return void (bindEl.nagiInitDue && heldInits.push(bindEl));
             const entries = [...bindEl.attributes]
                 .map(({ name, value }) => [name, sourceOf(bindEl, name, value)])
                 .filter(([, source]) => source);

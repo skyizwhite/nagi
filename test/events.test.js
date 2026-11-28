@@ -35,6 +35,26 @@ describe("init event", () => {
         expect(page.scope("#d").count).toBe(1);
     });
 
+    it("fires on an element set up before it was in the page once nagi.init meets it in the page", async () => {
+        const page = await mount(`<div id="d" n-scope></div>`);
+        const el = page.document.createElement("i");
+        el.setAttribute("n-on-init", "globalThis.initRuns = (globalThis.initRuns ?? 0) + 1");
+        page.window.nagi.init(el);
+        page.$("#d").append(el);
+        page.window.nagi.init(el);
+        page.window.nagi.init(el);
+        expect(page.window.initRuns).toBe(1);
+    });
+
+    it("sends no destroy to an element torn down before it got its init", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ got: [] }" n-on-init="nagi.destroy($refs.c)">
+                <span n-ref="c" n-on-init="got = [...got, 'init']" n-on-destroy="got = [...got, 'destroy']"></span>
+            </div>
+        `);
+        expect(page.scope("#d").got).toEqual([]);
+    });
+
     it("does not fire on an element an earlier init handler took out of the page", async () => {
         const page = await mount(`
             <div id="d" n-scope="{ ran: false }" n-on-init="$el.querySelector('i').remove()"><i n-on-init="ran = true"></i></div>
