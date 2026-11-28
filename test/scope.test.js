@@ -480,6 +480,23 @@ describe("outer scopes", () => {
         expect([inner.total, inner.same]).toEqual([6, 6]);
     });
 
+    it("calls an outer method from n-scope with the outer scope as this", async () => {
+        const page = await mount(`
+            <div n-scope="{ a: 1, read() { return Object.keys(this).join() } }"><div id="i" n-scope="{ got: read() }"></div></div>
+        `);
+        expect(page.scope("#i").got).toBe("a,read");
+    });
+
+    it("leaves the outer names to the evaluation of n-scope, not to the methods it makes", async () => {
+        const page = await mount(`
+            <div id="o" n-scope="{ count: 0 }">
+                <div id="i" n-scope="{ count: 10, inc() { try { count++ } catch {} this.count++ } }"></div>
+            </div>
+        `);
+        page.scope("#i").inc();
+        expect([page.scope("#o").count, page.scope("#i").count]).toEqual([0, 11]);
+    });
+
     it("keeps Nagi's names of outer scopes out of n-scope, and outer names before globals", async () => {
         const page = await mount(
             `<div n-scope="{ label: 'outer' }">
