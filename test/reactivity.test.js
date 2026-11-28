@@ -256,6 +256,59 @@ describe("watchers", () => {
         expect(page.errors).toEqual([]);
     });
 
+    it("says where a cycle is and what kept changing, and runs it no more", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ a: 0, b: 0, go: 0 }">
+                <i id="x" n-bind-title="go && (a = b + 1)"></i><b id="y" n-bind-title="go && (b = a + 1)"></b>
+            </div>
+        `);
+        const scope = page.scope("#d");
+        scope.go = 1;
+        const cycles = () => page.errors.filter(([message]) => message.includes("stopped running after 100 times"));
+        expect(cycles()).toHaveLength(1);
+        const [, , , place, attr, , cause] = cycles()[0];
+        expect(["x", "y"]).toContain(place.id);
+        expect(attr).toBe("n-bind-title");
+        expect(["a", "b"]).toContain(cause);
+        scope.go = 2;
+        expect(cycles()).toHaveLength(1);
+    });
+
+    it("says on which element and attribute a bind failed", async () => {
+        const page = await mount(`<div n-scope><span id="s" n-bind-textcontent="missing.x"></span></div>`);
+        const [message, , , err, , place, attr] = page.errors[0];
+        expect([message, err.name, place.id, attr]).toEqual(["[Nagi] failed to run:", "ReferenceError", "s", "n-bind-textcontent"]);
+    });
+
+    it("names the attribute as written, and the place of a rejected bind or handler", async () => {
+        const page = await mount(`
+            <div n-scope="{ a: {} }">
+                <span id="s" n-bind-style.color="a.x.y" n-bind-title="Promise.reject(new Error('bind'))"></span>
+                <button id="b" n-on-click="await 0; throw new Error('click')"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        await later(10);
+        const places = page.errors.map((args) => args.slice(-2)).map(([el, attr]) => [el.id, attr]);
+        expect(places).toEqual([["s", "n-bind-style.color"], ["s", "n-bind-title"], ["b", "n-on-click"]]);
+    });
+
+    it("says on which element and attribute an expression did not compile", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ a: 1 }" n-let-b="a +">
+                <span id="s" n-bind-title="a +"></span>
+                <button id="b" n-on-click.prevent="if ("></button>
+            </div>
+        `);
+        const places = page.errors.map((args) => args.slice(-2)).map(([el, attr]) => [el.id, attr]);
+        expect(places).toEqual([["d", "n-let-b"], ["s", "n-bind-title"], ["b", "n-on-click.prevent"]]);
+    });
+
+    it("names $persist as the place of a failing save", async () => {
+        const page = await mount(`<div id="d" n-scope="{ get n() { throw new Error('read') } }" n-on-init="$persist('n')"></div>`);
+        expect(page.errors.map((args) => args.at(-1))).toContain("$persist");
+    });
+
     it("logs a bind that keeps setting itself off and stops it", async () => {
         const page = await mount(`
             <div n-scope="{ a: 0, b: 0 }">

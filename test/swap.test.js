@@ -426,3 +426,17 @@ describe("cssMorph", () => {
         expect(page.$("#t").classList.contains("loading")).toBe(false);
     });
 });
+
+describe("swap messages", () => {
+    it("warns about a fragment with no id or no target, and logs an invalid n-swap, each with the fragment", async () => {
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="t"></div></div>`,
+            { server: () => `<p>no id</p><div id="gone"></div><div id="t" n-swap="sideways"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.warnings.map(([message]) => message)).toEqual(["[Nagi] a fragment of the response has no id:", "[Nagi] no element on the page for #gone:"]);
+        expect(page.errors.map(([message, strategy]) => [message, strategy])).toEqual([["[Nagi] invalid n-swap:", "sideways"]]);
+    });
+});
+
