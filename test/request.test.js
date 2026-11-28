@@ -250,6 +250,37 @@ describe("what is sent", () => {
         expect(page.warnings).toEqual([]);
     });
 
+    it("sends a Date as its ISO text, and warns about an invalid one", async () => {
+        const page = await send(`$get('/x', { at: new Date(Date.UTC(2026, 10, 28, 1, 2, 3)), bad: new Date('no') })`);
+        expect(page.requests[0].url).toBe("http://localhost/x?at=2026-11-28T01%3A02%3A03.000Z");
+        expect(page.warnings.map(([message, key]) => [message, key])).toEqual([["[Nagi] cannot send:", "bad"]]);
+    });
+
+    it("leaves out functions without a warning, and warns about a symbol", async () => {
+        const page = await send(`$get('/x', { a: 1, run() {}, s: Symbol('s') })`);
+        expect(page.requests[0].url).toBe("http://localhost/x?a=1");
+        expect(page.warnings.map(([message, key]) => [message, key])).toEqual([["[Nagi] cannot send:", "s"]]);
+    });
+
+    it("sends only the scope's own names when the scope itself is passed", async () => {
+        const page = await mount(
+            `<div n-scope="{ name: 'a', save() {} }" n-let-n="2"><button id="b" n-on-click="$post('/x', this)"></button></div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.requests[0].body).toBe("name=a&n=2");
+        expect(page.warnings).toEqual([]);
+    });
+
+    it("sends nothing of a scopeless element's own scope when it is passed", async () => {
+        const page = await mount(`<button id="b" n-on-click="$post('/x', this)"></button>`, { server: () => "" });
+        page.$("#b").click();
+        await page.settle();
+        expect(page.requests[0].body).toBe("");
+        expect(page.warnings).toEqual([]);
+    });
+
     it("sends the name and value of the button a click came from", async () => {
         const page = await mount(
             `<form n-scope><input name="q" value="hi">
