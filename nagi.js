@@ -790,7 +790,7 @@
         const fresh = !group;
         group?.members.forEach((el) => el.isConnected || group.members.delete(el));
         if (group?.members.size && !(radio && group.radio && group.form === form))
-            return void console.error("[Nagi] another field of the form has this name:", name, inputEl);
+            return void console.error("[Nagi] another field of the scope has this name:", name, inputEl);
         if (!group) {
             if (hasName(rawData, name)) return void console.error("[Nagi] this field's name is already a name of the scope:", name, inputEl);
             define(rawData, name, undefined);
@@ -829,6 +829,12 @@
             inputEl.nagiReread = inputEl.nagiFieldValue = null;
             group.members.delete(inputEl);
             formFields.delete(field);
+            queueMicrotask(() => {
+                if (owned.get(name) !== group) return;
+                const rest = [...group.members].find((el) => el.isConnected);
+                if (rest) rest.nagiReread?.();
+                else if (!group.members.size) proxyData[name] = undefined;
+            });
         });
         return true;
     };

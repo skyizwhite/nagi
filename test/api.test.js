@@ -131,7 +131,7 @@ describe("nagi.destroy", () => {
         const page = await mount(`<form id="f" n-scope n-form><input id="a" name="q" value="a"></form>`);
         page.$("#f").insertAdjacentHTML("beforeend", `<input id="b" name="q" value="b">`);
         page.window.nagi.init(page.$("#b"));
-        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] another field of the form has this name:"]);
+        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] another field of the scope has this name:"]);
 
         page.window.nagi.destroy(page.$("#a"));
         page.$("#a").remove();

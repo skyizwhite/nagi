@@ -388,6 +388,40 @@ describe("n-form", () => {
         expect([ra.checked, rb.checked, page.scope("#f").r]).toEqual([false, true, "b"]);
     });
 
+    it("clears the name of a field a swap takes away, and keeps it through a swap that replaces the field", async () => {
+        let answer = `<div id="box" n-swap="inner"><input name="q" value="new"></div>`;
+        const page = await mount(
+            `<form id="f" n-scope n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <div id="box"><input name="q" value="old"></div>
+                <span id="s" n-bind-textcontent="q.length"></span>
+            </form>`,
+            { server: () => answer },
+        );
+        const scope = page.scope("#f");
+        page.$("#b").click();
+        await page.settle();
+        expect(scope.q).toBe("new");
+        expect(page.errors).toEqual([]);
+
+        answer = `<div id="box" n-swap="inner"></div>`;
+        page.$("#b").click();
+        await page.settle();
+        expect(scope.q).toBeUndefined();
+    });
+
+    it("reads a radio group again when its checked radio is taken away", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form><input id="a" type="radio" name="r" value="a" checked><input type="radio" name="r" value="b"></form>
+        `);
+        const scope = page.scope("#f");
+        expect(scope.r).toBe("a");
+        page.window.nagi.destroy(page.$("#a"));
+        page.$("#a").remove();
+        await later(0);
+        expect(scope.r).toBeUndefined();
+    });
+
     it("keeps undefined in the scope when a bind writes it into a text field", async () => {
         const page = await mount(`<form id="f" n-scope n-form n-on-init="q = undefined"><input name="q" n-bind-value="q"></form>`);
         expect(page.scope("#f").q).toBeUndefined();
