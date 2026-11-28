@@ -246,12 +246,27 @@
         },
         $persist(prop, key) {
             key = key || `_nagiProp-${prop}`;
+            let warned = false;
+            const warn = (doing, err) => {
+                if (!warned) console.warn(`[Nagi] cannot ${doing} the stored value of`, prop, "\n", err);
+                warned = true;
+            };
 
-            const stored = localStorage[key];
-            if (stored) this[prop] = JSON.parse(stored);
+            try {
+                const stored = localStorage.getItem(key);
+                if (stored != null) this[prop] = JSON.parse(stored);
+            } catch (err) {
+                warn("read", err);
+            }
 
             watch(() => {
-                localStorage[key] = JSON.stringify(this[prop]);
+                const value = this[prop];
+                try {
+                    if (value === undefined) localStorage.removeItem(key);
+                    else localStorage.setItem(key, JSON.stringify(value));
+                } catch (err) {
+                    warn("save", err);
+                }
             });
         },
     });

@@ -174,7 +174,7 @@ Pick the values a request needs from `$dataset()` rather than sending all of it.
 | `$dispatch(name, detail, options)` | Dispatches a bubbling event from the element |
 | `$watch(fn)` | Runs `fn`, and again whenever what it read changes |
 | `$debounce(fn, ms)` | Runs `fn` once calls have stopped for `ms` |
-| `$persist(name, key)` | Keeps a name of the scope in `localStorage`. Call it from `n-on-init` |
+| `$persist(name, key)` | Keeps a name of the scope in `localStorage`, and forgets it while it is `undefined`. Call it from `n-on-init`. The key is `_nagiProp-<name>` unless given, the same on every page of the site |
 
 ### Requests
 
