@@ -273,7 +273,7 @@
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);
-                if (!signal?.aborted) runWithEl(el, fn);
+                if (!signal?.aborted) runWithEl(el, () => ((currentSite = site), fn()));
             }, ms));
         },
         $persist(prop, key) {

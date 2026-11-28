@@ -272,6 +272,19 @@ describe("debounce", () => {
         expect(page.scope("#i").ran).toBe(2);
     });
 
+    it("keys a this.$debounce in a debounced function by the place the first $debounce came from", async () => {
+        const page = await mount(`
+            <div n-scope="{ ran: 0, save() { this.$debounce(() => this.ran++, 10) } }">
+                <input id="i" n-on-input="$debounce(() => save(), 10)" n-on-change="$debounce(() => save(), 10)">
+            </div>
+        `);
+        const input = page.$("#i");
+        input.dispatchEvent(new page.window.Event("input"));
+        input.dispatchEvent(new page.window.Event("change"));
+        await later(50);
+        expect(page.scope("#i").ran).toBe(2);
+    });
+
     it("takes abortable as true or in the options", async () => {
         const page = await mount(
             `<div id="d" n-scope="{ ran: 0 }">
