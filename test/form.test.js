@@ -362,6 +362,32 @@ describe("n-form", () => {
         expect(page.scope("#f").qty).toBe("");
     });
 
+    it("keeps what was typed when the field loses focus with no write held back", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ user: { email: 'a@x' } }" n-form><input id="e" name="email" n-bind-value="user.email"></form>
+        `);
+        const e = page.$("#e");
+        e.focus();
+        e.value = "new@x";
+        e.dispatchEvent(new page.window.Event("input"));
+        e.blur();
+        expect([e.value, page.scope("#f").email]).toEqual(["new@x", "new@x"]);
+    });
+
+    it("keeps a radio choice when focus moves within its group", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ start: 'a' }" n-form>
+                <input id="ra" type="radio" name="r" value="a" n-bind-checked="start === 'a'"><input id="rb" type="radio" name="r" value="b">
+            </form>
+        `);
+        const [ra, rb] = [page.$("#ra"), page.$("#rb")];
+        ra.focus();
+        rb.checked = true;
+        rb.focus();
+        rb.dispatchEvent(new page.window.Event("change"));
+        expect([ra.checked, rb.checked, page.scope("#f").r]).toEqual([false, true, "b"]);
+    });
+
     it("keeps undefined in the scope when a bind writes it into a text field", async () => {
         const page = await mount(`<form id="f" n-scope n-form n-on-init="q = undefined"><input name="q" n-bind-value="q"></form>`);
         expect(page.scope("#f").q).toBeUndefined();

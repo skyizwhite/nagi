@@ -772,11 +772,11 @@
         "focusout",
         (e) => {
             const left = e.target;
-            if (left?.nodeType !== 1) return;
+            if (left?.nodeType !== 1 || sameGroup(e.relatedTarget, left)) return;
             const members = left.type === "radio" && left.name ? [...document.querySelectorAll("input[type=radio]")].filter((el) => sameGroup(el, left)) : [left];
             members
                 .flatMap((el) => [el, ...el.querySelectorAll("option")])
-                .forEach((el) => el.nagiRuns?.forEach((run) => liveProps.test(run.attr) && run()));
+                .forEach((el) => el.nagiRuns?.forEach((run) => run.nagiRetry?.()));
         },
         true,
     );
@@ -931,9 +931,11 @@
         const writeOnly = writerOf(bindEl, main, rest.join("."));
         const live = !rest.length && liveProps.test(main);
         const fieldOfBind = () => (bindEl.nagiReread ? bindEl : bindEl.closest("select"));
+        let skipped = false;
         const write = (value, later) => {
             const field = fieldOfBind();
-            if (live && focused(field ?? bindEl)) return;
+            if (live && focused(field ?? bindEl)) return void (skipped = true);
+            skipped = false;
             const before = field?.nagiFieldValue?.();
             const reread = () => field && !sameValue(before, field.nagiFieldValue?.()) && field.nagiReread?.();
             if (!later) {
@@ -953,6 +955,7 @@
                 .catch((err) => console.error("[Nagi] failed to run:", val, "\n", err));
         }, bindEl);
         run.attr = /^class(name|list)$/i.test(main) ? "class" : main;
+        run.nagiRetry = () => skipped && run();
     };
 
     const init = (baseEl) => holdInits(() => setUp(baseEl));
