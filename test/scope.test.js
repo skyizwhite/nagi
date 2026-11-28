@@ -24,6 +24,27 @@ describe("n-scope", () => {
         expect(page.errors).toHaveLength(1);
     });
 
+    it("still sends destroy to what was bound before a broken n-scope wrapped it", async () => {
+        const page = await mount(`<div id="d" n-scope="{ gone: 0 }"><p id="p" n-on-destroy="gone++"></p></div>`);
+        const wrap = page.document.createElement("div");
+        wrap.setAttribute("n-scope", "{ bad: }");
+        page.$("#d").append(wrap);
+        wrap.append(page.$("#p"));
+        page.window.nagi.init(wrap);
+        page.window.nagi.destroy(wrap);
+        expect(page.scope("#d").gone).toBe(1);
+    });
+
+    it("evaluates nothing inside a broken n-scope, and logs it once across later inits", async () => {
+        const page = await mount(
+            `<div id="o" n-scope><div id="a" n-scope="{ n: }"><div n-scope="effect()"></div></div></div>`,
+            { beforeInit: (window) => (window.effect = () => ((window.ran = true), {})) },
+        );
+        page.window.nagi.init(page.$("#o"));
+        expect(page.window.ran).toBeUndefined();
+        expect(page.errors).toHaveLength(1);
+    });
+
     it("sets up a broken n-scope once it is torn down and fixed", async () => {
         const page = await mount(`<div id="a" n-scope="{ n: }"><span id="s" n-bind-textcontent="n"></span></div>`);
         const a = page.$("#a");

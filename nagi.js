@@ -486,7 +486,7 @@
     };
 
     const drop = (el) => {
-        queryAttr(el, "*").forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
+        [el, ...el.querySelectorAll("*")].forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
             node.nagiRead?.abort();
@@ -501,7 +501,7 @@
             node.nagiBroken = false;
             ownScopes.delete(node);
         });
-        queryAttr(el, "[n-ref]").forEach((node) => {
+        [el, ...el.querySelectorAll("[n-ref]")].forEach((node) => {
             const scopeEl = node.nagiRefScope;
             const refs = scopeEl?.nagiRaw?.$refs;
             const name = node.getAttribute("n-ref");
@@ -911,7 +911,8 @@
 
     const init = (baseEl) => {
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
-            acceptNode: (node) => (leftAlone(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+            acceptNode: (node) =>
+                node.nagiBroken || node.parentElement?.nagiBroken || node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
         });
         const seen = new Set();
         let dataEl = leftAlone(baseEl) ? null : baseEl;
