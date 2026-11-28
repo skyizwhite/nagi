@@ -146,7 +146,7 @@ describe("nagi.destroy", () => {
         const page = await mount(`
             <div id="d" n-scope="{ clicks: 0, inits: 0, destroys: 0, once: true }">
                 <span id="s" n-on-destroy="destroys++" n-bind-title="nagi.destroy($el)" n-on-click="clicks++" n-on-init="inits++"></span>
-                <i id="r" n-bind-title="once && (once = false, nagi.destroy($el), nagi.init($el))" n-on-click="clicks += 10"></i>
+                <i id="r" n-bind-title="once && (once = false, nagi.destroy($el), nagi.init($el))" n-on-click="clicks += 10" n-bind-dataset.n="clicks"></i>
             </div>
         `);
         const scope = page.scope("#d");
@@ -156,6 +156,20 @@ describe("nagi.destroy", () => {
         expect([scope.clicks, scope.inits, scope.destroys]).toEqual([0, 0, 0]);
         page.$("#r").click();
         expect(scope.clicks).toBe(10);
+        expect(page.$("#r").dataset.n).toBe("10");
+    });
+
+    it("keeps the binds of an element set up from inside another bind when that bind runs again", async () => {
+        const page = await mount(`<div id="d" n-scope="{ k: 1, n: 1 }"><p n-bind-title="k && nagi.init(document.getElementById('x'))"></p></div>`);
+        const x = page.document.createElement("span");
+        x.id = "x";
+        x.setAttribute("n-bind-textcontent", "n");
+        page.$("#d").append(x);
+        const scope = page.scope("#d");
+        scope.k = 2;
+        scope.k = 3;
+        scope.n = 5;
+        expect(x.textContent).toBe("5");
     });
 
     it("sends the events of a request started before its element was set up again to document", async () => {

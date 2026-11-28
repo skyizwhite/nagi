@@ -1019,15 +1019,7 @@
 
     const init = (baseEl) => initRoots([baseEl]);
 
-    const initRoots = (roots) => {
-        const stale = currentStale;
-        currentStale = false;
-        try {
-            return holdInits(() => setUp(roots));
-        } finally {
-            currentStale = stale;
-        }
-    };
+    const initRoots = (roots) => runWithEl(null, () => holdInits(() => setUp(roots)));
 
     const makeScopes = (baseEl) => {
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
