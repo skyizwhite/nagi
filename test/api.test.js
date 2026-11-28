@@ -142,32 +142,36 @@ describe("nagi.destroy", () => {
         expect(page.scope("#f").q).toBe("c");
     });
 
-    it("leaves no listener or init on an element a bind of it tears down during set-up", async () => {
+    it("leaves no listener, init or destroy on an element a bind of it tears down during set-up", async () => {
         const page = await mount(`
-            <div id="d" n-scope="{ clicks: 0, inits: 0 }">
-                <span id="s" n-bind-title="nagi.destroy($el)" n-on-click="clicks++" n-on-init="inits++"></span>
+            <div id="d" n-scope="{ clicks: 0, inits: 0, destroys: 0, once: true }">
+                <span id="s" n-on-destroy="destroys++" n-bind-title="nagi.destroy($el)" n-on-click="clicks++" n-on-init="inits++"></span>
+                <i id="r" n-bind-title="once && (once = false, nagi.destroy($el), nagi.init($el))" n-on-click="clicks += 10"></i>
             </div>
         `);
-        const span = page.$("#s");
-        page.window.nagi.init(span);
-        span.click();
-        expect(page.scope("#d").clicks).toBeLessThan(2);
-        expect(page.scope("#d").inits).toBe(0);
+        const scope = page.scope("#d");
+        page.$("#s").click();
+        page.window.nagi.init(page.$("#s"));
+        page.$("#s").click();
+        expect([scope.clicks, scope.inits, scope.destroys]).toEqual([0, 0, 0]);
+        page.$("#r").click();
+        expect(scope.clicks).toBe(10);
     });
 
     it("sends the events of a request started before its element was set up again to document", async () => {
         let answer;
         const page = await mount(
-            `<div id="d" n-scope="{ errs: 0, docErrs: 0 }" n-on-fetcherr="docErrs++"><button id="b" n-on-fetcherr.stop="errs++" n-on-click="$post('/x')"></button></div>`,
+            `<div id="d" n-scope="{ errs: 0 }"><button id="b" n-on-fetcherr.stop="errs++" n-on-click="$post('/x')"></button></div>`,
             { server: () => new Promise((resolve) => (answer = resolve)) },
         );
+        let toDocument = 0;
+        page.document.addEventListener("fetcherr", (e) => e.target === page.document && toDocument++);
         const b = page.$("#b");
         b.click();
         page.window.nagi.destroy(b);
         page.window.nagi.init(b);
         answer({ status: 500 });
         await page.settle();
-        expect(page.scope("#d").errs).toBe(0);
+        expect([page.scope("#d").errs, toDocument]).toEqual([0, 1]);
     });
 });
-

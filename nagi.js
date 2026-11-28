@@ -1091,14 +1091,16 @@
                 ...entries.map(([name, source]) => evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name))),
             );
 
+            const gen = bindEl.nagiGen;
+            const gone = () => bindEl.nagiGone || bindEl.nagiGen !== gen;
+            bindEl.nagiInitDue = true;
             for (const [key, val] of Object.entries(props)) {
-                if (bindEl.nagiGone) return;
+                if (gone()) return;
                 if (key.startsWith("@")) listen(bindEl, key.slice(1), val, proxyData);
                 else bindProp(bindEl, key, val);
             }
-            if (bindEl.nagiGone) return;
+            if (gone()) return;
 
-            bindEl.nagiInitDue = true;
             heldInits.push(bindEl);
         });
     };
