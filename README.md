@@ -223,7 +223,7 @@ What comes in works like the rest of the page, and CSS transitions run on elemen
 | `n-redirect: <url>` | Goes to the URL instead (send it with a 2xx status) |
 | `n-replace-url: <url>` | Replaces the URL in the address bar |
 
-The browser follows an HTTP redirect (3xx) by itself, and the page it leads to is swapped in by its `id`s like any response. To leave the page, answer with `n-redirect` instead. In particular, when a request with `n-request: true` needs a login, answer with HTML to swap in (a message) or with `n-redirect`, not with a redirect to the login page, whose elements would be swapped into the current page.
+The browser follows an HTTP redirect (3xx) to the same origin by itself, still sending `n-request: true`, and Nagi handles the final response like any other: its elements with `id`s on the page are swapped in, and its headers are read. The address bar keeps its URL unless that response sends `n-replace-url`. A redirect to another origin fails as a network error (`fetcherr` without a `status`). To leave the page, answer with `n-redirect` instead. In particular, when a Nagi request needs a login, answer with HTML to swap in (a message) or with `n-redirect`, not with a redirect to the login page, which would swap in only whatever of it has `id`s on the page, often nothing.
 
 ### Events
 
