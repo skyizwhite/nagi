@@ -401,6 +401,81 @@ describe("cssMorph", () => {
         expect([target.style.color, target.style.width, target.style.marginTop]).toEqual(["blue", "", "2px"]);
     });
 
+    const heldFrames = () => {
+        const frames = [];
+        return { frames, beforeInit: (window) => (window.requestAnimationFrame = (fn) => frames.push(fn)) };
+    };
+
+    it("keeps var() shorthands, priorities and changed sizes when other code changed the element before the frame", async () => {
+        const { frames, beforeInit } = heldFrames();
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="target" style="color: red" width="1"></div></div>`,
+            { server: () => `<div id="target" style="color: blue !important; padding: var(--gap)" width="2"></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const target = page.$("#target");
+        target.style.setProperty("margin-top", "2px");
+        target.setAttribute("width", "5");
+        frames.forEach((fn) => fn());
+        expect([target.style.getPropertyValue("padding"), target.style.getPropertyPriority("color"), target.getAttribute("width")]).toEqual(["var(--gap)", "important", "5"]);
+    });
+
+    it("leaves no empty class when the new element has none and other code changed it before the frame", async () => {
+        const { frames, beforeInit } = heldFrames();
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="target" class="a"></div></div>`,
+            { server: () => `<div id="target"></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const target = page.$("#target");
+        target.classList.add("b");
+        target.classList.remove("b");
+        frames.forEach((fn) => fn());
+        expect(target.hasAttribute("class")).toBe(false);
+    });
+
+    it("does not put back a class its bind took off before the frame", async () => {
+        const { frames, beforeInit } = heldFrames();
+        const page = await mount(
+            `<div id="d" n-scope="{ on: true }"><button id="b" n-on-click="$get('/x')"></button><div id="target" class="card"></div></div>`,
+            { server: () => `<div id="target" class="card new" n-bind-class="{ active: on }"></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        page.scope("#d").on = false;
+        frames.forEach((fn) => fn());
+        expect(page.$("#target").className).toBe("card new");
+        page.scope("#d").on = true;
+        expect(page.$("#target").className).toBe("card new active");
+    });
+
+    it("settles nothing on an element torn down before the frame", async () => {
+        const { frames, beforeInit } = heldFrames();
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="target" class="old"></div></div>`,
+            { server: () => `<div id="target" class="new"></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const target = page.$("#target");
+        page.window.nagi.destroy(target);
+        frames.forEach((fn) => fn());
+        expect(target.className).toBe("old");
+    });
+
+    it("moves an outer swap's element from the one it takes out even when the same id comes earlier in the page", async () => {
+        const { reflows, beforeInit } = watchReflows([]);
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="row" hidden></div><ul id="list"><li id="row" class="old"></li></ul></div>`,
+            { server: () => `<ul id="list"><li id="row" class="new"></li></ul>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(reflows).toHaveLength(1);
+    });
+
     it("moves an element added beside the page's elements from no look but its own", async () => {
         const { reflows, beforeInit } = watchReflows(["row"]);
         const page = await mount(

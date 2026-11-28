@@ -539,7 +539,7 @@
             node.nagiBound = node.nagiField = node.nagiInitDue = false;
             node.nagiGone = true;
             node.nagiGen = (node.nagiGen ?? 0) + 1;
-            node.nagiProxy = node.nagiRaw = node.nagiFields = null;
+            node.nagiProxy = node.nagiRaw = node.nagiFields = node.nagiOwnClasses = null;
             node.nagiBroken = false;
             ownScopes.delete(node);
         });
@@ -589,8 +589,8 @@
 
                 const kids = [...fragment.childNodes];
 
-                const morphs = strategy === "outer" ? cssMorph([fragment], (el) => target.contains(el))
-                    : strategy === "inner" ? cssMorph(kids.filter((kid) => kid.nodeType === 1), (el) => el !== target && target.contains(el))
+                const morphs = strategy === "outer" ? cssMorph([fragment], [target, ...target.querySelectorAll("[id]")])
+                    : strategy === "inner" ? cssMorph(kids.filter((kid) => kid.nodeType === 1), [...target.querySelectorAll("[id]")])
                     : [];
 
                 applied++;
@@ -622,13 +622,18 @@
     const attributesToSettle = ["style", "class", "height", "width"];
     const readSettled = (el) => attributesToSettle.map((attr) => [attr, el.getAttribute(attr)]);
 
-    const cssMorph = (roots, removed) =>
-        roots.flatMap((root) =>
+    const cssMorph = (roots, removed) => {
+        const byId = new Map();
+        removed.forEach((el) => el.id && !byId.has(el.id) && byId.set(el.id, el));
+        return roots.flatMap((root) =>
             queryAttr(root, "[id]").flatMap((newEl) => {
-                const oldEl = document.getElementById(newEl.id);
-                return oldEl && oldEl.tagName === newEl.tagName && removed(oldEl) ? [[newEl, readSettled(oldEl)]] : [];
+                const oldEl = byId.get(newEl.id);
+                return oldEl && oldEl.tagName === newEl.tagName ? [[newEl, readSettled(oldEl)]] : [];
             }),
         );
+    };
+
+    const ownClasses = (el) => new Set([...(el.nagiOwnClasses?.values() ?? [])].flatMap((names) => [...names]));
 
     const putSettled = (el, values) =>
         values.forEach(([attr, value]) => (value != null ? el.setAttribute(attr, value) : el.removeAttribute(attr)));
@@ -638,13 +643,38 @@
             const settled = readSettled(newEl);
             if (settled.every(([, value], i) => value === oldValues[i][1])) return [];
             putSettled(newEl, oldValues);
+            const own = ownClasses(newEl);
+            const names = settled[1][1] && classesOf(settled[1][1]).filter((name) => name && !own.has(name));
+            if (own.size && names) settled[1] = ["class", names.length ? names.join(" ") : null];
             return [[newEl, settled, oldValues]];
         });
 
     const stylesOf = (text) => {
-        const style = document.createElement("div").style;
-        style.cssText = text ?? "";
-        return new Map(Array.from({ length: style.length }, (_, i) => style.item(i)).map((name) => [name, [style.getPropertyValue(name), style.getPropertyPriority(name)]]));
+        const found = new Map();
+        const take = (part) => {
+            const at = part.indexOf(":");
+            const name = part.slice(0, at).trim();
+            const value = part.slice(at + 1).trim();
+            const important = /!\s*important$/i.test(value);
+            const plain = important ? value.replace(/!\s*important$/i, "").trim() : value;
+            if (at > 0 && name && plain) found.set(name.startsWith("--") ? name : name.toLowerCase(), [plain, important ? "important" : ""]);
+        };
+        let depth = 0, quote = null, start = 0;
+        for (let i = 0; i < text.length; i++) {
+            const c = text[i];
+            if (quote) {
+                if (c === "\\") i++;
+                else if (c === quote) quote = null;
+            } else if (c === '"' || c === "'") quote = c;
+            else if (c === "(") depth++;
+            else if (c === ")") depth--;
+            else if (c === ";" && !depth) {
+                take(text.slice(start, i));
+                start = i + 1;
+            }
+        }
+        take(text.slice(start));
+        return found;
     };
 
     const settleAttr = (el, attr, from, to) => {
@@ -654,10 +684,12 @@
             const [before, after] = [new Set(classesOf(from ?? "").filter(Boolean)), new Set(classesOf(to ?? "").filter(Boolean))];
             before.forEach((name) => after.has(name) || el.classList.remove(name));
             after.forEach((name) => before.has(name) || el.classList.add(name));
+            if (to == null && !el.classList.length) el.removeAttribute(attr);
         } else if (attr === "style") {
-            const [before, after] = [stylesOf(from), stylesOf(to)];
+            const [before, after] = [stylesOf(from ?? ""), stylesOf(to ?? "")];
             before.forEach((_, name) => after.has(name) || el.style.removeProperty(name));
             after.forEach(([value, priority], name) => before.get(name)?.join() === [value, priority].join() || el.style.setProperty(name, value, priority));
+            if (to == null && !el.style.length) el.removeAttribute(attr);
         }
     };
 
@@ -993,7 +1025,7 @@
         if (main !== "class") return (value) => (bindEl[main] = value);
 
         let added = new Set();
-        return (value) => {
+        const write = (value) => {
             const next = new Set(classesOf(value).filter(Boolean));
             const mine = new Set();
             added.forEach((name) => next.has(name) || bindEl.classList.remove(name));
@@ -1002,7 +1034,9 @@
                 bindEl.classList.add(name);
             });
             added = mine;
+            (bindEl.nagiOwnClasses ??= new Map()).set(write, mine);
         };
+        return write;
     };
 
     const handle = (val, e, place) => val(e)?.catch?.((err) => console.error("[Nagi] failed to run:", val, "\n", err, ...place));
