@@ -82,7 +82,8 @@
         };
         const runsOf = (names) => new Set(names.flatMap((name) => [...(deps.get(name) ?? [])]));
         const changed = (names) => {
-            if (!heldRefs) return runsOf(names).forEach((run) => run());
+            const cause = names.find((name) => typeof name === "string");
+            if (!heldRefs) return runsOf(names).forEach((run) => run(cause));
             const held = heldRefs.get(runsOf) ?? heldRefs.set(runsOf, new Set()).get(runsOf);
             names.forEach((name) => held.add(name));
         };
@@ -197,9 +198,9 @@
     let runCount = 0;
     const NativePromise = (async () => {})().constructor;
 
-    const runPlace = (run) => ["in", run.owner ?? "the page", run.attr ? `n-bind-${run.attr}` : "$watch"];
+    const runPlace = (run) => ["in", run.owner ?? "the page", run.label ?? "$watch"];
 
-    const watch = (fn, el = currentEl, owner = el, attr) => {
+    const watch = (fn, el = currentEl, owner = el, attr, label) => {
         if (owner?.nagiGone || currentStale) return Object.assign(() => {}, { gone: true, deps: new Set(), children: [] });
         const run = (cause) => {
             if (run.gone || run === currentBind) return;
@@ -229,7 +230,7 @@
                 run.active = false;
             }
         };
-        Object.assign(run, { owner, attr, deps: new Set(), children: [] });
+        Object.assign(run, { owner, attr, label, deps: new Set(), children: [] });
         owner && (owner.nagiRuns ||= new Set()).add(run);
         run.key = currentBind ? `${currentBind.key}.${currentBind.children.length}` : `run${++runCount}`;
         currentBind?.children.push(run);
@@ -603,7 +604,7 @@
                         target[strategy](...kids);
                         initAll(kids);
                     }
-                });
+                }, undefined, undefined, undefined, "$persist");
 
                 for (const morph of putOld(morphs)) moving.push(morph);
             }
@@ -978,9 +979,10 @@
         };
     };
 
-    const handle = (val, e) => val(e)?.catch?.((err) => console.error("[Nagi] failed to run:", val, "\n", err));
+    const handle = (val, e, place) => val(e)?.catch?.((err) => console.error("[Nagi] failed to run:", val, "\n", err, ...place));
 
-    const listen = (bindEl, key, val, proxyData) => {
+    const listen = (bindEl, key, val, proxyData, name) => {
+        const place = ["in", bindEl, name];
         const [eventName, ...mods] = key.split(".");
         const unknown = mods.filter((mod) => !/^(prevent|stop|once|window|debounce\d+)$/.test(mod));
         if (unknown.length) console.warn("[Nagi] unknown modifiers:", unknown, bindEl);
@@ -991,8 +993,8 @@
             if (mods.includes("prevent")) e.preventDefault();
             if (mods.includes("stop")) e.stopPropagation();
 
-            if (delay) proxyData.$debounce(() => runWithEl(bindEl, () => handle(val, e), null, val), delay);
-            else handle(val, e);
+            if (delay) proxyData.$debounce(() => runWithEl(bindEl, () => handle(val, e, place), null, val), delay);
+            else handle(val, e, place);
         }, null, val);
 
         const listenOn = mods.includes("window") ? window : bindEl;
@@ -1000,7 +1002,7 @@
         (bindEl.nagiCleanup ||= []).push(() => listenOn.removeEventListener(eventName, listener));
     };
 
-    const bindProp = (bindEl, key, val) => {
+    const bindProp = (bindEl, key, val, name) => {
         const [main, ...rest] = key.split(".");
         const writeOnly = writerOf(bindEl, main, rest.join("."));
         const live = !rest.length && liveProps.test(main);
@@ -1026,8 +1028,8 @@
             if (typeof value?.then !== "function") return write(value);
             new NativePromise((resolve, reject) => value.then(resolve, reject))
                 .then((resolved) => mine === latest && !run?.gone && write(resolved, true))
-                .catch((err) => mine === latest && !run?.gone && console.error("[Nagi] failed to run:", val, "\n", err));
-        }, bindEl, bindEl, /^class(name|list)$/i.test(main) ? "class" : main);
+                .catch((err) => mine === latest && !run?.gone && console.error("[Nagi] failed to run:", val, "\n", err, ...runPlace(run)));
+        }, bindEl, bindEl, /^class(name|list)$/i.test(main) ? "class" : main, name);
         run.nagiRetry = () => skipped && run();
     };
 
@@ -1092,18 +1094,18 @@
             bindEl.nagiBound = true;
 
             const proxyData = getClosestProxy(bindEl);
-            const props = Object.assign(
-                {},
-                ...entries.map(([name, source]) => evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name))),
-            );
+            const props = entries.flatMap(([name, source]) => {
+                const made = evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name));
+                return made === failed ? [] : Object.entries(made).map(([key, val]) => [key, val, name]);
+            });
 
             const gen = bindEl.nagiGen;
             const gone = () => bindEl.nagiGone || bindEl.nagiGen !== gen;
             bindEl.nagiInitDue = true;
-            for (const [key, val] of Object.entries(props)) {
+            for (const [key, val, name] of props) {
                 if (gone()) return;
-                if (key.startsWith("@")) listen(bindEl, key.slice(1), val, proxyData);
-                else bindProp(bindEl, key, val);
+                if (key.startsWith("@")) listen(bindEl, key.slice(1), val, proxyData, name);
+                else bindProp(bindEl, key, val, name);
             }
             if (gone()) return;
 

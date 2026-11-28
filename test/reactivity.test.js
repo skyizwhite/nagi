@@ -277,7 +277,20 @@ describe("watchers", () => {
     it("says on which element and attribute a bind failed", async () => {
         const page = await mount(`<div n-scope><span id="s" n-bind-textcontent="missing.x"></span></div>`);
         const [message, , , err, , place, attr] = page.errors[0];
-        expect([message, err.name, place.id, attr]).toEqual(["[Nagi] failed to run:", "ReferenceError", "s", "n-bind-textContent"]);
+        expect([message, err.name, place.id, attr]).toEqual(["[Nagi] failed to run:", "ReferenceError", "s", "n-bind-textcontent"]);
+    });
+
+    it("names the attribute as written, and the place of a rejected bind or handler", async () => {
+        const page = await mount(`
+            <div n-scope="{ a: {} }">
+                <span id="s" n-bind-style.color="a.x.y" n-bind-title="Promise.reject(new Error('bind'))"></span>
+                <button id="b" n-on-click="await 0; throw new Error('click')"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        await later(10);
+        const places = page.errors.map((args) => args.slice(-2)).map(([el, attr]) => [el.id, attr]);
+        expect(places).toEqual([["s", "n-bind-style.color"], ["s", "n-bind-title"], ["b", "n-on-click"]]);
     });
 
     it("logs a bind that keeps setting itself off and stops it", async () => {
