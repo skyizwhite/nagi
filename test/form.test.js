@@ -476,6 +476,21 @@ describe("n-form", () => {
         expect(page.scope("#f").seen).toBe("undefined");
     });
 
+    it("keeps the name of a field one response moves to another fragment", async () => {
+        const page = await mount(
+            `<form id="f" n-scope="{ seen: [] }" n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <div id="a"><input name="q" value="x"></div><div id="c"></div>
+            </form>`,
+            { server: () => `<div id="a" n-swap="inner"><i n-on-init="seen = [...seen, String(q)]"></i></div><div id="c" n-swap="inner"><input name="q" value="x"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const scope = page.scope("#f");
+        expect(scope.q).toBe("x");
+        expect(scope.seen).toEqual(["x"]);
+    });
+
     it("writes nothing to a scope torn down with its fields", async () => {
         const page = await mount(`<form id="f" n-scope n-form><input name="q" value="x"></form>`);
         const scope = page.scope("#f");

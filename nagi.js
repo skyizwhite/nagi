@@ -526,33 +526,40 @@
     };
 
     const swapAll = (text, moving) => {
-        for (const fragment of fragmentsOf(text)) {
-            const strategy = fragment.getAttribute("n-swap") || "outer";
-            const target = fragment.id && document.getElementById(fragment.id);
-            if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
-            if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
-            if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
+        const fragments = fragmentsOf(text);
+        const namesIn = (el) => queryAttr(el, "[name]").filter(isField).map((field) => field.name);
+        try {
+            for (const [i, fragment] of fragments.entries()) {
+                upcomingNames = new Set(fragments.slice(i + 1).flatMap(namesIn));
+                const strategy = fragment.getAttribute("n-swap") || "outer";
+                const target = fragment.id && document.getElementById(fragment.id);
+                if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
+                if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
+                if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
 
-            const kids = [...fragment.childNodes];
+                const kids = [...fragment.childNodes];
 
-            const morphs = cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1));
+                const morphs = cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1));
 
-            holdInits(() => {
-                if (strategy === "inner") {
-                    [...target.children].forEach(drop);
-                    target.replaceChildren(...kids);
-                    initAll([...target.childNodes]);
-                } else if (strategy === "outer") {
-                    drop(target);
-                    target.replaceWith(fragment);
-                    init(fragment);
-                } else {
-                    target[strategy](...kids);
-                    initAll(kids);
-                }
-            });
+                holdInits(() => {
+                    if (strategy === "inner") {
+                        [...target.children].forEach(drop);
+                        target.replaceChildren(...kids);
+                        initAll([...target.childNodes]);
+                    } else if (strategy === "outer") {
+                        drop(target);
+                        target.replaceWith(fragment);
+                        init(fragment);
+                    } else {
+                        target[strategy](...kids);
+                        initAll(kids);
+                    }
+                });
 
-            for (const morph of putOld(morphs)) moving.push(morph);
+                for (const morph of putOld(morphs)) moving.push(morph);
+            }
+        } finally {
+            upcomingNames = null;
         }
     };
 
@@ -832,6 +839,7 @@
             const left = rawData[name];
             const check = () => {
                 if (scopeEl.nagiFields?.get(name) !== group || inputEl.isConnected || !Object.is(rawData[name], left)) return;
+                if (upcomingNames?.has(name)) return;
                 group.members.forEach((el) => el.isConnected || group.members.delete(el));
                 const [rest] = group.members;
                 proxyData[name] = rest ? rest.nagiFieldValue?.() : undefined;
@@ -1031,6 +1039,7 @@
 
     let heldInits = null;
     let fieldChecks = null;
+    let upcomingNames = null;
 
     const holdInits = (fn) => {
         if (heldInits) return fn();
