@@ -168,6 +168,39 @@ describe("debounce", () => {
         expect([...page.scope("#i").got].sort()).toEqual(["input", "ping"]);
     });
 
+    it("keeps apart the different debounces of one handler", async () => {
+        const page = await mount(`
+            <div n-scope="{ got: [] }">
+                <button id="b" n-on-click="$debounce(() => got = [...got, 'a'], 10); $debounce(() => got = [...got, 'b'], 20)"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        await later(40);
+        expect(page.scope("#b").got).toEqual(["a", "b"]);
+    });
+
+    it("runs the debounce of a handler called quickly again only once", async () => {
+        const page = await mount(`
+            <div n-scope="{ ran: 0 }"><button id="b" n-on-click="$debounce(() => ran++, 20)"></button></div>
+        `);
+        for (let i = 0; i < 3; i++) page.$("#b").click();
+        await later(40);
+        expect(page.scope("#b").ran).toBe(1);
+    });
+
+    it("keeps apart the same debounce in two handlers of an element after an await", async () => {
+        const page = await mount(`
+            <div n-scope="{ ran: 0 }">
+                <input id="i" n-on-input="await 0; $debounce(() => ran++, 20)" n-on-change="await 0; $debounce(() => ran++, 20)">
+            </div>
+        `);
+        const input = page.$("#i");
+        input.dispatchEvent(new page.window.Event("input"));
+        input.dispatchEvent(new page.window.Event("change"));
+        await later(50);
+        expect(page.scope("#i").ran).toBe(2);
+    });
+
     it("keeps a timer for each watcher of an element", async () => {
         const page = await mount(`
             <div n-scope="{ got: [] }">
