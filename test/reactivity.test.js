@@ -256,6 +256,30 @@ describe("watchers", () => {
         expect(page.errors).toEqual([]);
     });
 
+    it("says where a cycle is and what kept changing, and runs it no more", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ a: 0, b: 0, go: 0 }">
+                <i id="x" n-bind-title="go && (a = b + 1)"></i><b id="y" n-bind-title="go && (b = a + 1)"></b>
+            </div>
+        `);
+        const scope = page.scope("#d");
+        scope.go = 1;
+        const cycles = () => page.errors.filter(([message]) => message.includes("stopped running after 100 times"));
+        expect(cycles()).toHaveLength(1);
+        const [, , , place, attr, , cause] = cycles()[0];
+        expect(["x", "y"]).toContain(place.id);
+        expect(attr).toBe("n-bind-title");
+        expect(["a", "b"]).toContain(cause);
+        scope.go = 2;
+        expect(cycles()).toHaveLength(1);
+    });
+
+    it("says on which element and attribute a bind failed", async () => {
+        const page = await mount(`<div n-scope><span id="s" n-bind-textcontent="missing.x"></span></div>`);
+        const [message, , , err, , place, attr] = page.errors[0];
+        expect([message, err.name, place.id, attr]).toEqual(["[Nagi] failed to run:", "ReferenceError", "s", "n-bind-textContent"]);
+    });
+
     it("logs a bind that keeps setting itself off and stops it", async () => {
         const page = await mount(`
             <div n-scope="{ a: 0, b: 0 }">

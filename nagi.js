@@ -197,11 +197,17 @@
     let runCount = 0;
     const NativePromise = (async () => {})().constructor;
 
-    const watch = (fn, el = currentEl, owner = el) => {
+    const runPlace = (run) => ["in", run.owner ?? "the page", run.attr ? `n-bind-${run.attr}` : "$watch"];
+
+    const watch = (fn, el = currentEl, owner = el, attr) => {
         if (owner?.nagiGone || currentStale) return Object.assign(() => {}, { gone: true, deps: new Set(), children: [] });
-        const run = () => {
+        const run = (cause) => {
             if (run.gone || run === currentBind) return;
-            if (run.active) return (run.dirty = true);
+            if (run.active) {
+                run.dirty = true;
+                run.cause = cause;
+                return;
+            }
             run.active = true;
             try {
                 for (let i = 0; i < 100 && !run.gone && (i === 0 || run.dirty); i++) {
@@ -209,18 +215,21 @@
                     unlink(run);
                     try {
                         const value = runWithEl(el, fn, run);
-                        if (value instanceof NativePromise) value.catch((err) => run.gone || console.error("[Nagi] failed to run:", fn, "\n", err));
+                        if (value instanceof NativePromise) value.catch((err) => run.gone || console.error("[Nagi] failed to run:", fn, "\n", err, ...runPlace(run)));
                     } catch (err) {
-                        console.error("[Nagi] failed to run:", fn, "\n", err);
+                        console.error("[Nagi] failed to run:", fn, "\n", err, ...runPlace(run));
                     }
                 }
                 if (run.gone) unlink(run);
-                else if (run.dirty) console.error("[Nagi] stopped running after 100 times:", fn);
+                else if (run.dirty) {
+                    console.error("[Nagi] stopped running after 100 times:", fn, ...runPlace(run), "kept changing:", run.cause ?? "a name it read");
+                    kill(run);
+                }
             } finally {
                 run.active = false;
             }
         };
-        Object.assign(run, { owner, deps: new Set(), children: [] });
+        Object.assign(run, { owner, attr, deps: new Set(), children: [] });
         owner && (owner.nagiRuns ||= new Set()).add(run);
         run.key = currentBind ? `${currentBind.key}.${currentBind.children.length}` : `run${++runCount}`;
         currentBind?.children.push(run);
@@ -572,9 +581,9 @@
             for (const fragment of fragmentsOf(text)) {
                 const strategy = fragment.getAttribute("n-swap") || "outer";
                 const target = fragment.id && document.getElementById(fragment.id);
-                if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
-                if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
-                if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
+                if (!fragment.id) { console.warn("[Nagi] a fragment of the response has no id:", fragment); continue; }
+                if (!target) { console.warn(`[Nagi] no element on the page for #${fragment.id}:`, fragment); continue; }
+                if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] invalid n-swap:", strategy, fragment); continue; }
 
                 const kids = [...fragment.childNodes];
 
@@ -715,7 +724,7 @@
         };
         const announce = (prop) => {
             const deps = trackedDeps.get(prop);
-            deps && [...deps].forEach((run) => run());
+            deps && [...deps].forEach((run) => run(prop));
         };
 
         const proxy = new Proxy(rawData, {
@@ -1018,8 +1027,7 @@
             new NativePromise((resolve, reject) => value.then(resolve, reject))
                 .then((resolved) => mine === latest && !run?.gone && write(resolved, true))
                 .catch((err) => mine === latest && !run?.gone && console.error("[Nagi] failed to run:", val, "\n", err));
-        }, bindEl);
-        run.attr = /^class(name|list)$/i.test(main) ? "class" : main;
+        }, bindEl, bindEl, /^class(name|list)$/i.test(main) ? "class" : main);
         run.nagiRetry = () => skipped && run();
     };
 
