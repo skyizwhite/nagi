@@ -756,6 +756,31 @@
         return false;
     };
 
+    const sameValue = (had, now) => {
+        if (had === now) return true;
+        if (Array.isArray(now)) return Array.isArray(had) && had.length === now.length && had.every((item, i) => String(item) === String(now[i]));
+        const empty = (v) => v == null || v === "";
+        if (empty(had) && empty(now)) return true;
+        return now !== Object(now) && had !== Object(had) && String(had) === String(now);
+    };
+
+    const liveProps = /^(value|checked|selectedIndex|valueAsNumber|valueAsDate|selected)$/;
+    const sameGroup = (a, b) => a === b || (a?.type === "radio" && b?.type === "radio" && !!a.name && a.name === b.name && a.form === b.form);
+    const focused = (el) => !!el && sameGroup(document.activeElement, el);
+
+    document.addEventListener(
+        "focusout",
+        (e) => {
+            const left = e.target;
+            if (left?.nodeType !== 1 || sameGroup(e.relatedTarget, left)) return;
+            const members = left.type === "radio" && left.name ? [...document.querySelectorAll("input[type=radio]")].filter((el) => sameGroup(el, left)) : [left];
+            members
+                .flatMap((el) => [el, ...el.querySelectorAll("option")])
+                .forEach((el) => el.nagiRuns?.forEach((run) => run.nagiRetry?.()));
+        },
+        true,
+    );
+
     const fieldOf = (inputEl, scopeEl) => {
         const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
         const { name, type, form } = inputEl;
@@ -780,12 +805,18 @@
             file: () => inputEl.files,
             number: () => (inputEl.value === "" ? undefined : +inputEl.value),
             range: () => +inputEl.value,
-            "select-multiple": () => [...inputEl.selectedOptions].map((option) => option.value),
+            "select-multiple": () => [...inputEl.options].filter((option) => option.selected).map((option) => option.value),
         }[type] ?? (() => inputEl.value);
         const setVal = () => {
             if (group.members.has(inputEl)) proxyData[name] = read();
         };
         const field = { inputEl, setVal };
+        inputEl.nagiFieldValue = () => (group.members.has(inputEl) ? read() : undefined);
+        inputEl.nagiReread = () => {
+            if (!group.members.has(inputEl)) return;
+            const now = read();
+            if (!sameValue(rawData[name], now)) proxyData[name] = now;
+        };
 
         setVal();
         if (fresh && read() === undefined) announceName(scopeEl, name);
@@ -795,6 +826,7 @@
         (inputEl.nagiCleanup ||= []).push(() => {
             inputEl.removeEventListener("input", setVal);
             inputEl.removeEventListener("change", setVal);
+            inputEl.nagiReread = inputEl.nagiFieldValue = null;
             group.members.delete(inputEl);
             formFields.delete(field);
         });
@@ -896,17 +928,34 @@
 
     const bindProp = (bindEl, key, val) => {
         const [main, ...rest] = key.split(".");
-        const write = writerOf(bindEl, main, rest.join("."));
+        const writeOnly = writerOf(bindEl, main, rest.join("."));
+        const live = !rest.length && liveProps.test(main);
+        const fieldOfBind = () => (bindEl.nagiReread ? bindEl : bindEl.closest("select"));
+        let skipped = false;
+        const write = (value, later) => {
+            const field = fieldOfBind();
+            if (live && focused(field ?? bindEl)) return void (skipped = true);
+            skipped = false;
+            const before = field?.nagiFieldValue?.();
+            const reread = () => field && !sameValue(before, field.nagiFieldValue?.()) && field.nagiReread?.();
+            if (!later) {
+                writeOnly(value);
+                return reread();
+            }
+            runWithEl(bindEl, () => writeOnly(value));
+            runWithEl(bindEl, reread, run);
+        };
         let latest = 0;
         const run = watch(() => {
             const value = val();
             const mine = ++latest;
             if (typeof value?.then !== "function") return write(value);
             value
-                .then((resolved) => mine === latest && !run?.gone && write(resolved))
+                .then((resolved) => mine === latest && !run?.gone && write(resolved, true))
                 .catch((err) => console.error("[Nagi] failed to run:", val, "\n", err));
         }, bindEl);
         run.attr = /^class(name|list)$/i.test(main) ? "class" : main;
+        run.nagiRetry = () => skipped && run();
     };
 
     const init = (baseEl) => holdInits(() => setUp(baseEl));

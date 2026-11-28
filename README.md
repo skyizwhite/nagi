@@ -139,7 +139,7 @@ Copies the value of each named field inside it into the scope, as the user chang
 ```
 
 - Reads `input`, `select` and `textarea`. A checkbox gives `true` or `false`, a radio group the checked value, a number field a number (`undefined` when empty), a file field its `FileList`, a multiple select a list, and other fields a string.
-- Values flow one way, from the fields to the scope. Write the first value in the field's HTML, and use `n-bind-value` to change a field from the scope.
+- Values flow from the fields to the scope. Write the first value in the field's HTML. A field whose value a bind sets, such as with `n-bind-value`, `n-bind-checked` or `n-bind-selected` on an option, is read again after each write, so its name follows, as in `<input name="slug" n-bind-value="slugify(title)">`. Assigning the name itself does not change the field. Binds do not set the value of the field that has focus (for radios, its group), so a field being typed in is not written over; a value held back that way is set when the field loses focus. Two fields whose binds compute each other, such as a unit converter, feed rounding back into the scope; write those with `n-on-input` instead.
 - The form owns the names of its fields. Don't also define them in `n-scope` or `n-let-*`, and give each field its own name, except radios of one group. Nagi logs an error otherwise.
 - A name like `first-name` is not a valid variable name; read it as `this['first-name']`, or use names like `firstName`.
 - For custom elements, use `n-on-*`, as in `n-on-input="this.date = $el.value"`.

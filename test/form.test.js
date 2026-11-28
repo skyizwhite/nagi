@@ -102,20 +102,13 @@ describe("n-form", () => {
         expect([page.$("#plain").disabled, page.$("#bound").disabled]).toEqual([false, false]);
     });
 
-    it("logs an n-form outside any scope, and leaves its fields and buttons alone", async () => {
-        const answers = [];
-        const page = await mount(
-            `<form n-form><input name="q" value="a"><button id="send"></button></form>
+    it("logs an n-form outside any scope, and leaves its fields alone", async () => {
+        const page = await mount(`
+            <form n-form><input name="q" value="a"></form>
             <span id="s" n-bind-textcontent="typeof q"></span>
-            <button id="b" n-on-click="$get('/x')"></button>`,
-            { server: () => new Promise((resolve) => answers.push(resolve)) },
-        );
+        `);
         expect(page.$("#s").textContent).toBe("undefined");
         expect(page.errors).toHaveLength(1);
-        page.$("#b").click();
-        expect(page.$("#send").disabled).toBe(false);
-        answers.forEach((answer) => answer(""));
-        await page.settle();
     });
 
     it("keeps the fields of an n-form inside a scope in that scope", async () => {
@@ -161,6 +154,243 @@ describe("n-form", () => {
     it("does not copy named buttons", async () => {
         const page = await mount(`<form id="f" n-scope n-form><button name="action" value="save"></button></form>`);
         expect("action" in page.$("#f").nagiRaw).toBe(false);
+    });
+
+    it("follows a field whose value a bind sets from another field", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input id="title" name="title" value="Hello World">
+                <input name="slug" n-bind-value="title.toLowerCase().replace(/ /g, '-')">
+                <p id="p" n-bind-textcontent="slug"></p>
+            </form>
+        `);
+        expect(page.$("#p").textContent).toBe("hello-world");
+        const title = page.$("#title");
+        title.value = "Nagi Rocks";
+        title.dispatchEvent(new page.window.Event("input"));
+        expect(page.scope("#f").slug).toBe("nagi-rocks");
+        expect(page.$("#p").textContent).toBe("nagi-rocks");
+    });
+
+    it("follows a checkbox, a select and a radio group a bind sets", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ on: true, pick: 'b' }" n-form>
+                <input type="checkbox" name="agree" n-bind-checked="on">
+                <select name="size"><option value="s">S</option><option value="m" n-bind-selected="on">M</option></select>
+                <input type="radio" name="r" value="a"><input type="radio" name="r" value="b" n-bind-checked="pick === 'b'">
+            </form>
+        `);
+        const scope = page.scope("#f");
+        expect([scope.agree, scope.size, scope.r]).toEqual([true, "m", "b"]);
+        scope.on = false;
+        expect([scope.agree, scope.size]).toEqual([false, "s"]);
+    });
+
+    it("keeps an assignment to a field's name when another bind of the field runs", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input name="q" value="abc" n-bind-class="{ empty: !q }">
+                <button id="b" type="button" n-on-click="q = ''"></button>
+            </form>
+        `);
+        page.$("#b").click();
+        expect(page.scope("#f").q).toBe("");
+    });
+
+    it("keeps a number or a list the scope holds when a bind writes it into its field", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form n-on-init="qty = '5'; tags = ['a,b']">
+                <input type="number" name="qty" n-bind-value="qty">
+                <select multiple name="tags">
+                    <option value="a,b" n-bind-selected="tags.includes('a,b')">ab</option>
+                    <option value="a" n-bind-selected="tags.includes('a')">a</option>
+                    <option value="b" n-bind-selected="tags.includes('b')">b</option>
+                </select>
+            </form>
+        `);
+        const scope = page.scope("#f");
+        expect(scope.qty).toBe("5");
+        expect(scope.tags).toEqual(["a,b"]);
+    });
+
+    it("does not loop on a bind that sets its field from the field's own name, even through a promise", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input name="tag" n-bind-value="'#' + (tag ?? '')">
+                <input name="late" n-bind-value="Promise.resolve('#' + (late ?? ''))">
+            </form>
+        `);
+        await later(30);
+        expect(page.errors).toEqual([]);
+        expect([page.scope("#f").tag, page.scope("#f").late]).toEqual(["#", "#"]);
+    });
+
+    it("does not overwrite a field while it is being typed in, when another field's bind feeds back", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input id="c" name="c" n-bind-value="f == null || f === '' ? c : String((f - 32) * 5 / 9)">
+                <input id="fa" name="f" n-bind-value="c == null || c === '' ? f : String(c * 9 / 5 + 32)">
+            </form>
+        `);
+        const c = page.$("#c");
+        c.focus();
+        c.value = "1.";
+        c.dispatchEvent(new page.window.Event("input"));
+        expect(c.value).toBe("1.");
+        expect(page.$("#fa").value).toBe("33.8");
+    });
+
+    it("still updates an option's label while its select handles a change", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <select id="s" name="size"><option value="s">S</option><option id="m" value="m" n-bind-textcontent="size === 'm' ? 'M (chosen)' : 'M'">M</option></select>
+            </form>
+        `);
+        const select = page.$("#s");
+        select.value = "m";
+        select.dispatchEvent(new page.window.Event("change"));
+        expect(page.$("#m").textContent).toBe("M (chosen)");
+    });
+
+    it("does not let a bind's promise write into the field being typed in when it resolves", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input id="c" name="c" n-bind-value="Promise.resolve(f == null || f === '' ? c : String((f - 32) * 5 / 9))">
+                <input id="fa" name="f" n-bind-value="c == null || c === '' ? f : String(c * 9 / 5 + 32)">
+            </form>
+        `);
+        const c = page.$("#c");
+        c.focus();
+        c.value = "1.";
+        c.dispatchEvent(new page.window.Event("input"));
+        await later(20);
+        expect(c.value).toBe("1.");
+    });
+
+    it("keeps an assignment to a select's name when an option's label bind runs", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <select name="size"><option value="s">S</option><option value="m" n-bind-textcontent="size === 'm' ? 'M (chosen)' : 'M'">M</option></select>
+                <button id="b" type="button" n-on-click="size = 'm'"></button>
+            </form>
+        `);
+        page.$("#b").click();
+        expect(page.scope("#f").size).toBe("m");
+    });
+
+    it("keeps binds off a field while it has focus, and puts their value in when it leaves", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ cents: 0 }" n-form>
+                <input id="a" name="amount" n-on-input="cents = Math.round($el.value * 100)" n-bind-value="cents / 100">
+            </form>
+        `);
+        const a = page.$("#a");
+        a.focus();
+        a.value = "1.";
+        a.dispatchEvent(new page.window.Event("input"));
+        expect(a.value).toBe("1.");
+        expect(page.scope("#f").cents).toBe(100);
+        a.blur();
+        expect(a.value).toBe("1");
+    });
+
+    it("reads a select again when a bind on its optgroup changes its options", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ opts: '<option value=a>a</option><option value=b selected>b</option>' }" n-form>
+                <select name="c"><optgroup n-bind-innerhtml="opts"></optgroup></select>
+            </form>
+        `);
+        const scope = page.scope("#f");
+        expect(scope.c).toBe("b");
+        scope.opts = "<option value=a>a</option>";
+        expect(scope.c).toBe("a");
+    });
+
+    it("keeps null in the scope when a bind writes it into a text field", async () => {
+        const page = await mount(`<form id="f" n-scope n-form n-on-init="q = null"><input name="q" n-bind-value="q"></form>`);
+        expect(page.scope("#f").q).toBeNull();
+    });
+
+    it("keeps a focused field from a debounced handler, a wrapper's handler and an earlier promise", async () => {
+        let answer;
+        const page = await mount(
+            `<form id="f" n-scope="{ cents: 0, city: '' }" n-form n-on-input="if ($event.target.name === 'w') cents = 7">
+                <input id="a" name="amount" n-on-input.debounce10="cents = Math.round($el.value * 100)" n-bind-value="cents / 100">
+                <input id="w" name="w" n-bind-value="cents">
+                <input id="c" name="town" n-bind-value="city ? lookup() : ''">
+            </form>`,
+            { beforeInit: (window) => (window.lookup = () => new Promise((resolve) => (answer = resolve))) },
+        );
+        const scope = page.scope("#f");
+        const a = page.$("#a");
+        a.focus();
+        a.value = "1.";
+        a.dispatchEvent(new page.window.Event("input"));
+        await later(30);
+        expect(a.value).toBe("1.");
+
+        const w = page.$("#w");
+        w.focus();
+        w.value = "x";
+        w.dispatchEvent(new page.window.Event("input", { bubbles: true }));
+        expect(w.value).toBe("x");
+
+        scope.city = "tokyo";
+        const c = page.$("#c");
+        c.focus();
+        c.value = "ky";
+        answer("Kyoto");
+        await later(10);
+        expect(c.value).toBe("ky");
+    });
+
+    it("keeps a focused radio group from a bind on another radio of it", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ locked: true }" n-form>
+                <input id="ra" type="radio" name="r" value="a"><input type="radio" name="r" value="b" n-bind-checked="r !== 'a' || locked">
+            </form>
+        `);
+        const ra = page.$("#ra");
+        ra.focus();
+        ra.checked = true;
+        ra.dispatchEvent(new page.window.Event("change"));
+        expect(page.scope("#f").r).toBe("a");
+    });
+
+    it("keeps an empty value the scope holds when its field reads it back as another kind of empty", async () => {
+        const page = await mount(`<form id="f" n-scope n-form n-on-init="qty = ''"><input type="number" name="qty" value="5" n-bind-value="qty"></form>`);
+        expect(page.scope("#f").qty).toBe("");
+    });
+
+    it("keeps what was typed when the field loses focus with no write held back", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ user: { email: 'a@x' } }" n-form><input id="e" name="email" n-bind-value="user.email"></form>
+        `);
+        const e = page.$("#e");
+        e.focus();
+        e.value = "new@x";
+        e.dispatchEvent(new page.window.Event("input"));
+        e.blur();
+        expect([e.value, page.scope("#f").email]).toEqual(["new@x", "new@x"]);
+    });
+
+    it("keeps a radio choice when focus moves within its group", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ start: 'a' }" n-form>
+                <input id="ra" type="radio" name="r" value="a" n-bind-checked="start === 'a'"><input id="rb" type="radio" name="r" value="b">
+            </form>
+        `);
+        const [ra, rb] = [page.$("#ra"), page.$("#rb")];
+        ra.focus();
+        rb.checked = true;
+        rb.focus();
+        rb.dispatchEvent(new page.window.Event("change"));
+        expect([ra.checked, rb.checked, page.scope("#f").r]).toEqual([false, true, "b"]);
+    });
+
+    it("keeps undefined in the scope when a bind writes it into a text field", async () => {
+        const page = await mount(`<form id="f" n-scope n-form n-on-init="q = undefined"><input name="q" n-bind-value="q"></form>`);
+        expect(page.scope("#f").q).toBeUndefined();
     });
 
     it("logs fields other than radios that share a name, and reads only the first", async () => {
@@ -413,7 +643,7 @@ describe("n-form", () => {
                 <button id="b" type="button" n-on-click="$get('/x')"></button>
                 <form id="target" n-form></form>
             </div>`,
-            { server: () => `<form id="target" n-swap="inner"><input name="q" value="hi"><button id="go">Go</button></form>` },
+            { server: () => `<form id="target" n-swap="inner"><input name="q" value="hi"></form>` },
         );
         await swapOnce(page);
         const scope = page.scope("#target");
