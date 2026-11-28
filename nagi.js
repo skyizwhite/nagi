@@ -140,13 +140,20 @@
         }
     };
 
-    const atHost = (el, site, fn) => {
-        const prev = [currentEl, currentSite];
-        [currentEl, currentSite] = [el, site];
+    let currentStale = false;
+
+    const staleScope = (scope) => {
+        const el = scope?._nagiEl;
+        return !!el && (el.nagiProxy ?? ownScopes.get(el)) !== scope;
+    };
+
+    const atHost = (el, site, fn, stale = false) => {
+        const prev = [currentEl, currentSite, currentStale];
+        [currentEl, currentSite, currentStale] = [el, site, stale];
         try {
             return fn();
         } finally {
-            [currentEl, currentSite] = prev;
+            [currentEl, currentSite, currentStale] = prev;
         }
     };
 
@@ -154,10 +161,11 @@
 
     const hostLayer = (el, scope, site) => {
         const made = Object.create(null);
+        const gen = el.nagiGen;
         return new Proxy(made, {
             has: (_, name) => hostHelpers.includes(name),
             get: (_, name) =>
-                hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, name === "$debounce" ? site : null, () => scope[name](...args))) : undefined,
+                hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, name === "$debounce" ? site : null, () => scope[name](...args), el.nagiGen !== gen || staleScope(scope))) : undefined,
             set: (_, name, value) => Reflect.set(scope, name, value),
         });
     };
@@ -188,7 +196,7 @@
     let runCount = 0;
 
     const watch = (fn, el = currentEl, owner = el) => {
-        if (owner?.nagiGone) return Object.assign(() => {}, { gone: true, deps: new Set(), children: [] });
+        if (owner?.nagiGone || currentStale) return Object.assign(() => {}, { gone: true, deps: new Set(), children: [] });
         const run = () => {
             if (run.gone || run === currentBind) return;
             if (run.active) return (run.dirty = true);
@@ -277,7 +285,7 @@
 
             this._nagiAbort = new AbortController();
             if (reading) read = controller;
-            if (reading && el && !el.nagiGone) el.nagiRead = controller;
+            if (reading && el && !el.nagiGone && !currentStale) el.nagiRead = controller;
             const deduped = write && dedupe;
             if (deduped) writing.add(write);
             controllers.add(controller);
@@ -338,7 +346,7 @@
             return datasets;
         },
         $watch(fn) {
-            watch(fn, this ? hostOf(this) : currentEl);
+            if (!staleScope(this)) watch(fn, this ? hostOf(this) : currentEl);
         },
         $dispatch(evt, detail, opts) {
             dispatch(hostOf(this) ?? document, evt, { detail, ...opts });
@@ -347,7 +355,7 @@
             const { key: given, abortable = false } = typeof options === "object" && options ? options : { abortable: !!options };
             const el = hostOf(this);
             const signal = abortable && runWithEl(el, () => this._nagiAbort?.signal);
-            if (el?.nagiGone) return;
+            if (el?.nagiGone || currentStale || staleScope(this)) return;
             const timers = ((el ?? document).nagiTimers ||= new Map());
             const site = currentBind?.key ?? currentSite ?? (currentHandler ? idOf(currentHandler) : "");
             const code = fn.nagiSource ?? String(fn);
@@ -359,6 +367,7 @@
             }, ms));
         },
         $persist(prop, key) {
+            if (hostOf(this)?.nagiGone || currentStale || staleScope(this)) return;
             key = key || `_nagiProp-${prop}`;
             const warned = new Set();
             const warn = (doing, err) => {
@@ -499,6 +508,7 @@
             node.nagiTimers?.clear();
             node.nagiBound = node.nagiField = node.nagiInitDue = false;
             node.nagiGone = true;
+            node.nagiGen = (node.nagiGen ?? 0) + 1;
             node.nagiProxy = node.nagiRaw = node.nagiFields = null;
             node.nagiBroken = false;
             ownScopes.delete(node);
@@ -1006,6 +1016,7 @@
             const parent = dataEl.parentElement;
             const before = dataEl.previousElementSibling;
             seen.add(dataEl);
+            dataEl.nagiGone = false;
             makeScope(dataEl);
             const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
             walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
@@ -1015,7 +1026,6 @@
     };
 
     const setUp = (roots) => {
-        roots.forEach((root) => [root, ...root.querySelectorAll("*")].forEach((el) => (el.nagiGone = false)));
         roots.forEach(makeScopes);
         const each = (selector) => roots.flatMap((root) => queryAttr(root, selector));
 
@@ -1043,6 +1053,7 @@
         starts.forEach((start) => start());
 
         each("*").forEach((bindEl) => {
+            if (bindEl.nagiGone) return;
             if (bindEl.nagiBound) return void (bindEl.nagiInitDue && heldInits.push(bindEl));
             const entries = [...bindEl.attributes]
                 .map(({ name, value }) => [name, sourceOf(bindEl, name, value)])

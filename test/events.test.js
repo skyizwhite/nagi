@@ -628,13 +628,30 @@ describe("helpers after an await", () => {
             { server: () => "" },
         );
         page.$("#b").click();
-        page.window.nagi.destroy(page.$("#x"));
-        page.$("#x").remove();
+        const x = page.$("#x");
+        page.window.nagi.destroy(x);
+        x.remove();
         await later(30);
         page.scope("#outer").n = 1;
         expect(page.window.goneWatch).toBeUndefined();
         expect(page.window.goneTimer).toBeUndefined();
+        expect(x.querySelector("#b").nagiRead).toBeFalsy();
         await page.settle();
+    });
+
+    it("starts nothing for a handler whose element was torn down and set up again during the await", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ n: 0 }">
+                <button id="b" n-on-click="${tick}; $watch(() => { n; globalThis.revivedWatch = (globalThis.revivedWatch ?? 0) + 1 })"></button>
+            </div>
+        `);
+        const b = page.$("#b");
+        b.click();
+        page.window.nagi.destroy(b);
+        page.window.nagi.init(b);
+        await later(20);
+        page.scope("#d").n = 1;
+        expect(page.window.revivedWatch).toBeUndefined();
     });
 });
 
