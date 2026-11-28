@@ -526,6 +526,7 @@
     };
 
     const drop = (el) => {
+        droppedNow?.push(el);
         [el, ...el.querySelectorAll("*")].forEach((node) => node.nagiBound && !node.nagiInitDue && dispatch(node, "destroy", { bubbles: false }));
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
@@ -773,8 +774,10 @@
             return;
         }
 
+        const gen = dataEl.nagiGen;
         const outer = closestScope(dataEl.parentElement)?.nagiProxy;
         const base = baseOf(dataEl, outer);
+        if (dataEl.nagiGen !== gen || dataEl.nagiProxy) return;
         if (base === failed) {
             dataEl.nagiBroken = true;
             return;
@@ -787,9 +790,9 @@
 
         attrs.forEach(({ name, value }) => {
             const key = name.match(/^n-let-(.+)$/)?.[1];
-            if (!key || reserved(key, dataEl)) return;
+            if (!key || dataEl.nagiGen !== gen || reserved(key, dataEl)) return;
             const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, proxyData, dataEl, undefined, name)) : undefined;
-            if (result === failed) return;
+            if (result === failed || dataEl.nagiGen !== gen) return;
             try {
                 if (!(key in rawData) || !Reflect.set(proxyData, key, result)) giveName(dataEl, key, result);
             } catch (err) {
@@ -1035,15 +1038,29 @@
 
     const init = (baseEl) => initRoots([baseEl]);
 
-    const initRoots = (roots) => runWithEl(null, () => holdInits(() => setUp(roots)));
+    const initDepth = new Map();
 
-    const makeScopes = (baseEl) => {
+    const initRoots = (roots) => {
+        roots = roots.filter((root) => (initDepth.get(root) ?? 0) < 10 || void console.error("[Nagi] stopped setting up an element its own set-up keeps setting up again:", root));
+        if (!roots.length) return;
+        roots.forEach((root) => initDepth.set(root, (initDepth.get(root) ?? 0) + 1));
+        try {
+            return runWithEl(null, () => holdInits(() => setUp(roots)));
+        } finally {
+            roots.forEach((root) => (initDepth.get(root) > 1 ? initDepth.set(root, initDepth.get(root) - 1) : initDepth.delete(root)));
+        }
+    };
+
+    let droppedNow = null;
+
+    const makeScopes = (baseEl, dropped) => {
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
             acceptNode: (node) =>
                 node.nagiBroken || node.parentElement?.nagiBroken || node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
         });
         const seen = new Set();
-        let dataEl = leftAlone(baseEl) ? null : baseEl;
+        const isDropped = (node) => dropped.some((el) => el.contains(node));
+        let dataEl = leftAlone(baseEl) || isDropped(baseEl) ? null : baseEl;
         while (dataEl) {
             const parent = dataEl.parentElement;
             const before = dataEl.previousElementSibling;
@@ -1053,15 +1070,23 @@
             const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
             walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
             do dataEl = walker.nextNode();
-            while (dataEl && seen.has(dataEl));
+            while (dataEl && (seen.has(dataEl) || isDropped(dataEl)));
         }
     };
 
     const setUp = (roots) => {
-        roots.forEach(makeScopes);
+        const outerDrops = droppedNow;
+        const dropped = (droppedNow = []);
+        try {
+            roots.forEach((root) => makeScopes(root, dropped));
+        } finally {
+            droppedNow = outerDrops;
+            outerDrops?.push(...dropped);
+        }
         const each = (selector) => roots.flatMap((root) => queryAttr(root, selector));
 
         each("[n-ref]").forEach((el) => {
+            if (el.nagiGone) return;
             const scopeEl = el.nagiProxy ? (closestScope(el.parentElement) ?? el) : closestScope(el);
             if (!scopeEl) return console.error("[Nagi] n-ref needs a scope:", el);
             const refs = scopeEl.nagiRaw.$refs;
@@ -1072,12 +1097,12 @@
             if (!later) refs[name] = el;
         });
 
-        each("[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
+        each("[n-form]").forEach((form) => form.nagiGone || closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
 
         const starts = [];
         each("[name]").filter(isField).forEach((inputEl) => {
             const scopeEl = formScope(inputEl);
-            if (inputEl.nagiField || !scopeEl || reserved(inputEl.name, inputEl)) return;
+            if (inputEl.nagiField || inputEl.nagiGone || !scopeEl || reserved(inputEl.name, inputEl)) return;
             const start = fieldOf(inputEl, scopeEl);
             inputEl.nagiField = !!start;
             if (start) starts.push(start);

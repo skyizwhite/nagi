@@ -172,6 +172,104 @@ describe("nagi.destroy", () => {
         expect(x.textContent).toBe("5");
     });
 
+    it("sets up nothing inside a scope element its own n-scope or n-let-* tears down", async () => {
+        const page = await mount(`
+            <div id="outer" n-scope="{ clicks: 0 }">
+                <div id="a" n-scope="{ x: nagi.destroy($el) }"><input name="q" n-ref="r"><span id="sa" n-on-click="clicks++"></span></div>
+                <div id="b" n-scope n-let-x="nagi.destroy($el)" n-let-y="clicks = 100"><span id="sb" n-on-click="clicks++"></span></div>
+            </div>
+        `);
+        page.$("#sa").click();
+        page.$("#sb").click();
+        expect(page.scope("#outer").clicks).toBe(0);
+        expect(page.$("#a").nagiProxy ?? page.$("#b").nagiProxy ?? null).toBe(null);
+        expect(page.scope("#outer").$refs.r).toBe(undefined);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("logs nothing about an n-form inside a scope element its n-scope tears down", async () => {
+        const page = await mount(`<div n-scope="{ x: nagi.destroy($el) }"><form n-form><input name="q"></form></div>`);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("keeps one scope for an element its n-scope sets up once more", async () => {
+        const page = await mount(`
+            <div n-scope>
+                <div id="e" n-scope="{ v: 1, x: (globalThis.made = (globalThis.made ?? 0) + 1, made === 1 && nagi.init($el)) }">
+                    <span id="s" n-on-click="v++" n-bind-title="v"></span>
+                </div>
+            </div>
+        `);
+        page.$("#s").click();
+        expect([page.$("#s").title, page.scope("#e").v]).toEqual(["2", 2]);
+    });
+
+    it("sets up nothing a swapped-in element tore down in another element of the same swap", async () => {
+        const page = await mount(
+            `<div id="box" n-scope><button id="b" n-on-click="$get('/x')"></button></div>`,
+            {
+                server: () =>
+                    `<div id="box" n-swap="append"><div n-scope="{ x: nagi.destroy($el.nextElementSibling) }"></div><div n-scope="{ c: 1 }"><span id="t" n-bind-title="'t'"></span></div></div>`,
+            },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#t").title).toBe("");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("sets up nothing a scope expression tore down outside its own element", async () => {
+        const page = await mount(`
+            <div id="o" n-scope="{ c: 0 }"><div n-scope="{ x: nagi.destroy($el.parentElement) }"></div><span id="t" n-bind-title="'t'"></span></div>
+            <div id="p" n-scope="{ c: 0 }"><div n-scope="{ x: nagi.destroy($el.nextElementSibling) }"></div><span id="u" n-bind-title="'u'"></span></div>
+        `);
+        expect([page.$("#t").title, page.$("#u").title]).toEqual(["", ""]);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("sends init and then destroy to an element its first bind took off the page once it is set up again", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ inits: 0, destroys: 0, once: true }">
+                <span n-bind-title="once && (once = false, globalThis.taken = $el, $el.remove())" n-on-init="inits++" n-on-destroy="destroys++"></span>
+            </div>
+        `);
+        const span = page.window.taken;
+        const scope = page.scope("#d");
+        page.window.nagi.destroy(span);
+        expect([scope.inits, scope.destroys]).toEqual([0, 0]);
+        page.$("#d").append(span);
+        page.window.nagi.init(span);
+        page.window.nagi.destroy(span);
+        expect([scope.inits, scope.destroys]).toEqual([1, 1]);
+    });
+
+    it("stops an element whose bind sets it up again every time", async () => {
+        const page = await mount(`<div n-scope><span id="s" n-bind-title="nagi.destroy($el), nagi.init($el)"></span></div>`);
+        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] stopped setting up an element its own set-up keeps setting up again:"]);
+    });
+
+    it("stops an element whose n-scope, n-let-* or init handler sets it up again every time", async () => {
+        const page = await mount(`
+            <div n-scope>
+                <div n-scope="{ x: (nagi.destroy($el), nagi.init($el), 1) }"></div>
+                <div n-scope n-let-x="nagi.destroy($el), nagi.init($el), 1"></div>
+                <span n-on-init="nagi.destroy($el), nagi.init($el)"></span>
+            </div>
+        `);
+        const message = "[Nagi] stopped setting up an element its own set-up keeps setting up again:";
+        expect(page.errors.map(([m]) => m)).toEqual([message, message, message]);
+    });
+
+    it("sends one init to an element a bind sets up again once", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ inits: 0, once: true }">
+                <span n-bind-title="once && (once = false, nagi.destroy($el), nagi.init($el))" n-on-init="inits++"></span>
+            </div>
+        `);
+        expect(page.scope("#d").inits).toBe(1);
+        expect(page.errors).toEqual([]);
+    });
+
     it("sends the events of a request started before its element was set up again to document", async () => {
         let answer;
         const page = await mount(
