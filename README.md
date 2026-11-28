@@ -260,6 +260,7 @@ row.remove();
 - HTML lowercases attribute names, so `n-let-isOpen` defines `isopen`.
 - Changes are tracked when a name is assigned: write `items = [...items, x]`, not `items.push(x)`, and `user = { ...user, name }`, not `user.name = name`.
 - Declare the names you assign in a scope. Assigning an undeclared name makes a global variable.
+- An async `n-bind-*` or `$watch` follows only the names it reads before its first `await`. Read the names it needs first, as in `const { id, lang } = this; const data = await load(id)`, and make no `$watch` after an `await` in an `n-bind-*`, since each run would add another.
 - Helpers named bare in `n-on-*` and `n-bind-*` (`$dispatch`, not `this.$dispatch`) act from their element, even after an `await` and even if the element has left the page by then; what it dispatches then reaches only what left with it. Called through `this`, as in a method of the scope, they act from that element only until the first `await`, and from the scope's element after it.
 - Nagi sets up the page when it loads, and what responses bring in. Elements other scripts add or remove need `nagi.init` and `nagi.destroy`.
 
