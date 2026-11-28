@@ -234,7 +234,7 @@ Requests are sent with `fetch`, which follows HTTP redirects by itself. Nagi see
 
 | Event | When |
 |---|---|
-| `init` | An element with `n-bind-*` or `n-on-*` is set up. It fires once everything set up with it (on load, by a swap, or by `nagi.init`) is bound, in document order, so a handler can reach the elements inside. Elements it adds need `nagi.init` |
+| `init` | An element with `n-bind-*` or `n-on-*` is set up. It fires once everything set up with it (on load, by one fragment of a response, or by `nagi.init`) is bound, in the order Nagi found the elements, so a handler can reach the elements inside. Elements it adds need `nagi.init`, and attributes it adds to bound elements need `nagi.destroy` and then `nagi.init` |
 | `destroy` | Such an element is about to be removed by a swap, or is passed to `nagi.destroy` |
 | `fetcherr` | A request fails or times out, or its response is not 2xx. `e.detail` has `status`, `text` and `err` |
 | `fetchskip` | A write is skipped because the same one is in flight |

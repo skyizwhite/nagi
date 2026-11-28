@@ -13,13 +13,33 @@ describe("init event", () => {
         expect(page.document.querySelector("span").title).toBe("pinged");
     });
 
-    it("fires in document order", async () => {
+    it("fires after every element a fragment brings in is bound", async () => {
+        const page = await mount(
+            `<div id="d" n-scope="{ got: '' }"><button id="b" n-on-click="$get('/x')"></button><ul id="list"></ul></div>`,
+            {
+                server: () =>
+                    `<ul id="list" n-swap="append"><li n-on-init="$refs.second.dispatchEvent(new Event('ping'))"></li><li n-ref="second" n-on-ping="got = 'pinged'"></li></ul>`,
+            },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#d").got).toBe("pinged");
+    });
+
+    it("fires once on an element an earlier init handler set up again", async () => {
         const page = await mount(`
-            <div id="d" n-scope="{ order: [] }" n-on-init="order = [...order, 'd']">
-                <i n-on-init="order = [...order, 'i']"></i><b n-on-init="order = [...order, 'b']"></b>
+            <div id="d" n-scope="{ count: 0 }" n-on-init="const c = $refs.c; nagi.destroy(c); nagi.init(c)">
+                <span n-ref="c" n-on-init="count++"></span>
             </div>
         `);
-        expect(page.scope("#d").order).toEqual(["d", "i", "b"]);
+        expect(page.scope("#d").count).toBe(1);
+    });
+
+    it("does not fire on an element an earlier init handler took out of the page", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ ran: false }" n-on-init="$el.querySelector('i').remove()"><i n-on-init="ran = true"></i></div>
+        `);
+        expect(page.scope("#d").ran).toBe(false);
     });
 });
 
