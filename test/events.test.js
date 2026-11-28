@@ -2,6 +2,27 @@ import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
 import { later } from "./support.js";
 
+describe("init event", () => {
+    it("fires after everything in the set-up part is bound, so a parent can reach its children", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ got: '' }" n-on-init="$refs.child.dispatchEvent(new Event('ping'))">
+                <span n-ref="child" n-on-ping="got = 'pinged'" n-bind-title="got"></span>
+            </div>
+        `);
+        expect(page.scope("#d").got).toBe("pinged");
+        expect(page.document.querySelector("span").title).toBe("pinged");
+    });
+
+    it("fires in document order", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ order: [] }" n-on-init="order = [...order, 'd']">
+                <i n-on-init="order = [...order, 'i']"></i><b n-on-init="order = [...order, 'b']"></b>
+            </div>
+        `);
+        expect(page.scope("#d").order).toEqual(["d", "i", "b"]);
+    });
+});
+
 describe("handlers", () => {
     it("listens with on<event> and runs the handler with $el as the element", async () => {
         const page = await mount(`

@@ -963,6 +963,7 @@
             }, submitEl);
         });
 
+        const bound = [];
         queryAttr(baseEl, "*").forEach((bindEl) => {
             if (bindEl.nagiBound) return;
             const entries = [...bindEl.attributes]
@@ -981,8 +982,10 @@
                 key.startsWith("@") ? listen(bindEl, key.slice(1), val, proxyData) : bindProp(bindEl, key, val),
             );
 
-            dispatch(bindEl, "init", { bubbles: false });
+            bound.push(bindEl);
         });
+
+        bound.forEach((bindEl) => bindEl.nagiBound && dispatch(bindEl, "init", { bubbles: false }));
     };
 
     const isElement = (name, el) => el?.nodeType === 1 || void console.error(`[Nagi] nagi.${name} needs an element:`, el);
