@@ -187,6 +187,37 @@ describe("nagi.destroy", () => {
         expect(page.errors).toEqual([]);
     });
 
+    it("logs nothing about an n-form inside a scope element its n-scope tears down", async () => {
+        const page = await mount(`<div n-scope="{ x: nagi.destroy($el) }"><form n-form><input name="q"></form></div>`);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("keeps one scope for an element its n-scope sets up once more", async () => {
+        const page = await mount(`
+            <div n-scope>
+                <div id="e" n-scope="{ v: 1, x: (globalThis.made = (globalThis.made ?? 0) + 1, made === 1 && nagi.init($el)) }">
+                    <span id="s" n-on-click="v++" n-bind-title="v"></span>
+                </div>
+            </div>
+        `);
+        page.$("#s").click();
+        expect([page.$("#s").title, page.scope("#e").v]).toEqual(["2", 2]);
+    });
+
+    it("sets up nothing a swapped-in element tore down in another element of the same swap", async () => {
+        const page = await mount(
+            `<div id="box" n-scope><button id="b" n-on-click="$get('/x')"></button></div>`,
+            {
+                server: () =>
+                    `<div id="box" n-swap="append"><div n-scope="{ x: nagi.destroy($el.nextElementSibling) }"></div><div n-scope="{ c: 1 }"><span id="t" n-bind-title="'t'"></span></div></div>`,
+            },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#t").title).toBe("");
+        expect(page.errors).toEqual([]);
+    });
+
     it("sets up nothing a scope expression tore down outside its own element", async () => {
         const page = await mount(`
             <div id="o" n-scope="{ c: 0 }"><div n-scope="{ x: nagi.destroy($el.parentElement) }"></div><span id="t" n-bind-title="'t'"></span></div>

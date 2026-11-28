@@ -777,7 +777,7 @@
         const gen = dataEl.nagiGen;
         const outer = closestScope(dataEl.parentElement)?.nagiProxy;
         const base = baseOf(dataEl, outer);
-        if (dataEl.nagiGen !== gen) return;
+        if (dataEl.nagiGen !== gen || dataEl.nagiProxy) return;
         if (base === failed) {
             dataEl.nagiBroken = true;
             return;
@@ -1041,8 +1041,8 @@
     const initDepth = new Map();
 
     const initRoots = (roots) => {
-        const over = roots.find((root) => (initDepth.get(root) ?? 0) >= 10);
-        if (over) return console.error("[Nagi] stopped setting up an element its own set-up keeps setting up again:", over);
+        roots = roots.filter((root) => (initDepth.get(root) ?? 0) < 10 || void console.error("[Nagi] stopped setting up an element its own set-up keeps setting up again:", root));
+        if (!roots.length) return;
         roots.forEach((root) => initDepth.set(root, (initDepth.get(root) ?? 0) + 1));
         try {
             return runWithEl(null, () => holdInits(() => setUp(roots)));
@@ -1053,35 +1053,36 @@
 
     let droppedNow = null;
 
-    const makeScopes = (baseEl) => {
+    const makeScopes = (baseEl, dropped) => {
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
             acceptNode: (node) =>
                 node.nagiBroken || node.parentElement?.nagiBroken || node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
         });
         const seen = new Set();
-        const outerDrops = droppedNow;
-        const dropped = (droppedNow = []);
-        try {
-            let dataEl = leftAlone(baseEl) ? null : baseEl;
-            while (dataEl) {
-                const parent = dataEl.parentElement;
-                const before = dataEl.previousElementSibling;
-                seen.add(dataEl);
-                dataEl.nagiGone = false;
-                makeScope(dataEl);
-                const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
-                walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
-                do dataEl = walker.nextNode();
-                while (dataEl && (seen.has(dataEl) || dropped.some((el) => el.contains(dataEl))));
-            }
-        } finally {
-            droppedNow = outerDrops;
-            outerDrops?.push(...dropped);
+        const isDropped = (node) => dropped.some((el) => el.contains(node));
+        let dataEl = leftAlone(baseEl) || isDropped(baseEl) ? null : baseEl;
+        while (dataEl) {
+            const parent = dataEl.parentElement;
+            const before = dataEl.previousElementSibling;
+            seen.add(dataEl);
+            dataEl.nagiGone = false;
+            makeScope(dataEl);
+            const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
+            walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
+            do dataEl = walker.nextNode();
+            while (dataEl && (seen.has(dataEl) || isDropped(dataEl)));
         }
     };
 
     const setUp = (roots) => {
-        roots.forEach(makeScopes);
+        const outerDrops = droppedNow;
+        const dropped = (droppedNow = []);
+        try {
+            roots.forEach((root) => makeScopes(root, dropped));
+        } finally {
+            droppedNow = outerDrops;
+            outerDrops?.push(...dropped);
+        }
         const each = (selector) => roots.flatMap((root) => queryAttr(root, selector));
 
         each("[n-ref]").forEach((el) => {
@@ -1096,7 +1097,7 @@
             if (!later) refs[name] = el;
         });
 
-        each("[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
+        each("[n-form]").forEach((form) => form.nagiGone || closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
 
         const starts = [];
         each("[name]").filter(isField).forEach((inputEl) => {
