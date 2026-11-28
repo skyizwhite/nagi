@@ -247,7 +247,7 @@ Nagi sets up the page when it loads, and what responses bring in. When another s
 
 | Function | Description |
 |---|---|
-| `nagi.init(el)` | Sets up `el` and what is inside it that is not set up yet, in the scopes around it. Calling it again does nothing more |
+| `nagi.init(el)` | Sets up `el` and what is inside it that is not set up yet, in the scopes around it. Call it on the outermost element added, and only after it is in the page. Calling it again does nothing more |
 | `nagi.destroy(el)` | Tears down `el` and what is inside it as a swap would: sends `destroy`, stops its binds, listeners, timers and reads. Call it before or after removing `el` |
 
 ```js

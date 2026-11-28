@@ -102,4 +102,62 @@ describe("nagi.destroy", () => {
         expect(page.$("#s").textContent).toBe("b");
         expect(page.errors).toEqual([]);
     });
+
+    it("takes a removed element out of $refs when it is destroyed after the removal", async () => {
+        const page = await mount(`<div id="d" n-scope><div id="row"><p n-ref="p"></p></div></div>`);
+        const row = page.$("#row");
+        row.remove();
+        page.window.nagi.destroy(row);
+        expect(page.scope("#d").$refs.p).toBe(undefined);
+    });
+
+    it("makes a scope element set up again run its n-let-* afresh", async () => {
+        const page = await mount(`
+            <div id="outer" n-scope="{ runs: 0 }">
+                <div id="d" n-scope n-let-n="1" n-let-w="$watch(() => { n; runs++ })"></div>
+            </div>
+        `);
+        const outer = page.scope("#outer");
+        const d = page.$("#d");
+        expect(outer.runs).toBe(1);
+        page.window.nagi.destroy(d);
+        page.window.nagi.init(d);
+        expect(outer.runs).toBe(2);
+        d.nagiProxy.n = 2;
+        expect(outer.runs).toBe(3);
+    });
+
+    it("gives a submit button held through a request its own disabled back", async () => {
+        let answer;
+        const page = await mount(
+            `<form id="f" n-scope n-form n-on-submit.prevent="$post('/x', e)">
+                <button id="b">Save</button>
+                <button id="off" disabled>Off</button>
+            </form>`,
+            { server: () => new Promise((resolve) => (answer = resolve)) },
+        );
+        page.$("#f").dispatchEvent(new page.window.Event("submit", { cancelable: true }));
+        await later(10);
+        expect([page.$("#b").disabled, page.$("#off").disabled]).toEqual([true, true]);
+        page.window.nagi.destroy(page.$("#b"));
+        page.window.nagi.destroy(page.$("#off"));
+        expect([page.$("#b").disabled, page.$("#off").disabled]).toEqual([false, true]);
+        answer("");
+        await page.settle();
+    });
+
+    it("sets up a field later once the field that held its name is gone", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input id="a" name="q" value="a"></form>`);
+        page.$("#f").insertAdjacentHTML("beforeend", `<input id="b" name="q" value="b">`);
+        page.window.nagi.init(page.$("#b"));
+        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] another field of the form has this name:"]);
+
+        page.window.nagi.destroy(page.$("#a"));
+        page.$("#a").remove();
+        page.window.nagi.init(page.$("#b"));
+        const b = page.$("#b");
+        b.value = "c";
+        b.dispatchEvent(new page.window.Event("input"));
+        expect(page.scope("#f").q).toBe("c");
+    });
 });
