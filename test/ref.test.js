@@ -224,5 +224,13 @@ describe("n-ref", () => {
         await page.settle();
         expect(page.window.pairRuns).toBe(before + 1);
     });
+
+    it("hands a name to a new element when the one holding it left the page", async () => {
+        const page = await mount(`<div id="d" n-scope><div id="top"></div><i id="old" n-ref="x"></i></div>`);
+        page.$("#old").remove();
+        page.$("#top").insertAdjacentHTML("beforeend", `<i id="new" n-ref="x"></i>`);
+        page.window.nagi.init(page.$("#new"));
+        expect(page.scope("#d").$refs.x).toBe(page.$("#new"));
+    });
 });
 

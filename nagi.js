@@ -897,7 +897,7 @@
             const name = el.getAttribute("n-ref");
             const held = refsOwn.get(refs)?.[name];
             el.nagiRefScope = scopeEl;
-            const later = held && held !== el && held.nagiRefScope === scopeEl && el.compareDocumentPosition(held) & Node.DOCUMENT_POSITION_FOLLOWING;
+            const later = held && held !== el && held.isConnected && held.nagiRefScope === scopeEl && el.compareDocumentPosition(held) & Node.DOCUMENT_POSITION_FOLLOWING;
             if (!later) refs[name] = el;
         });
 
