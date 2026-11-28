@@ -486,7 +486,7 @@
     };
 
     const drop = (el) => {
-        [el, ...el.querySelectorAll("*")].forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
+        [el, ...el.querySelectorAll("*")].forEach((node) => node.nagiBound && !node.nagiInitDue && dispatch(node, "destroy", { bubbles: false }));
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
             node.nagiRead?.abort();
@@ -496,7 +496,7 @@
             node.nagiTimers?.forEach(clearTimeout);
             node.nagiTimers?.clear();
             if (node.nagiHeld) node.disabled = node.nagiWasDisabled;
-            node.nagiBound = node.nagiField = node.nagiHold = node.nagiHeld = false;
+            node.nagiBound = node.nagiField = node.nagiHold = node.nagiHeld = node.nagiInitDue = false;
             node.nagiProxy = node.nagiRaw = node.nagiFields = null;
             node.nagiBroken = false;
             ownScopes.delete(node);
@@ -538,18 +538,20 @@
 
             const morphs = cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1));
 
-            if (strategy === "inner") {
-                [...target.children].forEach(drop);
-                target.replaceChildren(...kids);
-                initAll([...target.childNodes]);
-            } else if (strategy === "outer") {
-                drop(target);
-                target.replaceWith(fragment);
-                init(fragment);
-            } else {
-                target[strategy](...kids);
-                initAll(kids);
-            }
+            holdInits(() => {
+                if (strategy === "inner") {
+                    [...target.children].forEach(drop);
+                    target.replaceChildren(...kids);
+                    initAll([...target.childNodes]);
+                } else if (strategy === "outer") {
+                    drop(target);
+                    target.replaceWith(fragment);
+                    init(fragment);
+                } else {
+                    target[strategy](...kids);
+                    initAll(kids);
+                }
+            });
 
             for (const morph of putOld(morphs)) moving.push(morph);
         }
@@ -909,7 +911,9 @@
         run.attr = /^class(name|list)$/i.test(main) ? "class" : main;
     };
 
-    const init = (baseEl) => {
+    const init = (baseEl) => holdInits(() => setUp(baseEl));
+
+    const setUp = (baseEl) => {
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
             acceptNode: (node) =>
                 node.nagiBroken || node.parentElement?.nagiBroken || node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
@@ -964,7 +968,7 @@
         });
 
         queryAttr(baseEl, "*").forEach((bindEl) => {
-            if (bindEl.nagiBound) return;
+            if (bindEl.nagiBound) return void (bindEl.nagiInitDue && heldInits.push(bindEl));
             const entries = [...bindEl.attributes]
                 .map(({ name, value }) => [name, sourceOf(bindEl, name, value)])
                 .filter(([, source]) => source);
@@ -981,8 +985,26 @@
                 key.startsWith("@") ? listen(bindEl, key.slice(1), val, proxyData) : bindProp(bindEl, key, val),
             );
 
-            dispatch(bindEl, "init", { bubbles: false });
+            bindEl.nagiInitDue = true;
+            heldInits.push(bindEl);
         });
+    };
+
+    let heldInits = null;
+
+    const holdInits = (fn) => {
+        if (heldInits) return fn();
+        const held = (heldInits = []);
+        try {
+            return fn();
+        } finally {
+            heldInits = null;
+            held.forEach((el) => {
+                if (!el.nagiInitDue || !el.isConnected) return;
+                el.nagiInitDue = false;
+                dispatch(el, "init", { bubbles: false });
+            });
+        }
     };
 
     const isElement = (name, el) => el?.nodeType === 1 || void console.error(`[Nagi] nagi.${name} needs an element:`, el);
