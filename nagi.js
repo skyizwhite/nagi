@@ -762,8 +762,9 @@
         return now !== Object(now) && had !== Object(had) && String(had) === String(now);
     };
 
-    const fieldProps = /^(value|checked|selectedIndex|valueAsNumber|defaultValue|defaultChecked|type|textContent|innerHTML|innerText)$/;
+    const fieldProps = /^(value|checked|selectedIndex|valueAsNumber|defaultValue|defaultChecked|min|max|step|multiple|files|textContent|innerHTML|innerText)$/;
     const optionProps = /^(selected|defaultSelected|value|text|textContent|innerHTML|innerText|label)$/;
+    const liveProps = /^(value|checked|selectedIndex|valueAsNumber|selected)$/;
     let editingField = null;
 
     const fieldOf = (inputEl, scopeEl) => {
@@ -924,19 +925,26 @@
         const writeOnly = writerOf(bindEl, main, rest.join("."));
         const option = bindEl.tagName === "OPTION";
         const setsField = !rest.length && (option ? optionProps : fieldProps).test(main);
-        const write = (value) => {
-            const field = setsField && (option ? bindEl.closest("select") : bindEl);
-            if (field && field === editingField) return;
-            writeOnly(value);
-            if (field) field.nagiReread?.();
+        const live = setsField && liveProps.test(main);
+        const fieldOfBind = () => setsField && (option ? bindEl.closest("select") : bindEl);
+        const write = (value, editing, later) => {
+            const field = fieldOfBind();
+            if (live && field && field === editing) return;
+            if (!later) {
+                writeOnly(value);
+                return field?.nagiReread?.();
+            }
+            runWithEl(bindEl, () => writeOnly(value));
+            if (field) runWithEl(bindEl, () => field.nagiReread?.(), run);
         };
         let latest = 0;
         const run = watch(() => {
             const value = val();
             const mine = ++latest;
-            if (typeof value?.then !== "function") return write(value);
+            const editing = editingField;
+            if (typeof value?.then !== "function") return write(value, editing);
             value
-                .then((resolved) => mine === latest && !run?.gone && runWithEl(bindEl, () => write(resolved), run))
+                .then((resolved) => mine === latest && !run?.gone && write(resolved, editing, true))
                 .catch((err) => console.error("[Nagi] failed to run:", val, "\n", err));
         }, bindEl);
         run.attr = /^class(name|list)$/i.test(main) ? "class" : main;
