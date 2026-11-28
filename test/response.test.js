@@ -369,3 +369,52 @@ describe("headers", () => {
         expect(page.$("#p").textContent).toBe("/list");
     });
 });
+
+describe("fetchdone", () => {
+    it("fires on the element after a 2xx response is swapped in, and not for an error", async () => {
+        let status = 200;
+        const page = await mount(
+            `<div id="d" n-scope="{ done: [], seen: '' }">
+                <button id="b" n-on-click="$post('/x')" n-on-fetchdone="done = [...done, e.detail.status]; seen = document.getElementById('t').textContent"></button>
+                <div id="t">old</div>
+            </div>`,
+            { server: () => ({ status, body: `<div id="t">new</div>` }) },
+        );
+        const scope = page.scope("#d");
+        page.$("#b").click();
+        await page.settle();
+        expect([scope.done, scope.seen]).toEqual([[200], "new"]);
+        status = 500;
+        page.$("#b").click();
+        await page.settle();
+        expect(scope.done).toEqual([200]);
+    });
+
+    it("lets its handler send the same write again, and says whether anything was swapped", async () => {
+        let n = 0;
+        const page = await mount(
+            `<div id="d" n-scope="{ seen: [] }">
+                <button id="b" n-on-click="$post('/x')" n-on-fetchdone="seen = [...seen, [e.detail.swapped, $fetching]]; if (seen.length < 2) $post('/x')"></button>
+                <div id="t">old</div>
+            </div>`,
+            { server: () => (++n === 1 ? `<div id="t">new</div>` : "") },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#d").seen).toEqual([[true, false], [false, false]]);
+        expect(page.requests).toHaveLength(2);
+    });
+
+    it("reaches window when the response replaced the element that sent it", async () => {
+        const page = await mount(
+            `<div id="d" n-scope="{ got: 0 }" n-on-fetchdone.window="got++">
+                <form id="f" n-on-submit.prevent="$post('/x')"></form>
+            </div>`,
+            { server: () => `<form id="f"></form>` },
+        );
+        page.$("#f").dispatchEvent(new page.window.Event("submit", { cancelable: true }));
+        await page.settle();
+        expect(page.scope("#d").got).toBe(1);
+    });
+});
+
