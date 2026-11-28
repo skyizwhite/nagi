@@ -399,6 +399,7 @@
                     );
                 const settled = readSettled(newEl);
                 apply(oldValues);
+                void newEl.offsetWidth;
                 requestAnimationFrame(() => {
                     apply(settled);
                     newEl.nagiRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());

@@ -281,6 +281,31 @@ describe("cssMorph", () => {
         expect(page.$("#target").className).toBe("new");
     });
 
+    it("has the browser style the old values before the frame that puts the new ones, so transitions run", async () => {
+        const styled = [];
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="target" class="old"></div></div>`,
+            {
+                server: () => `<div id="target" class="new"></div>`,
+                beforeInit: (window) => {
+                    const { get } = Object.getOwnPropertyDescriptor(window.HTMLElement.prototype, "offsetWidth");
+                    Object.defineProperty(window.HTMLElement.prototype, "offsetWidth", {
+                        configurable: true,
+                        get() {
+                            if (this.id === "target") styled.push(this.className);
+                            return get.call(this);
+                        },
+                    });
+                },
+            },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(styled).toEqual(["old"]);
+        await frame();
+        expect(page.$("#target").className).toBe("new");
+    });
+
     it("leaves the target of an inner swap and its wrapper alone, and settles the new children", async () => {
         const page = await mount(
             `<div n-scope>
