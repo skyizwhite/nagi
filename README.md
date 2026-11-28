@@ -173,7 +173,7 @@ Pick the values a request needs from `$dataset()` rather than sending all of it.
 | `$dataset()` | The `data-*` of the element and its ancestors |
 | `$dispatch(name, detail, options)` | Dispatches a bubbling event from the element |
 | `$watch(fn)` | Runs `fn`, and again whenever what it read changes |
-| `$debounce(fn, ms)` | Runs `fn` once calls have stopped for `ms` |
+| `$debounce(fn, ms)` | Runs `fn` once calls have stopped for `ms`. Calls count as one when they come from the same attribute or `$watch` and pass a function with the same code; a function made with `.bind()` counts by itself. Through `this` after an `await`, as in a method of the scope, the calls of every attribute with the same code count as one |
 | `$persist(name, key)` | Keeps a name of the scope in `localStorage` as JSON. Call it from `n-on-init`. When the value gives no JSON, as `undefined` and functions do, or cannot be saved, the stored value is removed and the next page starts from the scope's own value. The key is `_nagiProp-<name>` unless given, the same on every page of the origin |
 
 ### Requests

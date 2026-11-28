@@ -201,6 +201,30 @@ describe("debounce", () => {
         expect(page.scope("#i").ran).toBe(2);
     });
 
+    it("keeps one debounce of a handler whether or not it awaited first", async () => {
+        const page = await mount(`
+            <div n-scope="{ ran: 0 }"><input id="i" n-on-input="if ($el.value === 'b') await 0; $debounce(() => ran++, 20)"></div>
+        `);
+        const input = page.$("#i");
+        for (const value of ["a", "b"]) {
+            input.value = value;
+            input.dispatchEvent(new page.window.Event("input"));
+        }
+        await later(50);
+        expect(page.scope("#i").ran).toBe(1);
+    });
+
+    it("keeps apart bound functions of one handler", async () => {
+        const page = await mount(`
+            <div n-scope="{ got: [] }">
+                <button id="b" n-on-click="const add = (x) => got = [...got, x]; $debounce(add.bind(null, 'a'), 10); $debounce(add.bind(null, 'b'), 20)"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        await later(40);
+        expect(page.scope("#b").got).toEqual(["a", "b"]);
+    });
+
     it("keeps a timer for each watcher of an element", async () => {
         const page = await mount(`
             <div n-scope="{ got: [] }">

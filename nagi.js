@@ -83,12 +83,12 @@
     };
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
-        const prev = [currentEl, currentBind, currentHandler];
-        [currentEl, currentBind, currentHandler] = [el, bind, handler];
+        const prev = [currentEl, currentBind, currentHandler, currentSite];
+        [currentEl, currentBind, currentHandler, currentSite] = [el, bind, handler, null];
         try {
             return fn();
         } finally {
-            [currentEl, currentBind, currentHandler] = prev;
+            [currentEl, currentBind, currentHandler, currentSite] = prev;
         }
     };
 
@@ -265,8 +265,9 @@
             const el = hostOf(this);
             const signal = abortable && runWithEl(el, () => this._nagiAbort?.signal);
             const timers = ((el ?? document).nagiTimers ||= new Map());
-            const site = currentHandler ? idOf(currentHandler) : (currentBind?.key ?? currentSite ?? "");
-            const key = `${site} ${fn.nagiSource ?? String(fn)}`;
+            const site = currentBind?.key ?? currentSite ?? (currentHandler ? idOf(currentHandler) : "");
+            const code = fn.nagiSource ?? String(fn);
+            const key = `${site} ${/\[native code\]/.test(code) ? idOf(fn) : code}`;
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);
