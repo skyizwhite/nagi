@@ -617,5 +617,104 @@ describe("helpers after an await", () => {
         expect([window.countA, window.countB]).toEqual([1, 1]);
         expect(page.errors).toEqual([]);
     });
+
+    it("starts no $watch, $debounce or read for an element and scope torn down during the await", async () => {
+        let answer;
+        const page = await mount(
+            `<div id="outer" n-scope="{ n: 0 }">
+                <div id="x" n-scope>
+                    <button id="b" n-on-click="${tick}; $watch(() => { n; globalThis.goneWatch = (globalThis.goneWatch ?? 0) + 1 }); $debounce(() => (globalThis.goneTimer = true), 5); $get('/late')"></button>
+                </div>
+            </div>`,
+            { server: () => new Promise((resolve) => (answer = resolve)) },
+        );
+        page.$("#b").click();
+        const x = page.$("#x");
+        page.window.nagi.destroy(x);
+        x.remove();
+        await later(30);
+        page.scope("#outer").n = 1;
+        expect(page.window.goneWatch).toBeUndefined();
+        expect(page.window.goneTimer).toBeUndefined();
+        expect(x.querySelector("#b").nagiRead).toBeFalsy();
+        answer("");
+        await page.settle();
+    });
+
+    it("lets live listeners of a stale handler's event start what they start", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ got: 0 }" n-on-done.debounce10="got = 1">
+                <button id="b" n-on-click="${tick}; $dispatch('done')"></button>
+            </div>
+        `);
+        const b = page.$("#b");
+        b.click();
+        page.window.nagi.destroy(b);
+        page.window.nagi.init(b);
+        await later(40);
+        expect(page.scope("#d").got).toBe(1);
+    });
+
+    it("ties no read to a scope element made anew when a request goes through the old scope", async () => {
+        let answer;
+        const page = await mount(
+            `<div id="x" n-scope><button id="b" n-on-click="${tick}; this.$get('/x')"></button></div>`,
+            { server: () => new Promise((resolve) => (answer = resolve)) },
+        );
+        const x = page.$("#x");
+        page.$("#b").click();
+        page.window.nagi.destroy(x);
+        page.window.nagi.init(x);
+        await later(20);
+        expect(x.nagiRead).toBeFalsy();
+        answer("");
+        await page.settle();
+    });
+
+    it("leaves the new listeners and the live reads of a scope to a stale request, and persists nothing for it", async () => {
+        let answers = [];
+        const page = await mount(
+            `<div id="d" n-scope="{ errs: 0, draft: 'live' }">
+                <button id="b" n-on-fetcherr="errs++" n-on-click="${tick}; $persist('draft', 'staleDraft'); $get('/stale')"></button>
+                <button id="list" n-on-click="$get('/list')"></button>
+            </div>`,
+            { server: (request) => new Promise((resolve) => answers.push([request.url, resolve])) },
+        );
+        const b = page.$("#b");
+        b.click();
+        page.window.nagi.destroy(b);
+        page.window.nagi.init(b);
+        page.$("#list").click();
+        await later(20);
+        expect(page.window.localStorage.getItem("staleDraft")).toBe(null);
+        answers.forEach(([url, resolve]) => resolve(url.endsWith("/stale") ? { status: 500 } : ""));
+        await page.settle();
+        expect(page.scope("#d").errs).toBe(0);
+        expect(page.requests.map((r) => new URL(r.url).pathname).sort()).toEqual(["/list", "/stale"]);
+    });
+
+    it("keeps an element given n-scope later from treating its own handlers as stale", async () => {
+        const page = await mount(`<button id="b" n-on-click="$debounce(() => (globalThis.laterScope = true), 5)"></button>`);
+        page.$("#b").setAttribute("n-scope", "{}");
+        page.window.nagi.init(page.$("#b"));
+        page.$("#b").click();
+        await later(20);
+        expect(page.window.laterScope).toBe(true);
+    });
+
+    it("starts nothing for a handler whose element was torn down and set up again during the await", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ n: 0 }">
+                <button id="b" n-on-click="${tick}; $watch(() => { n; globalThis.revivedWatch = (globalThis.revivedWatch ?? 0) + 1 })"></button>
+            </div>
+        `);
+        const b = page.$("#b");
+        b.click();
+        page.window.nagi.destroy(b);
+        page.window.nagi.init(b);
+        await later(20);
+        page.scope("#d").n = 1;
+        expect(page.window.revivedWatch).toBeUndefined();
+    });
 });
 
