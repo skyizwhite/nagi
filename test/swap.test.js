@@ -331,6 +331,43 @@ describe("cssMorph", () => {
         expect(["a", "b1", "s"].map((id) => page.$(`#${id}`).getAttribute("class"))).toEqual(["new", "new", "new"]);
     });
 
+    it("settles an element a later fragment of the same answer swaps again from the page's look", async () => {
+        const { reflows, beforeInit } = watchReflows(["c"]);
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="p"><i id="c" class="a"></i></div></div>`,
+            {
+                server: () => `<div id="p"><i id="c" class="b"></i></div><div id="p" n-swap="inner"><i id="c" class="c"></i></div>`,
+                beforeInit,
+            },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(reflows).toEqual([["a"]]);
+        await frame();
+        expect(page.$("#c").className).toBe("c");
+    });
+
+    it("still settles the fragments swapped before one that throws", async () => {
+        const { reflows, beforeInit } = watchReflows(["a"]);
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="a" class="old"></div><div id="z"></div></div>`,
+            {
+                server: () => `<div id="a" class="new"></div><div id="z" n-swap="before"><b></b></div>`,
+                beforeInit: (window) => {
+                    beforeInit(window);
+                    window.HTMLElement.prototype.before = () => {
+                        throw new window.DOMException("refused", "HierarchyRequestError");
+                    };
+                },
+            },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(reflows).toEqual([["old"]]);
+        await frame();
+        expect(page.$("#a").className).toBe("new");
+    });
+
     it("forces no reflow when nothing an answer brings changes its look", async () => {
         const { reflows, beforeInit } = watchReflows(["target"]);
         const page = await mount(

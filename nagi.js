@@ -354,32 +354,37 @@
     const initAll = (nodes) => nodes.forEach((node) => node.nodeType === 1 && init(node));
 
     const swap = (text) => {
-        const morphs = [];
-        for (const fragment of fragmentsOf(text)) {
-            const strategy = fragment.getAttribute("n-swap") || "outer";
-            const target = fragment.id && document.getElementById(fragment.id);
-            if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
-            if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
-            if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
+        const moving = [];
+        try {
+            for (const fragment of fragmentsOf(text)) {
+                const strategy = fragment.getAttribute("n-swap") || "outer";
+                const target = fragment.id && document.getElementById(fragment.id);
+                if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
+                if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
+                if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
 
-            const kids = [...fragment.childNodes];
+                const kids = [...fragment.childNodes];
 
-            morphs.push(...cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1)));
+                const morphs = cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1));
 
-            if (strategy === "inner") {
-                [...target.children].forEach(drop);
-                target.replaceChildren(...kids);
-                initAll([...target.childNodes]);
-            } else if (strategy === "outer") {
-                drop(target);
-                target.replaceWith(fragment);
-                init(fragment);
-            } else {
-                target[strategy](...kids);
-                initAll(kids);
+                if (strategy === "inner") {
+                    [...target.children].forEach(drop);
+                    target.replaceChildren(...kids);
+                    initAll([...target.childNodes]);
+                } else if (strategy === "outer") {
+                    drop(target);
+                    target.replaceWith(fragment);
+                    init(fragment);
+                } else {
+                    target[strategy](...kids);
+                    initAll(kids);
+                }
+
+                for (const morph of putOld(morphs)) moving.push(morph);
             }
+        } finally {
+            settle(moving);
         }
-        settle(morphs);
     };
 
     const attributesToSettle = ["style", "class", "height", "width"];
@@ -396,18 +401,20 @@
     const putSettled = (el, values) =>
         values.forEach(([attr, value]) => (value != null ? el.setAttribute(attr, value) : el.removeAttribute(attr)));
 
-    const settle = (morphs) => {
-        const moving = morphs.flatMap(([newEl, oldValues]) => {
-            if (!newEl.isConnected) return [];
+    const putOld = (morphs) =>
+        morphs.flatMap(([newEl, oldValues]) => {
             const settled = readSettled(newEl);
             if (settled.every(([, value], i) => value === oldValues[i][1])) return [];
             putSettled(newEl, oldValues);
             return [[newEl, settled]];
         });
-        if (!moving.length) return;
+
+    const settle = (moving) => {
+        const connected = moving.filter(([newEl]) => newEl.isConnected);
+        if (!connected.length) return;
         void document.documentElement.offsetWidth;
         requestAnimationFrame(() =>
-            moving.forEach(([newEl, settled]) => {
+            connected.forEach(([newEl, settled]) => {
                 putSettled(newEl, settled);
                 newEl.nagiRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
             }),
