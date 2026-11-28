@@ -184,6 +184,16 @@ describe("nagi.destroy", () => {
         expect(page.scope("#outer").clicks).toBe(0);
         expect(page.$("#a").nagiProxy ?? page.$("#b").nagiProxy ?? null).toBe(null);
         expect(page.scope("#outer").$refs.r).toBe(undefined);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("sets up nothing a scope expression tore down outside its own element", async () => {
+        const page = await mount(`
+            <div id="o" n-scope="{ c: 0 }"><div n-scope="{ x: nagi.destroy($el.parentElement) }"></div><span id="t" n-bind-title="'t'"></span></div>
+            <div id="p" n-scope="{ c: 0 }"><div n-scope="{ x: nagi.destroy($el.nextElementSibling) }"></div><span id="u" n-bind-title="'u'"></span></div>
+        `);
+        expect([page.$("#t").title, page.$("#u").title]).toEqual(["", ""]);
+        expect(page.errors).toEqual([]);
     });
 
     it("sends init and then destroy to an element its first bind took off the page once it is set up again", async () => {
@@ -205,6 +215,28 @@ describe("nagi.destroy", () => {
     it("stops an element whose bind sets it up again every time", async () => {
         const page = await mount(`<div n-scope><span id="s" n-bind-title="nagi.destroy($el), nagi.init($el)"></span></div>`);
         expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] stopped setting up an element its own set-up keeps setting up again:"]);
+    });
+
+    it("stops an element whose n-scope, n-let-* or init handler sets it up again every time", async () => {
+        const page = await mount(`
+            <div n-scope>
+                <div n-scope="{ x: (nagi.destroy($el), nagi.init($el), 1) }"></div>
+                <div n-scope n-let-x="nagi.destroy($el), nagi.init($el), 1"></div>
+                <span n-on-init="nagi.destroy($el), nagi.init($el)"></span>
+            </div>
+        `);
+        const message = "[Nagi] stopped setting up an element its own set-up keeps setting up again:";
+        expect(page.errors.map(([m]) => m)).toEqual([message, message, message]);
+    });
+
+    it("sends one init to an element a bind sets up again once", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ inits: 0, once: true }">
+                <span n-bind-title="once && (once = false, nagi.destroy($el), nagi.init($el))" n-on-init="inits++"></span>
+            </div>
+        `);
+        expect(page.scope("#d").inits).toBe(1);
+        expect(page.errors).toEqual([]);
     });
 
     it("sends the events of a request started before its element was set up again to document", async () => {

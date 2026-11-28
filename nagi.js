@@ -526,6 +526,7 @@
     };
 
     const drop = (el) => {
+        droppedNow?.push(el);
         [el, ...el.querySelectorAll("*")].forEach((node) => node.nagiBound && !node.nagiInitDue && dispatch(node, "destroy", { bubbles: false }));
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
@@ -791,7 +792,7 @@
             const key = name.match(/^n-let-(.+)$/)?.[1];
             if (!key || dataEl.nagiGen !== gen || reserved(key, dataEl)) return;
             const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, proxyData, dataEl, undefined, name)) : undefined;
-            if (result === failed) return;
+            if (result === failed || dataEl.nagiGen !== gen) return;
             try {
                 if (!(key in rawData) || !Reflect.set(proxyData, key, result)) giveName(dataEl, key, result);
             } catch (err) {
@@ -1037,7 +1038,20 @@
 
     const init = (baseEl) => initRoots([baseEl]);
 
-    const initRoots = (roots) => runWithEl(null, () => holdInits(() => setUp(roots)));
+    const initDepth = new Map();
+
+    const initRoots = (roots) => {
+        const over = roots.find((root) => (initDepth.get(root) ?? 0) >= 10);
+        if (over) return console.error("[Nagi] stopped setting up an element its own set-up keeps setting up again:", over);
+        roots.forEach((root) => initDepth.set(root, (initDepth.get(root) ?? 0) + 1));
+        try {
+            return runWithEl(null, () => holdInits(() => setUp(roots)));
+        } finally {
+            roots.forEach((root) => (initDepth.get(root) > 1 ? initDepth.set(root, initDepth.get(root) - 1) : initDepth.delete(root)));
+        }
+    };
+
+    let droppedNow = null;
 
     const makeScopes = (baseEl) => {
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
@@ -1045,20 +1059,24 @@
                 node.nagiBroken || node.parentElement?.nagiBroken || node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
         });
         const seen = new Set();
-        const dropped = [];
-        let dataEl = leftAlone(baseEl) ? null : baseEl;
-        while (dataEl) {
-            const parent = dataEl.parentElement;
-            const before = dataEl.previousElementSibling;
-            const gen = dataEl.nagiGen;
-            seen.add(dataEl);
-            dataEl.nagiGone = false;
-            makeScope(dataEl);
-            if (dataEl.nagiGen !== gen) dropped.push(dataEl);
-            const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
-            walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
-            do dataEl = walker.nextNode();
-            while (dataEl && (seen.has(dataEl) || dropped.some((el) => el.contains(dataEl))));
+        const outerDrops = droppedNow;
+        const dropped = (droppedNow = []);
+        try {
+            let dataEl = leftAlone(baseEl) ? null : baseEl;
+            while (dataEl) {
+                const parent = dataEl.parentElement;
+                const before = dataEl.previousElementSibling;
+                seen.add(dataEl);
+                dataEl.nagiGone = false;
+                makeScope(dataEl);
+                const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
+                walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
+                do dataEl = walker.nextNode();
+                while (dataEl && (seen.has(dataEl) || dropped.some((el) => el.contains(dataEl))));
+            }
+        } finally {
+            droppedNow = outerDrops;
+            outerDrops?.push(...dropped);
         }
     };
 
@@ -1097,39 +1115,26 @@
                 .map(({ name, value }) => [name, sourceOf(bindEl, name, value)])
                 .filter(([, source]) => source);
             if (!entries.length) return;
-            const depth = settingUp.get(bindEl) ?? 0;
-            if (depth >= 10) return console.error("[Nagi] stopped setting up an element its own set-up keeps setting up again:", bindEl);
             bindEl.nagiBound = true;
-            settingUp.set(bindEl, depth + 1);
-            try {
-                bindOne(bindEl, entries);
-            } finally {
-                if (depth) settingUp.set(bindEl, depth);
-                else settingUp.delete(bindEl);
+
+            const proxyData = getClosestProxy(bindEl);
+            const props = entries.flatMap(([name, source]) => {
+                const made = evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name), name);
+                return made === failed ? [] : Object.entries(made).map(([key, val]) => [key, val, name]);
+            });
+
+            const gen = bindEl.nagiGen;
+            const gone = () => bindEl.nagiGone || bindEl.nagiGen !== gen;
+            bindEl.nagiInitDue = true;
+            for (const [key, val, name] of props) {
+                if (gone()) return;
+                if (key.startsWith("@")) listen(bindEl, key.slice(1), val, proxyData, name);
+                else bindProp(bindEl, key, val, name);
             }
-        });
-    };
-
-    const settingUp = new Map();
-
-    const bindOne = (bindEl, entries) => {
-        const proxyData = getClosestProxy(bindEl);
-        const props = entries.flatMap(([name, source]) => {
-            const made = evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name), name);
-            return made === failed ? [] : Object.entries(made).map(([key, val]) => [key, val, name]);
-        });
-
-        const gen = bindEl.nagiGen;
-        const gone = () => bindEl.nagiGone || bindEl.nagiGen !== gen;
-        bindEl.nagiInitDue = true;
-        for (const [key, val, name] of props) {
             if (gone()) return;
-            if (key.startsWith("@")) listen(bindEl, key.slice(1), val, proxyData, name);
-            else bindProp(bindEl, key, val, name);
-        }
-        if (gone()) return;
 
-        heldInits.push(bindEl);
+            heldInits.push(bindEl);
+        });
     };
 
     let heldInits = null;
