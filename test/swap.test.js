@@ -281,29 +281,67 @@ describe("cssMorph", () => {
         expect(page.$("#target").className).toBe("new");
     });
 
+    const watchReflows = (ids) => {
+        const reflows = [];
+        const beforeInit = (window) => {
+            const { get } = Object.getOwnPropertyDescriptor(window.HTMLElement.prototype, "offsetWidth");
+            Object.defineProperty(window.HTMLElement.prototype, "offsetWidth", {
+                configurable: true,
+                get() {
+                    reflows.push(ids.map((id) => window.document.getElementById(id)?.getAttribute("class")));
+                    return get.call(this);
+                },
+            });
+        };
+        return { reflows, beforeInit };
+    };
+
     it("has the browser style the old values before the frame that puts the new ones, so transitions run", async () => {
-        const styled = [];
+        const { reflows, beforeInit } = watchReflows(["target"]);
         const page = await mount(
             `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="target" class="old"></div></div>`,
+            { server: () => `<div id="target" class="new"></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(reflows).toEqual([["old"]]);
+        await frame();
+        expect(page.$("#target").className).toBe("new");
+    });
+
+    it("styles the old values of every element of an answer with one reflow, and settles them in one frame", async () => {
+        const { reflows, beforeInit } = watchReflows(["a", "b1", "s"]);
+        const page = await mount(
+            `<div n-scope>
+                <button id="b" n-on-click="$get('/x')"></button>
+                <div id="a" class="old"></div>
+                <ul id="list"><li id="b1" class="old"></li></ul>
+                <svg id="s" class="old"><circle></circle></svg>
+            </div>`,
             {
-                server: () => `<div id="target" class="new"></div>`,
-                beforeInit: (window) => {
-                    const { get } = Object.getOwnPropertyDescriptor(window.HTMLElement.prototype, "offsetWidth");
-                    Object.defineProperty(window.HTMLElement.prototype, "offsetWidth", {
-                        configurable: true,
-                        get() {
-                            if (this.id === "target") styled.push(this.className);
-                            return get.call(this);
-                        },
-                    });
-                },
+                server: () =>
+                    `<div id="a" class="new"></div><ul id="list" n-swap="inner"><li id="b1" class="new"></li></ul><svg id="s" class="new"><circle></circle></svg>`,
+                beforeInit,
             },
         );
         page.$("#b").click();
         await page.settle();
-        expect(styled).toEqual(["old"]);
+        expect(reflows).toEqual([["old", "old", "old"]]);
         await frame();
-        expect(page.$("#target").className).toBe("new");
+        expect(["a", "b1", "s"].map((id) => page.$(`#${id}`).getAttribute("class"))).toEqual(["new", "new", "new"]);
+    });
+
+    it("forces no reflow when nothing an answer brings changes its look", async () => {
+        const { reflows, beforeInit } = watchReflows(["target"]);
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="target" class="same"></div></div>`,
+            { server: () => `<div id="target" class="same"><span>new</span></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        await frame();
+        expect(reflows).toEqual([]);
+        expect(page.$("#target").textContent).toBe("new");
     });
 
     it("leaves the target of an inner swap and its wrapper alone, and settles the new children", async () => {
