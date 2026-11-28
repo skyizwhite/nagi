@@ -589,7 +589,9 @@
 
                 const kids = [...fragment.childNodes];
 
-                const morphs = cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1));
+                const morphs = strategy === "outer" ? cssMorph([fragment], [target, ...target.querySelectorAll("[id]")])
+                    : strategy === "inner" ? cssMorph(kids.filter((kid) => kid.nodeType === 1), [...target.querySelectorAll("[id]")])
+                    : [];
 
                 applied++;
                 holdInits(() => {
@@ -620,13 +622,16 @@
     const attributesToSettle = ["style", "class", "height", "width"];
     const readSettled = (el) => attributesToSettle.map((attr) => [attr, el.getAttribute(attr)]);
 
-    const cssMorph = (roots) =>
-        roots.flatMap((root) =>
+    const cssMorph = (roots, removed) => {
+        const byId = new Map();
+        removed.forEach((el) => el.id && !byId.has(el.id) && byId.set(el.id, el));
+        return roots.flatMap((root) =>
             queryAttr(root, "[id]").flatMap((newEl) => {
-                const oldEl = document.getElementById(newEl.id);
+                const oldEl = byId.get(newEl.id);
                 return oldEl && oldEl.tagName === newEl.tagName ? [[newEl, readSettled(oldEl)]] : [];
             }),
         );
+    };
 
     const putSettled = (el, values) =>
         values.forEach(([attr, value]) => (value != null ? el.setAttribute(attr, value) : el.removeAttribute(attr)));
@@ -636,16 +641,45 @@
             const settled = readSettled(newEl);
             if (settled.every(([, value], i) => value === oldValues[i][1])) return [];
             putSettled(newEl, oldValues);
-            return [[newEl, settled]];
+            return [[newEl, settled, oldValues]];
         });
 
+    const styleOf = (text) => {
+        const style = document.createElement("div").style;
+        style.cssText = text ?? "";
+        return style;
+    };
+
+    const namesOf = (style) => Array.from({ length: style.length }, (_, i) => style.item(i));
+
+    const settleAttr = (el, attr, from, to) => {
+        const now = el.getAttribute(attr);
+        const whole = () => (to != null ? el.setAttribute(attr, to) : el.removeAttribute(attr));
+        if (now === from) return whole();
+        if (attr === "class") {
+            const [before, after] = [new Set(classesOf(from ?? "").filter(Boolean)), new Set(classesOf(to ?? "").filter(Boolean))];
+            before.forEach((name) => after.has(name) || el.classList.remove(name));
+            after.forEach((name) => before.has(name) || el.classList.add(name));
+            if (to == null && !el.classList.length) el.removeAttribute(attr);
+        } else if (attr === "style") {
+            const [before, after] = [styleOf(from), styleOf(to)];
+            if ([before, after, el.style].some((style) => namesOf(style).some((name) => !style.getPropertyValue(name)))) return whole();
+            new Set([...namesOf(before), ...namesOf(after)]).forEach((name) => {
+                const kept = el.style.getPropertyValue(name) === before.getPropertyValue(name) && el.style.getPropertyPriority(name) === before.getPropertyPriority(name);
+                if (!kept) return;
+                if (after.getPropertyValue(name)) el.style.setProperty(name, after.getPropertyValue(name), after.getPropertyPriority(name));
+                else el.style.removeProperty(name);
+            });
+            if (to == null && !el.style.length) el.removeAttribute(attr);
+        }
+    };
+
     const settle = (moving) => {
-        const connected = moving.filter(([newEl]) => newEl.isConnected);
-        if (!connected.length) return;
+        if (!moving.length) return;
         void document.documentElement.offsetWidth;
         requestAnimationFrame(() =>
-            connected.forEach(([newEl, settled]) => {
-                putSettled(newEl, settled);
+            moving.forEach(([newEl, settled, oldValues]) => {
+                settled.forEach(([attr, value], i) => settleAttr(newEl, attr, oldValues[i][1], value));
                 newEl.nagiRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
             }),
         );
