@@ -141,5 +141,59 @@ describe("n-ref", () => {
         page.window.nagi.init(page.$("#a"));
         expect(page.window.bindRuns).toBe(before);
     });
+
+    it("keeps $refs when a handler assigns it, and still drops refs after", async () => {
+        const page = await mount(`<div id="d" n-scope><i id="x" n-ref="x"></i><button id="b" n-on-click="$refs = {}"></button></div>`);
+        page.$("#b").click();
+        page.window.nagi.destroy(page.$("#x"));
+        expect(page.scope("#d").$refs.x).toBeUndefined();
+        expect(page.errors).toEqual([]);
+    });
+
+    it("turns $refs into text, and lists the refs of outer scopes too, updating binds that list them", async () => {
+        const page = await mount(`
+            <div id="d" n-scope>
+                <i id="a" n-ref="a"></i>
+                <div id="inner" n-scope><i n-ref="b"></i><span id="s" n-bind-textcontent="Object.keys($refs).sort().join() + String($refs).length"></span></div>
+            </div>
+        `);
+        expect(page.$("#s").textContent).toBe("a,b15");
+        page.window.nagi.destroy(page.$("#a"));
+        expect(page.$("#s").textContent).toBe("b15");
+    });
+
+    it("takes __proto__ as a ref name like any other", async () => {
+        const page = await mount(`<div id="d" n-scope><i id="p" n-ref="__proto__"></i></div>`);
+        const refs = page.scope("#d").$refs;
+        expect(refs.__proto__).toBe(page.$("#p"));
+        page.window.nagi.destroy(page.$("#p"));
+        expect(Object.keys(refs)).toEqual([]);
+    });
+
+    it("keeps a name with the last element in the page when an earlier one is added", async () => {
+        const page = await mount(`<div id="d" n-scope><div id="top"></div><i id="c" n-ref="x"></i></div>`);
+        page.$("#top").insertAdjacentHTML("beforeend", `<i id="a" n-ref="x"></i>`);
+        page.window.nagi.init(page.$("#a"));
+        expect(page.scope("#d").$refs.x).toBe(page.$("#c"));
+    });
+
+    it("updates a bind made during a swap that read a ref the swap changed again", async () => {
+        const page = await mount(
+            `<div id="d" n-scope>
+                <button id="b" n-on-click="$get('/x')"></button>
+                <i id="e" n-ref="x"></i><div id="box"></div><div id="other"></div>
+            </div>`,
+            {
+                server: () =>
+                    `<div id="box" n-swap="append"><i id="n" n-ref="x"></i></div>` +
+                    `<div id="other" n-swap="append"><span id="s" n-bind-textcontent="$refs.x.id"></span></div>` +
+                    `<div id="box" n-swap="inner"></div>`,
+            },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#s").textContent).toBe("e");
+        expect(page.errors).toEqual([]);
+    });
 });
 

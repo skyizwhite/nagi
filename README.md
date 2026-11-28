@@ -124,7 +124,7 @@ Puts the element in its scope's `$refs` under the given name.
 
 - Inner scopes find the refs of outer scopes too, the nearer scope first.
 - An element with `n-scope` goes into the `$refs` of the scope around it.
-- Binds that read `$refs` update as refs come and go. When two elements share a name, the last one wins, and the other takes its place when it goes.
+- Binds that read `$refs` update as refs come and go. When elements share a name, the last one in the page wins, and the next to last takes its place when it goes.
 
 #### `n-form`
 Copies the value of each named field inside it into the scope, as the user changes it, and disables the submit buttons while the scope has a request in flight.

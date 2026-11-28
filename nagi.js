@@ -57,11 +57,13 @@
     const nativeCode = /^function[^{]*\{\s*\[native code\]\s*\}$/;
 
     const giveHelpers = (raw, el, outer) => {
-        Object.entries({ ...helpers(), _nagiEl: el, $refs: refsOf(outer) }).forEach(([key, value]) => define(raw, key, value, false));
+        Object.entries({ ...helpers(), _nagiEl: el }).forEach(([key, value]) => define(raw, key, value, false));
+        Object.defineProperty(raw, "$refs", { value: refsOf(outer), writable: false, enumerable: false, configurable: true });
         return raw;
     };
 
     const refsOwn = new WeakMap();
+    const refKeys = Symbol();
     let heldRefs = null;
 
     const refsOf = (outer) => {
@@ -77,32 +79,43 @@
             const runs = deps.get(name);
             runs && [...runs].forEach((run) => run());
         };
-        const changed = (name, before) => {
-            if (!heldRefs) announce(name);
-            else if (!heldRefs.some((held) => held.announce === announce && held.name === name)) heldRefs.push({ announce, name, before, own });
+        const changed = (names) => {
+            if (!heldRefs) return names.forEach(announce);
+            const held = heldRefs.get(announce) ?? heldRefs.set(announce, new Set()).get(announce);
+            names.forEach((name) => held.add(name));
         };
+        const outerRefs = () => outer?.$refs;
         const refs = new Proxy(own, {
             get: (target, name) => {
                 track(name);
-                return Object.hasOwn(target, name) ? target[name] : outer?.$refs[name];
+                if (Object.hasOwn(target, name)) return target[name];
+                if (outer && name in outerRefs()) return outerRefs()[name];
+                return Reflect.get(target, name);
             },
             has: (target, name) => {
                 track(name);
-                return Object.hasOwn(target, name) || (!!outer && name in outer.$refs);
+                return Object.hasOwn(target, name) || (!!outer && name in outerRefs());
             },
             set: (target, name, value) => {
-                const before = target[name];
-                if (Object.hasOwn(target, name) && before === value) return true;
-                target[name] = value;
-                changed(name, before);
+                const had = Object.hasOwn(target, name);
+                if (had && target[name] === value) return true;
+                Object.defineProperty(target, name, { value, writable: true, enumerable: true, configurable: true });
+                changed(had ? [name] : [name, refKeys]);
                 return true;
             },
             deleteProperty: (target, name) => {
                 if (!Object.hasOwn(target, name)) return true;
-                const before = target[name];
                 delete target[name];
-                changed(name, before);
+                changed([name, refKeys]);
                 return true;
+            },
+            ownKeys: (target) => {
+                track(refKeys);
+                return [...new Set([...Reflect.ownKeys(target), ...(outer ? Reflect.ownKeys(outerRefs()) : [])])];
+            },
+            getOwnPropertyDescriptor: (target, name) => {
+                if (Object.hasOwn(target, name) || !outer || !(name in outerRefs())) return Reflect.getOwnPropertyDescriptor(target, name);
+                return { value: outerRefs()[name], writable: true, enumerable: true, configurable: true };
             },
         });
         refsOwn.set(refs, own);
@@ -110,12 +123,13 @@
     };
 
     const holdRefs = (fn) => {
-        const held = (heldRefs = []);
+        if (heldRefs) return fn();
+        const held = (heldRefs = new Map());
         try {
             return fn();
         } finally {
             heldRefs = null;
-            held.forEach(({ announce, name, before, own }) => own[name] !== before && announce(name));
+            held.forEach((names, announce) => names.forEach(announce));
         }
     };
 
@@ -484,7 +498,7 @@
             const refs = scopeEl?.nagiRaw?.$refs;
             const name = node.getAttribute("n-ref");
             node.nagiRefScope = null;
-            if (!refs || refsOwn.get(refs)[name] !== node) return;
+            if (!refs || refsOwn.get(refs)?.[name] !== node) return;
             const other = queryAttr(scopeEl, "[n-ref]").findLast(
                 (n) => n.nagiRefScope === scopeEl && n.getAttribute("n-ref") === name && !el.contains(n),
             );
@@ -876,8 +890,12 @@
         queryAttr(baseEl, "[n-ref]").forEach((el) => {
             const scopeEl = el.nagiProxy ? (closestScope(el.parentElement) ?? el) : closestScope(el);
             if (!scopeEl) return console.error("[Nagi] n-ref needs a scope:", el);
-            scopeEl.nagiRaw.$refs[el.getAttribute("n-ref")] = el;
+            const refs = scopeEl.nagiRaw.$refs;
+            const name = el.getAttribute("n-ref");
+            const held = refsOwn.get(refs)?.[name];
             el.nagiRefScope = scopeEl;
+            const later = held && held !== el && held.nagiRefScope === scopeEl && el.compareDocumentPosition(held) & Node.DOCUMENT_POSITION_FOLLOWING;
+            if (!later) refs[name] = el;
         });
 
         queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
