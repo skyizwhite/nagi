@@ -595,19 +595,28 @@
                 return true;
     };
 
+    const boundFns = new WeakMap();
+    const boundTo = (outer, fn) => {
+        const fns = boundFns.get(outer) ?? boundFns.set(outer, new WeakMap()).get(outer);
+        if (!fns.has(fn))
+            fns.set(fn, new Proxy(fn, {
+                apply: (target, _, args) => Reflect.apply(target, outer, args),
+                get: (target, key, receiver) =>
+                    key === "nagiSource" ? (target.nagiSource ?? Function.prototype.toString.call(target)) : Reflect.get(target, key, receiver),
+            }));
+        return fns.get(fn);
+    };
+
     const withOuterNames = (outer, fn) => {
         if (!outer) return fn({});
         let open = true;
-        const bound = new WeakMap();
         const names = new Proxy(Object.create(null), {
             has: (_, name) => open && typeof name === "string" && !/^(\$|_nagi)/i.test(name) && name in outer,
             get: (_, name) => {
                 const value = outer[name];
-                if (typeof value !== "function") return value;
-                if (!bound.has(value)) bound.set(value, value.bind(outer));
-                return bound.get(value);
+                return typeof value === "function" ? boundTo(outer, value) : value;
             },
-            set: (_, name, value) => Reflect.set(outer, name, value),
+            set: () => true,
         });
         try {
             return fn(names);
@@ -616,9 +625,8 @@
         }
     };
 
-    const baseOf = (dataEl) => {
+    const baseOf = (dataEl, outer) => {
         const base = dataEl.getAttribute("n-scope")?.trim();
-        const outer = closestScope(dataEl.parentElement)?.nagiProxy;
         const made = base ? runWithEl(dataEl, () => withOuterNames(outer, (names) => evaluate(base, names, Object.freeze({}), dataEl))) : {};
         try {
             if (made !== null && typeof made === "object" && typeof made.then !== "function" && !builtIn(made)) {
@@ -642,11 +650,6 @@
     const reactive = (rawData, outer) => {
         const trackedDeps = new Map();
         const fromOuter = (obj, prop) => !(prop in obj) && !!outer && prop in outer;
-        const bound = new WeakMap();
-        const bindToOuter = (fn) => {
-            if (!bound.has(fn)) bound.set(fn, Object.assign(fn.bind(outer), { nagiSource: fn.nagiSource ?? String(fn) }));
-            return bound.get(fn);
-        };
         const track = (prop) => {
             if (!currentBind) return;
             const deps = trackedDeps.get(prop) ?? trackedDeps.set(prop, new Set()).get(prop);
@@ -669,7 +672,7 @@
                 track(prop);
                 if (fromOuter(obj, prop)) {
                     const value = outer[prop];
-                    return typeof value === "function" ? bindToOuter(value) : value;
+                    return typeof value === "function" ? boundTo(outer, value) : value;
                 }
                 if (currentBind && outer && !(prop in obj)) outer[prop];
                 return Reflect.get(obj, prop, receiver);
@@ -704,7 +707,7 @@
         }
 
         const outer = closestScope(dataEl.parentElement)?.nagiProxy;
-        const rawData = giveHelpers(baseOf(dataEl), dataEl, outer);
+        const rawData = giveHelpers(baseOf(dataEl, outer), dataEl, outer);
         const proxyData = reactive(rawData, outer);
 
         dataEl.nagiProxy = proxyData;

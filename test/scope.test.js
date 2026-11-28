@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mount } from "./helpers.js";
+import { later } from "./support.js";
 
 describe("n-scope", () => {
     it("makes a scope from an object literal", async () => {
@@ -495,6 +496,40 @@ describe("outer scopes", () => {
         `);
         page.scope("#i").inc();
         expect([page.scope("#o").count, page.scope("#i").count]).toEqual([0, 11]);
+    });
+
+    it("gives n-scope and n-let-* the same outer method, which keeps its code for $debounce", async () => {
+        const page = await mount(`
+            <div n-scope="{ log: [], a() { this.log = [...this.log, 'a'] }, b() { this.log = [...this.log, 'b'] } }">
+                <div id="i" n-scope="{ fa: a, fb: b }" n-let-la="a"></div>
+            </div>
+        `);
+        const inner = page.scope("#i");
+        expect(inner.fa).toBe(inner.la);
+        expect(inner.fa).toBe(inner.a);
+        inner.$debounce(inner.fa, 5);
+        inner.$debounce(inner.fb, 5);
+        await later(20);
+        expect([...inner.log].sort()).toEqual(["a", "b"]);
+    });
+
+    it("keeps the properties of an outer function read from n-scope", async () => {
+        const page = await mount(
+            `<div n-scope="{ Lib: window.Lib }"><div id="i" n-scope="{ x: Lib.make(), y: typeof Lib.prototype, z: new Lib().made }"></div></div>`,
+            {
+                beforeInit: (window) => {
+                    window.Lib = function () { this.made = true; };
+                    window.Lib.make = () => 1;
+                },
+            },
+        );
+        const inner = page.scope("#i");
+        expect([inner.x, inner.y, inner.z]).toEqual([1, "object", true]);
+    });
+
+    it("does not let n-scope write the names of outer scopes", async () => {
+        const page = await mount(`<div id="o" n-scope="{ count: 0 }"><div id="i" n-scope="{ x: (count = 5) }"></div></div>`);
+        expect(page.scope("#o").count).toBe(0);
     });
 
     it("keeps Nagi's names of outer scopes out of n-scope, and outer names before globals", async () => {
