@@ -381,6 +381,50 @@ describe("cssMorph", () => {
         expect(page.$("#target").textContent).toBe("new");
     });
 
+    it("keeps what other code changes on a swapped element before the frame that settles it", async () => {
+        const frames = [];
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="target" class="old" style="color: red; width: 1px"></div></div>`,
+            {
+                server: () => `<div id="target" class="new" style="color: blue"></div>`,
+                beforeInit: (window) => (window.requestAnimationFrame = (fn) => frames.push(fn)),
+            },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const target = page.$("#target");
+        expect(target.className).toBe("old");
+        target.classList.add("extra");
+        target.style.setProperty("margin-top", "2px");
+        frames.forEach((fn) => fn());
+        expect([...target.classList].sort()).toEqual(["extra", "new"]);
+        expect([target.style.color, target.style.width, target.style.marginTop]).toEqual(["blue", "", "2px"]);
+    });
+
+    it("moves an element added beside the page's elements from no look but its own", async () => {
+        const { reflows, beforeInit } = watchReflows(["row"]);
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><ul id="a"><li id="row" class="highlight"></li></ul><ul id="list"></ul></div>`,
+            { server: () => `<ul id="list" n-swap="append"><li id="row" class="plain"></li></ul>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(reflows).toEqual([]);
+        expect(page.$("#list > li").className).toBe("plain");
+    });
+
+    it("moves an inner swap's new child only from an element the swap took out", async () => {
+        const { reflows, beforeInit } = watchReflows([]);
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="row" class="elsewhere"></div><div id="box"></div></div>`,
+            { server: () => `<div id="box" n-swap="inner"><p id="row" class="plain"></p></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(reflows).toEqual([]);
+        expect(page.$("#box > p").className).toBe("plain");
+    });
+
     it("leaves the target of an inner swap and its wrapper alone, and settles the new children", async () => {
         const page = await mount(
             `<div n-scope>

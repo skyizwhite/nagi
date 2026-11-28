@@ -589,7 +589,9 @@
 
                 const kids = [...fragment.childNodes];
 
-                const morphs = cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1));
+                const morphs = strategy === "outer" ? cssMorph([fragment], (el) => target.contains(el))
+                    : strategy === "inner" ? cssMorph(kids.filter((kid) => kid.nodeType === 1), (el) => el !== target && target.contains(el))
+                    : [];
 
                 applied++;
                 holdInits(() => {
@@ -620,11 +622,11 @@
     const attributesToSettle = ["style", "class", "height", "width"];
     const readSettled = (el) => attributesToSettle.map((attr) => [attr, el.getAttribute(attr)]);
 
-    const cssMorph = (roots) =>
+    const cssMorph = (roots, removed) =>
         roots.flatMap((root) =>
             queryAttr(root, "[id]").flatMap((newEl) => {
                 const oldEl = document.getElementById(newEl.id);
-                return oldEl && oldEl.tagName === newEl.tagName ? [[newEl, readSettled(oldEl)]] : [];
+                return oldEl && oldEl.tagName === newEl.tagName && removed(oldEl) ? [[newEl, readSettled(oldEl)]] : [];
             }),
         );
 
@@ -636,16 +638,37 @@
             const settled = readSettled(newEl);
             if (settled.every(([, value], i) => value === oldValues[i][1])) return [];
             putSettled(newEl, oldValues);
-            return [[newEl, settled]];
+            return [[newEl, settled, oldValues]];
         });
+
+    const stylesOf = (text) => {
+        const style = document.createElement("div").style;
+        style.cssText = text ?? "";
+        return new Map(Array.from({ length: style.length }, (_, i) => style.item(i)).map((name) => [name, [style.getPropertyValue(name), style.getPropertyPriority(name)]]));
+    };
+
+    const settleAttr = (el, attr, from, to) => {
+        const now = el.getAttribute(attr);
+        if (now === from) return to != null ? el.setAttribute(attr, to) : el.removeAttribute(attr);
+        if (attr === "class") {
+            const [before, after] = [new Set(classesOf(from ?? "").filter(Boolean)), new Set(classesOf(to ?? "").filter(Boolean))];
+            before.forEach((name) => after.has(name) || el.classList.remove(name));
+            after.forEach((name) => before.has(name) || el.classList.add(name));
+        } else if (attr === "style") {
+            const [before, after] = [stylesOf(from), stylesOf(to)];
+            before.forEach((_, name) => after.has(name) || el.style.removeProperty(name));
+            after.forEach(([value, priority], name) => before.get(name)?.join() === [value, priority].join() || el.style.setProperty(name, value, priority));
+        }
+    };
 
     const settle = (moving) => {
         const connected = moving.filter(([newEl]) => newEl.isConnected);
         if (!connected.length) return;
         void document.documentElement.offsetWidth;
         requestAnimationFrame(() =>
-            connected.forEach(([newEl, settled]) => {
-                putSettled(newEl, settled);
+            connected.forEach(([newEl, settled, oldValues]) => {
+                if (!newEl.isConnected || newEl.nagiGone) return;
+                settled.forEach(([attr, value], i) => settleAttr(newEl, attr, oldValues[i][1], value));
                 newEl.nagiRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
             }),
         );
