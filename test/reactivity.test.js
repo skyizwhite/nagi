@@ -176,6 +176,16 @@ describe("async binds", () => {
 });
 
 describe("watchers", () => {
+    it("logs a rejecting async $watch on a page that replaced Promise, and binds a thenable whose then returns nothing", async () => {
+        const page = await mount(
+            `<div id="d" n-scope n-on-init="$watch(async () => { await 0; null.x })"><span id="s" n-bind-textcontent="({ then(resolve) { resolve('hi') } })"></span></div>`,
+            { beforeInit: (window) => (window.Promise = class extends window.Promise {}) },
+        );
+        await later(10);
+        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] failed to run:"]);
+        expect(page.$("#s").textContent).toBe("hi");
+    });
+
     it("logs a $watch whose promise rejects after an await, and leaves a returned thenable alone", async () => {
         const page = await mount(`<div id="d" n-scope n-on-init="$watch(async () => { await 0; null.x }); $watch(() => ({ then() { globalThis.thenCalled = true } }))"></div>`);
         await later(10);
