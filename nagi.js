@@ -314,10 +314,10 @@
     };
 
     const textOf = (item) => {
-        const time = timeOf(item);
-        if (time !== undefined) return isNaN(time) ? undefined : new Date(time).toISOString();
         if (typeof item === "symbol") return;
         if (item !== Object(item)) return String(item);
+        const time = timeOf(item);
+        if (time !== undefined) return isNaN(time) ? undefined : new Date(time).toISOString();
         try {
             const text = String(item);
             if (!text.startsWith("[object ")) return text;
