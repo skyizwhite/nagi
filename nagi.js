@@ -829,13 +829,15 @@
             inputEl.nagiReread = inputEl.nagiFieldValue = null;
             group.members.delete(inputEl);
             formFields.delete(field);
-            queueMicrotask(() => {
-                if (scopeEl.nagiFields?.get(name) !== group) return;
+            const left = rawData[name];
+            const check = () => {
+                if (scopeEl.nagiFields?.get(name) !== group || inputEl.isConnected || !Object.is(rawData[name], left)) return;
                 group.members.forEach((el) => el.isConnected || group.members.delete(el));
                 const [rest] = group.members;
-                if (rest) rest.nagiReread?.();
-                else proxyData[name] = undefined;
-            });
+                proxyData[name] = rest ? rest.nagiFieldValue?.() : undefined;
+            };
+            if (fieldChecks) fieldChecks.push(check);
+            else queueMicrotask(check);
         });
         return true;
     };
@@ -1028,14 +1030,17 @@
     };
 
     let heldInits = null;
+    let fieldChecks = null;
 
     const holdInits = (fn) => {
         if (heldInits) return fn();
         const held = (heldInits = []);
+        const checks = (fieldChecks = []);
         try {
             return fn();
         } finally {
-            heldInits = null;
+            heldInits = fieldChecks = null;
+            checks.forEach((check) => check());
             held.forEach((el) => {
                 if (!el.nagiInitDue || !el.isConnected) return;
                 el.nagiInitDue = false;
