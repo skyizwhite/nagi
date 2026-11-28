@@ -260,11 +260,12 @@
             const inQuery = /^(GET|HEAD|DELETE)$/.test(method);
             const dedupe = options.dedupe !== false;
             const stale = !!el?.nagiGone || currentStale || staleScope(this);
+            const gen = el?.nagiGen;
             const report = (name, detail, cancelable = false) => {
                 const wasStale = currentStale;
                 currentStale = false;
                 try {
-                    return dispatch(!stale && el?.isConnected ? el : document, name, { detail, cancelable });
+                    return dispatch(!stale && el?.isConnected && el.nagiGen === gen ? el : document, name, { detail, cancelable });
                 } finally {
                     currentStale = wasStale;
                 }
@@ -1018,15 +1019,7 @@
 
     const init = (baseEl) => initRoots([baseEl]);
 
-    const initRoots = (roots) => {
-        const stale = currentStale;
-        currentStale = false;
-        try {
-            return holdInits(() => setUp(roots));
-        } finally {
-            currentStale = stale;
-        }
-    };
+    const initRoots = (roots) => runWithEl(null, () => holdInits(() => setUp(roots)));
 
     const makeScopes = (baseEl) => {
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
@@ -1090,11 +1083,16 @@
                 ...entries.map(([name, source]) => evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name))),
             );
 
-            Object.entries(props).forEach(([key, val]) =>
-                key.startsWith("@") ? listen(bindEl, key.slice(1), val, proxyData) : bindProp(bindEl, key, val),
-            );
-
+            const gen = bindEl.nagiGen;
+            const gone = () => bindEl.nagiGone || bindEl.nagiGen !== gen;
             bindEl.nagiInitDue = true;
+            for (const [key, val] of Object.entries(props)) {
+                if (gone()) return;
+                if (key.startsWith("@")) listen(bindEl, key.slice(1), val, proxyData);
+                else bindProp(bindEl, key, val);
+            }
+            if (gone()) return;
+
             heldInits.push(bindEl);
         });
     };
