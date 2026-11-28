@@ -584,6 +584,26 @@ describe("n-form", () => {
         expect(page.errors).toEqual([]);
     });
 
+    it("keeps checkboxes of one name in two n-form containers apart, and lets binds set the other boxes of a focused one", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ none: false }">
+                <div n-form><input type="checkbox" name="t" value="a" checked></div>
+                <div n-form><input type="checkbox" name="t" value="b"></div>
+                <div n-form>
+                    <input id="vegan" type="checkbox" name="diet" value="vegan" checked n-bind-checked="!none">
+                    <input id="none" type="checkbox" name="diet" value="none" n-on-change="none = $el.checked">
+                </div>
+            </div>
+        `);
+        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] another field of the scope has this name:"]);
+        const box = page.$("#none");
+        box.focus();
+        box.checked = true;
+        box.dispatchEvent(new page.window.Event("change"));
+        expect(page.$("#vegan").checked).toBe(false);
+        expect(page.scope("#d").diet).toEqual(["none"]);
+    });
+
     it("counts a disabled checkbox in its group", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form><input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b" disabled></form>

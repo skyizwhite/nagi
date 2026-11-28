@@ -780,8 +780,7 @@
     };
 
     const liveProps = /^(value|checked|selectedIndex|valueAsNumber|valueAsDate|selected)$/;
-    const grouped = (el) => el?.type === "radio" || el?.type === "checkbox";
-    const sameGroup = (a, b) => a === b || (grouped(a) && a.type === b?.type && !!a.name && a.name === b.name && a.form === b.form);
+    const sameGroup = (a, b) => a === b || (a?.type === "radio" && b?.type === "radio" && !!a.name && a.name === b.name && a.form === b.form);
     const focused = (el) => !!el && sameGroup(document.activeElement, el);
 
     document.addEventListener(
@@ -789,7 +788,7 @@
         (e) => {
             const left = e.target;
             if (left?.nodeType !== 1 || sameGroup(e.relatedTarget, left)) return;
-            const members = grouped(left) && left.name ? [...document.querySelectorAll(`input[type=${left.type}]`)].filter((el) => sameGroup(el, left)) : [left];
+            const members = left.type === "radio" && left.name ? [...document.querySelectorAll("input[type=radio]")].filter((el) => sameGroup(el, left)) : [left];
             members
                 .flatMap((el) => [el, ...el.querySelectorAll("option")])
                 .forEach((el) => el.nagiRuns?.forEach((run) => run.nagiRetry?.()));
@@ -801,26 +800,31 @@
         const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
         const { name, type, form } = inputEl;
         const shared = type === "radio" || type === "checkbox";
+        const nform = inputEl.closest("[n-form]");
         const owned = (scopeEl.nagiFields ||= new Map());
         let group = owned.get(name);
         const fresh = !group;
         group?.members.forEach((el) => el.isConnected || group.members.delete(el));
-        if (group?.members.size && !(shared && group.type === type && group.form === form))
+        if (group?.members.size && !(shared && group.type === type && group.form === form && group.nform === nform))
             return void (refusedFields ? refusedFields.push(inputEl) : console.error("[Nagi] another field of the scope has this name:", name, inputEl));
         if (!group) {
             if (hasName(rawData, name)) return void console.error("[Nagi] this field's name is already a name of the scope:", name, inputEl);
             define(rawData, name, undefined);
             owned.set(name, (group = { members: new Set() }));
         }
-        Object.assign(group, { type, form });
+        Object.assign(group, { type, form, nform });
         group.members.add(inputEl);
 
         const read = {
             radio: () => [...group.members].find((el) => el.isConnected && el.form === inputEl.form && el.checked)?.value,
             checkbox: () => {
-                const boxes = [...document.getElementsByName(name)].filter(
-                    (el) => el.type === "checkbox" && el.form === inputEl.form && scopeEl.contains(el) && formScope(el) === scopeEl && !leftAlone(el),
-                );
+                if (!group.boxes) {
+                    group.boxes = [...document.getElementsByName(name)].filter(
+                        (el) => el.type === "checkbox" && el.form === form && el.closest("[n-form]") === nform && formScope(el) === scopeEl && !leftAlone(el),
+                    );
+                    queueMicrotask(() => (group.boxes = null));
+                }
+                const boxes = group.boxes.filter((el) => el.isConnected);
                 if (boxes.length > 1) return boxes.filter((el) => el.checked).map((el) => el.value);
                 return (boxes[0] ?? inputEl).checked;
             },
