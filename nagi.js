@@ -171,12 +171,12 @@
     };
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
-        const prev = [currentEl, currentBind, currentHandler, currentSite];
-        [currentEl, currentBind, currentHandler, currentSite] = [el, bind, handler, null];
+        const prev = [currentEl, currentBind, currentHandler, currentSite, currentStale];
+        [currentEl, currentBind, currentHandler, currentSite, currentStale] = [el, bind, handler, null, false];
         try {
             return fn();
         } finally {
-            [currentEl, currentBind, currentHandler, currentSite] = prev;
+            [currentEl, currentBind, currentHandler, currentSite, currentStale] = prev;
         }
     };
 
@@ -1003,7 +1003,15 @@
 
     const init = (baseEl) => initRoots([baseEl]);
 
-    const initRoots = (roots) => holdInits(() => setUp(roots));
+    const initRoots = (roots) => {
+        const stale = currentStale;
+        currentStale = false;
+        try {
+            return holdInits(() => setUp(roots));
+        } finally {
+            currentStale = stale;
+        }
+    };
 
     const makeScopes = (baseEl) => {
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {

@@ -619,13 +619,14 @@ describe("helpers after an await", () => {
     });
 
     it("starts no $watch, $debounce or read for an element and scope torn down during the await", async () => {
+        let answer;
         const page = await mount(
             `<div id="outer" n-scope="{ n: 0 }">
                 <div id="x" n-scope>
                     <button id="b" n-on-click="${tick}; $watch(() => { n; globalThis.goneWatch = (globalThis.goneWatch ?? 0) + 1 }); $debounce(() => (globalThis.goneTimer = true), 5); $get('/late')"></button>
                 </div>
             </div>`,
-            { server: () => "" },
+            { server: () => new Promise((resolve) => (answer = resolve)) },
         );
         page.$("#b").click();
         const x = page.$("#x");
@@ -636,7 +637,22 @@ describe("helpers after an await", () => {
         expect(page.window.goneWatch).toBeUndefined();
         expect(page.window.goneTimer).toBeUndefined();
         expect(x.querySelector("#b").nagiRead).toBeFalsy();
+        answer("");
         await page.settle();
+    });
+
+    it("lets live listeners of a stale handler's event start what they start", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ got: 0 }" n-on-done.debounce10="got = 1">
+                <button id="b" n-on-click="${tick}; $dispatch('done')"></button>
+            </div>
+        `);
+        const b = page.$("#b");
+        b.click();
+        page.window.nagi.destroy(b);
+        page.window.nagi.init(b);
+        await later(40);
+        expect(page.scope("#d").got).toBe(1);
     });
 
     it("starts nothing for a handler whose element was torn down and set up again during the await", async () => {
