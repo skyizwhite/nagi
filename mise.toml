@@ -4,3 +4,7 @@ node = "26"
 [tasks.test]
 description = "Run the test suite"
 run = "npm test"
+
+[tasks.build]
+description = "Build dist/nagi.min.js"
+run = "sh scripts/build.sh"
