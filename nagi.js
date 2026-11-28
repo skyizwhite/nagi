@@ -290,7 +290,6 @@
     };
 
     const isBlob = (value) => typeof value?.arrayBuffer === "function";
-    const isDate = (value) => Object.prototype.toString.call(value) === "[object Date]";
     const isListOf = (value, method) => typeof value?.[method] === "function" && typeof value[Symbol.iterator] === "function";
 
     const formBody = (data) => {
@@ -308,11 +307,21 @@
         return body;
     };
 
-    const sendable = (key, item) => {
-        if (typeof item === "function") return false;
-        if (isDate(item) ? !isNaN(item) : typeof item !== "symbol" && (item !== Object(item) || isBlob(item) || !String(item).startsWith("[object ")))
-            return true;
-        console.warn("[Nagi] cannot send:", key, item);
+    const timeOf = (value) => {
+        try {
+            return Date.prototype.getTime.call(value);
+        } catch {}
+    };
+
+    const textOf = (item) => {
+        const time = timeOf(item);
+        if (time !== undefined) return isNaN(time) ? undefined : new Date(time).toISOString();
+        if (typeof item === "symbol") return;
+        if (item !== Object(item)) return String(item);
+        try {
+            const text = String(item);
+            if (!text.startsWith("[object ")) return text;
+        } catch {}
     };
 
     const objectBody = (data) => {
@@ -320,8 +329,14 @@
             [value]
                 .flat()
                 .flatMap((item) => (isListOf(item, "item") ? [...item] : [item]))
-                .filter((item) => item != null && sendable(key, item))
-                .map((item) => [key, isBlob(item) ? item : isDate(item) ? item.toISOString() : String(item)]),
+                .flatMap((item) => {
+                    if (item == null || typeof item === "function") return [];
+                    if (isBlob(item)) return [[key, item]];
+                    const text = textOf(item);
+                    if (text !== undefined) return [[key, text]];
+                    console.warn("[Nagi] cannot send:", key, item);
+                    return [];
+                }),
         );
         const body = pairs.some(([, value]) => isBlob(value)) ? new FormData() : new URLSearchParams();
         pairs.forEach(([key, value]) => body.append(key, value));

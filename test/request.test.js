@@ -262,6 +262,19 @@ describe("what is sent", () => {
         expect(page.warnings.map(([message, key]) => [message, key])).toEqual([["[Nagi] cannot send:", "s"]]);
     });
 
+    it("warns about values that only claim to be a Date or cannot turn into text, and still sends the rest", async () => {
+        const page = await send(
+            `$get('/x', { a: 1, fake: { [Symbol.toStringTag]: 'Date' }, bare: Object.create(null), wrapped: new Proxy(new Date(0), {}) })`,
+        );
+        expect(page.requests[0].url).toBe("http://localhost/x?a=1");
+        expect(page.warnings.map(([message, key]) => [message, key])).toEqual([
+            ["[Nagi] cannot send:", "fake"],
+            ["[Nagi] cannot send:", "bare"],
+            ["[Nagi] cannot send:", "wrapped"],
+        ]);
+        expect(page.errors).toEqual([]);
+    });
+
     it("sends only the scope's own names when the scope itself is passed", async () => {
         const page = await mount(
             `<div n-scope="{ name: 'a', save() {} }" n-let-n="2"><button id="b" n-on-click="$post('/x', this)"></button></div>`,
