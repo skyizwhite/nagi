@@ -240,6 +240,7 @@ Requests are sent with `fetch`, which follows HTTP redirects by itself. Nagi see
 | `fetcherr` | A request fails or times out, or its response is not 2xx. `e.detail` has `status`, `text` and `err` |
 | `fetchskip` | A write is skipped because the same one is in flight |
 | `fetchredirect` | Nagi is about to follow `n-redirect`. Cancel it to stay |
+| `fetchdone` | A request got a 2xx response and its HTML is swapped in. `e.detail` has `url`, `status` and `swapped` |
 
 The `fetch*` events bubble. Listen with `.window` to catch them all:
 

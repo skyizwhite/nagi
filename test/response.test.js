@@ -369,3 +369,25 @@ describe("headers", () => {
         expect(page.$("#p").textContent).toBe("/list");
     });
 });
+
+describe("fetchdone", () => {
+    it("fires on the element after a 2xx response is swapped in, and not for an error", async () => {
+        let status = 200;
+        const page = await mount(
+            `<div id="d" n-scope="{ done: [], seen: '' }">
+                <button id="b" n-on-click="$post('/x')" n-on-fetchdone="done = [...done, e.detail.status]; seen = document.getElementById('t').textContent"></button>
+                <div id="t">old</div>
+            </div>`,
+            { server: () => ({ status, body: `<div id="t">new</div>` }) },
+        );
+        const scope = page.scope("#d");
+        page.$("#b").click();
+        await page.settle();
+        expect([scope.done, scope.seen]).toEqual([[200], "new"]);
+        status = 500;
+        page.$("#b").click();
+        await page.settle();
+        expect(scope.done).toEqual([200]);
+    });
+});
+

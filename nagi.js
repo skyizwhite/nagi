@@ -341,6 +341,7 @@
                     if (swapped) swap(text);
                     if (!res.ok)
                         throw Object.assign(new Error(`${res.status} ${res.statusText}`), { status: res.status, text, swapped });
+                    report("fetchdone", { url, status: res.status, swapped });
                 })
                 .catch((err) => {
                     if (timedOut) err = new DOMException("The request timed out.", "TimeoutError");
