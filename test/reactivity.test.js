@@ -319,4 +319,11 @@ describe("elements a swap removes", () => {
         page.$("#d").nagiProxy.n = 5;
         expect(page.window.localStorage["_nagiProp-n"]).toBe("1");
     });
+
+    it("logs a $watch whose promise rejects after an await", async () => {
+        const page = await mount(`<div id="d" n-scope n-on-init="$watch(async () => { await 0; null.x })"></div>`);
+        await later(10);
+        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] failed to run:"]);
+    });
 });
+

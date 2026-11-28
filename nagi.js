@@ -207,7 +207,8 @@
                     run.dirty = false;
                     unlink(run);
                     try {
-                        runWithEl(el, fn, run);
+                        const value = runWithEl(el, fn, run);
+                        if (typeof value?.then === "function") value.then(null, (err) => console.error("[Nagi] failed to run:", fn, "\n", err));
                     } catch (err) {
                         console.error("[Nagi] failed to run:", fn, "\n", err);
                     }
