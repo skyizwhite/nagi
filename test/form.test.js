@@ -584,6 +584,13 @@ describe("n-form", () => {
         expect(page.errors).toEqual([]);
     });
 
+    it("counts a disabled checkbox in its group", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form><input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b" disabled></form>
+        `);
+        expect(page.scope("#f").t).toEqual(["a"]);
+    });
+
     it("logs fields other than radios and checkboxes that share a name, and reads only the first", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form>

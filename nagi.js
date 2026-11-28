@@ -780,7 +780,8 @@
     };
 
     const liveProps = /^(value|checked|selectedIndex|valueAsNumber|valueAsDate|selected)$/;
-    const sameGroup = (a, b) => a === b || (a?.type === "radio" && b?.type === "radio" && !!a.name && a.name === b.name && a.form === b.form);
+    const grouped = (el) => el?.type === "radio" || el?.type === "checkbox";
+    const sameGroup = (a, b) => a === b || (grouped(a) && a.type === b?.type && !!a.name && a.name === b.name && a.form === b.form);
     const focused = (el) => !!el && sameGroup(document.activeElement, el);
 
     document.addEventListener(
@@ -788,7 +789,7 @@
         (e) => {
             const left = e.target;
             if (left?.nodeType !== 1 || sameGroup(e.relatedTarget, left)) return;
-            const members = left.type === "radio" && left.name ? [...document.querySelectorAll("input[type=radio]")].filter((el) => sameGroup(el, left)) : [left];
+            const members = grouped(left) && left.name ? [...document.querySelectorAll(`input[type=${left.type}]`)].filter((el) => sameGroup(el, left)) : [left];
             members
                 .flatMap((el) => [el, ...el.querySelectorAll("option")])
                 .forEach((el) => el.nagiRuns?.forEach((run) => run.nagiRetry?.()));
@@ -817,8 +818,8 @@
         const read = {
             radio: () => [...group.members].find((el) => el.isConnected && el.form === inputEl.form && el.checked)?.value,
             checkbox: () => {
-                const boxes = [...scopeEl.querySelectorAll("input[type=checkbox]")].filter(
-                    (el) => el.name === name && el.form === inputEl.form && formScope(el) === scopeEl && !leftAlone(el),
+                const boxes = [...document.getElementsByName(name)].filter(
+                    (el) => el.type === "checkbox" && el.form === inputEl.form && scopeEl.contains(el) && formScope(el) === scopeEl && !leftAlone(el),
                 );
                 if (boxes.length > 1) return boxes.filter((el) => el.checked).map((el) => el.value);
                 return (boxes[0] ?? inputEl).checked;
