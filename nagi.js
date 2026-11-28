@@ -514,7 +514,7 @@
         });
     };
 
-    const initAll = (nodes) => nodes.forEach((node) => node.nodeType === 1 && init(node));
+    const initAll = (nodes) => initRoots(nodes.filter((node) => node.nodeType === 1));
 
     const swap = (text) => {
         const moving = [];
@@ -812,19 +812,13 @@
             define(rawData, name, undefined);
             owned.set(name, (group = { members: new Set() }));
         }
-        Object.assign(group, { type, form, nform, boxes: null });
+        Object.assign(group, { type, form, nform });
         group.members.add(inputEl);
 
         const read = {
             radio: () => [...group.members].find((el) => el.isConnected && el.form === inputEl.form && el.checked)?.value,
             checkbox: () => {
-                if (!group.boxes) {
-                    group.boxes = [...inputEl.getRootNode().querySelectorAll("input[type=checkbox]")].filter(
-                        (el) => el.name === name && el.form === form && el.closest("[n-form]") === nform && formScope(el) === scopeEl && !leftAlone(el),
-                    );
-                    queueMicrotask(() => (group.boxes = null));
-                }
-                const boxes = group.boxes.filter((el) => el.isConnected);
+                const boxes = [...group.members].filter((el) => el.isConnected && el.form === form && el.closest("[n-form]") === nform);
                 if (boxes.length > 1) return boxes.filter((el) => el.checked).map((el) => el.value);
                 return (boxes[0] ?? inputEl).checked;
             },
@@ -844,8 +838,6 @@
             if (!sameValue(rawData[name], now)) proxyData[name] = now;
         };
 
-        setVal();
-        if (fresh && read() === undefined) announceName(scopeEl, name);
         inputEl.addEventListener("input", setVal);
         inputEl.addEventListener("change", setVal);
         formFields.add(field);
@@ -854,7 +846,6 @@
             inputEl.removeEventListener("change", setVal);
             inputEl.nagiReread = inputEl.nagiFieldValue = null;
             group.members.delete(inputEl);
-            group.boxes = null;
             formFields.delete(field);
             const left = rawData[name];
             const check = () => {
@@ -866,7 +857,10 @@
             if (fieldChecks) fieldChecks.push(check);
             else queueMicrotask(check);
         });
-        return true;
+        return () => {
+            setVal();
+            if (fresh && read() === undefined) announceName(scopeEl, name);
+        };
     };
 
     const propOf = (obj, name) => {
@@ -994,9 +988,11 @@
         run.nagiRetry = () => skipped && run();
     };
 
-    const init = (baseEl) => holdInits(() => setUp(baseEl));
+    const init = (baseEl) => initRoots([baseEl]);
 
-    const setUp = (baseEl) => {
+    const initRoots = (roots) => holdInits(() => setUp(roots));
+
+    const makeScopes = (baseEl) => {
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
             acceptNode: (node) =>
                 node.nagiBroken || node.parentElement?.nagiBroken || node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
@@ -1013,8 +1009,13 @@
             do dataEl = walker.nextNode();
             while (dataEl && seen.has(dataEl));
         }
+    };
 
-        queryAttr(baseEl, "[n-ref]").forEach((el) => {
+    const setUp = (roots) => {
+        roots.forEach(makeScopes);
+        const each = (selector) => roots.flatMap((root) => queryAttr(root, selector));
+
+        each("[n-ref]").forEach((el) => {
             const scopeEl = el.nagiProxy ? (closestScope(el.parentElement) ?? el) : closestScope(el);
             if (!scopeEl) return console.error("[Nagi] n-ref needs a scope:", el);
             const refs = scopeEl.nagiRaw.$refs;
@@ -1025,15 +1026,19 @@
             if (!later) refs[name] = el;
         });
 
-        queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
+        each("[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
 
-        queryAttr(baseEl, "[name]").filter(isField).forEach((inputEl) => {
+        const starts = [];
+        each("[name]").filter(isField).forEach((inputEl) => {
             const scopeEl = formScope(inputEl);
             if (inputEl.nagiField || !scopeEl || reserved(inputEl.name, inputEl)) return;
-            inputEl.nagiField = fieldOf(inputEl, scopeEl);
+            const start = fieldOf(inputEl, scopeEl);
+            inputEl.nagiField = !!start;
+            if (start) starts.push(start);
         });
+        starts.forEach((start) => start());
 
-        queryAttr(baseEl, "*").forEach((bindEl) => {
+        each("*").forEach((bindEl) => {
             if (bindEl.nagiBound) return void (bindEl.nagiInitDue && heldInits.push(bindEl));
             const entries = [...bindEl.attributes]
                 .map(({ name, value }) => [name, sourceOf(bindEl, name, value)])

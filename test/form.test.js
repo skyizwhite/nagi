@@ -622,6 +622,16 @@ describe("n-form", () => {
         expect(page.scope("#d").r).toBe("2");
     });
 
+    it("counts only the checkboxes set up as fields", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input id="a" type="checkbox" name="t" value="a" checked><input id="b" type="checkbox" name="t" value="b" checked></form>`);
+        const scope = page.scope("#f");
+        page.window.nagi.destroy(page.$("#b"));
+        page.$("#f").insertAdjacentHTML("beforeend", `<input type="checkbox" name="t" value="c" checked>`);
+        const a = page.$("#a");
+        a.dispatchEvent(new page.window.Event("change"));
+        expect(scope.t).toBe(true);
+    });
+
     it("counts a disabled checkbox in its group", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form><input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b" disabled></form>
