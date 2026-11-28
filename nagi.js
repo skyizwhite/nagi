@@ -188,6 +188,7 @@
     let runCount = 0;
 
     const watch = (fn, el = currentEl, owner = el) => {
+        if (owner?.nagiGone) return Object.assign(() => {}, { gone: true, deps: new Set(), children: [] });
         const run = () => {
             if (run.gone || run === currentBind) return;
             if (run.active) return (run.dirty = true);
@@ -276,7 +277,7 @@
 
             this._nagiAbort = new AbortController();
             if (reading) read = controller;
-            if (reading && el) el.nagiRead = controller;
+            if (reading && el && !el.nagiGone) el.nagiRead = controller;
             const deduped = write && dedupe;
             if (deduped) writing.add(write);
             controllers.add(controller);
@@ -346,6 +347,7 @@
             const { key: given, abortable = false } = typeof options === "object" && options ? options : { abortable: !!options };
             const el = hostOf(this);
             const signal = abortable && runWithEl(el, () => this._nagiAbort?.signal);
+            if (el?.nagiGone) return;
             const timers = ((el ?? document).nagiTimers ||= new Map());
             const site = currentBind?.key ?? currentSite ?? (currentHandler ? idOf(currentHandler) : "");
             const code = fn.nagiSource ?? String(fn);
@@ -496,6 +498,7 @@
             node.nagiTimers?.forEach(clearTimeout);
             node.nagiTimers?.clear();
             node.nagiBound = node.nagiField = node.nagiInitDue = false;
+            node.nagiGone = true;
             node.nagiProxy = node.nagiRaw = node.nagiFields = null;
             node.nagiBroken = false;
             ownScopes.delete(node);
@@ -1012,6 +1015,7 @@
     };
 
     const setUp = (roots) => {
+        roots.forEach((root) => [root, ...root.querySelectorAll("*")].forEach((el) => (el.nagiGone = false)));
         roots.forEach(makeScopes);
         const each = (selector) => roots.flatMap((root) => queryAttr(root, selector));
 

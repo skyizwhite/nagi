@@ -617,5 +617,24 @@ describe("helpers after an await", () => {
         expect([window.countA, window.countB]).toEqual([1, 1]);
         expect(page.errors).toEqual([]);
     });
+
+    it("starts no $watch, $debounce or read for an element and scope torn down during the await", async () => {
+        const page = await mount(
+            `<div id="outer" n-scope="{ n: 0 }">
+                <div id="x" n-scope>
+                    <button id="b" n-on-click="${tick}; $watch(() => { n; globalThis.goneWatch = (globalThis.goneWatch ?? 0) + 1 }); $debounce(() => (globalThis.goneTimer = true), 5); $get('/late')"></button>
+                </div>
+            </div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        page.window.nagi.destroy(page.$("#x"));
+        page.$("#x").remove();
+        await later(30);
+        page.scope("#outer").n = 1;
+        expect(page.window.goneWatch).toBeUndefined();
+        expect(page.window.goneTimer).toBeUndefined();
+        await page.settle();
+    });
 });
 
