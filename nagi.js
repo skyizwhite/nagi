@@ -54,6 +54,7 @@
     };
 
     const hostOf = (scope) => currentEl ?? scope._nagiEl;
+    const nativeCode = /^function[^{]*\{\s*\[native code\]\s*\}$/;
 
     const giveHelpers = (raw, el) => {
         Object.entries({ ...helpers(), _nagiEl: el }).forEach(([key, value]) => define(raw, key, value, false));
@@ -261,13 +262,14 @@
         $dispatch(evt, detail, opts) {
             dispatch(hostOf(this) ?? document, evt, { detail, ...opts });
         },
-        $debounce(fn, ms, abortable = false) {
+        $debounce(fn, ms, options) {
+            const { key: given, abortable = false } = typeof options === "object" && options ? options : { abortable: !!options };
             const el = hostOf(this);
             const signal = abortable && runWithEl(el, () => this._nagiAbort?.signal);
             const timers = ((el ?? document).nagiTimers ||= new Map());
             const site = currentBind?.key ?? currentSite ?? (currentHandler ? idOf(currentHandler) : "");
             const code = fn.nagiSource ?? String(fn);
-            const key = `${site} ${/\[native code\]/.test(code) ? idOf(fn) : code}`;
+            const key = given !== undefined ? `key ${given}` : `${site} ${nativeCode.test(code) ? "native" : code}`;
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);

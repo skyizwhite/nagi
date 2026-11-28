@@ -214,15 +214,45 @@ describe("debounce", () => {
         expect(page.scope("#i").ran).toBe(1);
     });
 
-    it("keeps apart bound functions of one handler", async () => {
+    it("debounces a function bound anew on each call as one", async () => {
         const page = await mount(`
             <div n-scope="{ got: [] }">
-                <button id="b" n-on-click="const add = (x) => got = [...got, x]; $debounce(add.bind(null, 'a'), 10); $debounce(add.bind(null, 'b'), 20)"></button>
+                <input id="i" n-on-input="const add = (x) => got = [...got, x]; $debounce(add.bind(null, $el.value), 20)">
+            </div>
+        `);
+        const input = page.$("#i");
+        for (const value of ["a", "ab", "abc"]) {
+            input.value = value;
+            input.dispatchEvent(new page.window.Event("input"));
+        }
+        await later(50);
+        expect(page.scope("#i").got).toEqual(["abc"]);
+    });
+
+    it("keeps apart calls given different keys, and counts calls given one key as one", async () => {
+        const page = await mount(`
+            <div n-scope="{ got: [] }">
+                <button id="b" n-on-click="['a', 'b'].forEach((x) => $debounce(() => got = [...got, x], 10, { key: x })); $debounce(() => got = [...got, 'c'], 10, { key: 'k' })"></button>
+                <button id="c" n-on-click="$debounce(() => got = [...got, 'd'], 10, { key: 'k' })"></button>
             </div>
         `);
         page.$("#b").click();
+        page.$("#c").click();
         await later(40);
-        expect(page.scope("#b").got).toEqual(["a", "b"]);
+        expect([...page.scope("#b").got].sort()).toEqual(["a", "b", "c", "d"]);
+    });
+
+    it("takes abortable as true or in the options", async () => {
+        const page = await mount(
+            `<div id="d" n-scope="{ ran: 0 }">
+                <button id="b" n-on-click="$debounce(() => ran++, 20, true); $debounce(() => ran += 10, 20, { abortable: true }); $debounce(() => ran += 100, 20); $get('/x')"></button>
+            </div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        await later(40);
+        expect(page.scope("#d").ran).toBe(100);
     });
 
     it("keeps a timer for each watcher of an element", async () => {
