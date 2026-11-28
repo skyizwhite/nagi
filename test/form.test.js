@@ -565,16 +565,112 @@ describe("n-form", () => {
         expect(page.scope("#f").q).toBeUndefined();
     });
 
-    it("logs fields other than radios that share a name, and reads only the first", async () => {
+    it("reads a pair of checkboxes a swap brings in as a list from the start", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <span id="s" n-bind-textcontent="t.join(',')"></span>
+                <div id="g"><input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b"></div>
+            </form>`,
+            { server: () => `<div id="g" n-swap="inner"><input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b" checked></div>` },
+        );
+        const seen = [];
+        page.scope("#f").$watch(() => seen.push(Array.isArray(page.scope("#f").t) ? "list" : typeof page.scope("#f").t));
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#f").t).toEqual(["a", "b"]);
+        expect(page.$("#s").textContent).toBe("a,b");
+        expect(seen.slice(1)).not.toContain("boolean");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("keeps checkboxes of one name in two n-form containers apart, and lets binds set the other boxes of a focused one", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ none: false }">
+                <div n-form><input type="checkbox" name="t" value="a" checked></div>
+                <div n-form><input type="checkbox" name="t" value="b"></div>
+                <div n-form>
+                    <input id="vegan" type="checkbox" name="diet" value="vegan" checked n-bind-checked="!none">
+                    <input id="none" type="checkbox" name="diet" value="none" n-on-change="none = $el.checked">
+                </div>
+            </div>
+        `);
+        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] another field of the scope has this name:"]);
+        const box = page.$("#none");
+        box.focus();
+        box.checked = true;
+        box.dispatchEvent(new page.window.Event("change"));
+        expect(page.$("#vegan").checked).toBe(false);
+        expect(page.scope("#d").diet).toEqual(["none"]);
+    });
+
+    it("counts a checkbox that joins its group later in the same task", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><div id="g1"><input type="checkbox" name="t" value="a"></div><div id="g2"></div></form>`);
+        const scope = page.scope("#f");
+        const a = page.document.querySelector("[value=a]");
+        a.dispatchEvent(new page.window.Event("change"));
+        page.$("#g2").insertAdjacentHTML("beforeend", `<input id="b" type="checkbox" name="t" value="b" checked>`);
+        page.window.nagi.init(page.$("#b"));
+        expect(scope.t).toEqual(["b"]);
+    });
+
+    it("keeps radios of one form under two n-form containers in one group", async () => {
+        const page = await mount(`
+            <div id="d" n-scope><form id="f" n-form><input type="radio" name="r" value="1"></form><div n-form><input type="radio" form="f" name="r" value="2" checked></div></div>
+        `);
+        expect(page.errors).toEqual([]);
+        expect(page.scope("#d").r).toBe("2");
+    });
+
+    it("counts only the checkboxes set up as fields", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input id="a" type="checkbox" name="t" value="a" checked><input id="b" type="checkbox" name="t" value="b" checked></form>`);
+        const scope = page.scope("#f");
+        page.window.nagi.destroy(page.$("#b"));
+        page.$("#f").insertAdjacentHTML("beforeend", `<input type="checkbox" name="t" value="c" checked>`);
+        const a = page.$("#a");
+        a.dispatchEvent(new page.window.Event("change"));
+        expect(scope.t).toBe(true);
+    });
+
+    it("counts a disabled checkbox in its group", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form><input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b" disabled></form>
+        `);
+        expect(page.scope("#f").t).toEqual(["a"]);
+    });
+
+    it("logs fields other than radios and checkboxes that share a name, and reads only the first", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form>
-                <input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b">
                 <input type="hidden" name="ids" value="1"><input type="hidden" name="ids" value="2">
+                <input type="checkbox" name="mix" value="a"><input type="text" name="mix">
             </form>
         `);
         const scope = page.$("#f").nagiProxy;
-        expect([scope.t, scope.ids]).toEqual([true, "1"]);
+        expect([scope.ids, scope.mix]).toEqual(["1", false]);
         expect(page.errors).toHaveLength(2);
+    });
+
+    it("reads checkboxes that share a name as the list of the checked values, and a lone one as true or false", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ pick: [] }" n-form>
+                <input id="a" type="checkbox" name="t" value="a" checked><input id="b" type="checkbox" name="t" value="b">
+                <input type="checkbox" name="c" value="z" n-bind-checked="pick.includes('z')"><input type="checkbox" name="c" value="y">
+                <input type="checkbox" name="agree">
+            </form>
+        `);
+        const scope = page.scope("#f");
+        expect([scope.t, scope.c, scope.agree]).toEqual([["a"], [], false]);
+        const b = page.$("#b");
+        b.checked = true;
+        b.dispatchEvent(new page.window.Event("change"));
+        expect(scope.t).toEqual(["a", "b"]);
+        scope.pick = ["z"];
+        expect(scope.c).toEqual(["z"]);
+        page.window.nagi.destroy(b);
+        b.remove();
+        await later(0);
+        expect(scope.t).toBe(true);
     });
 
     it("lets a field a swap brings in take the name of the one it replaced", async () => {
