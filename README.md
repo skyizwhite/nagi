@@ -223,6 +223,8 @@ What comes in works like the rest of the page, and CSS transitions run on elemen
 | `n-redirect: <url>` | Goes to the URL instead (send it with a 2xx status) |
 | `n-replace-url: <url>` | Replaces the URL in the address bar |
 
+Requests are sent with `fetch`, which follows HTTP redirects by itself. Nagi sees only the final response and handles it like any other, with that response's own headers. A redirect to another origin usually fails, because the `n-request` header needs CORS there. To leave the page, answer with `n-redirect` (with a 2xx status) rather than a redirect. In particular, answer a Nagi request that needs a login with `n-redirect` or with HTML to swap in, not with a redirect to the login page, whose elements with `id`s on the current page would replace them.
+
 ### Events
 
 | Event | When |
