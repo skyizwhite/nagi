@@ -242,6 +242,23 @@ describe("debounce", () => {
         expect([...page.scope("#b").got].sort()).toEqual(["a", "b", "c", "d"]);
     });
 
+    it("counts calls with one key on one element as one, whatever their code, and takes any value as a key", async () => {
+        const page = await mount(`
+            <div n-scope="{ got: [] }">
+                <button id="b" n-on-click="const a = {}, b = {}, s = Symbol('s');
+                    $debounce(() => got = [...got, 'x'], 10, { key: 'k' });
+                    $debounce(() => got = [...got, 'y'], 10, { key: 'k' });
+                    $debounce(() => got = [...got, 'a'], 10, { key: a });
+                    $debounce(() => got = [...got, 'b'], 10, { key: b });
+                    $debounce(() => got = [...got, 's'], 10, { key: s })"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        await later(40);
+        expect([...page.scope("#b").got].sort()).toEqual(["a", "b", "s", "y"]);
+        expect(page.errors).toEqual([]);
+    });
+
     it("takes abortable as true or in the options", async () => {
         const page = await mount(
             `<div id="d" n-scope="{ ran: 0 }">

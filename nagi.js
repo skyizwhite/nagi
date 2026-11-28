@@ -78,7 +78,7 @@
         return new Proxy(made, {
             has: (_, name) => hostHelpers.includes(name),
             get: (_, name) =>
-                hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, site, () => scope[name](...args))) : undefined,
+                hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, name === "$debounce" ? site : null, () => scope[name](...args))) : undefined,
             set: (_, name, value) => Reflect.set(scope, name, value),
         });
     };
@@ -269,7 +269,7 @@
             const timers = ((el ?? document).nagiTimers ||= new Map());
             const site = currentBind?.key ?? currentSite ?? (currentHandler ? idOf(currentHandler) : "");
             const code = fn.nagiSource ?? String(fn);
-            const key = given !== undefined ? `key ${given}` : `${site} ${nativeCode.test(code) ? "native" : code}`;
+            const key = given !== undefined ? given : `\0${site} ${nativeCode.test(code) ? "native" : code}`;
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);
