@@ -172,6 +172,41 @@ describe("nagi.destroy", () => {
         expect(x.textContent).toBe("5");
     });
 
+    it("sets up nothing inside a scope element its own n-scope or n-let-* tears down", async () => {
+        const page = await mount(`
+            <div id="outer" n-scope="{ clicks: 0 }">
+                <div id="a" n-scope="{ x: nagi.destroy($el) }"><input name="q" n-ref="r"><span id="sa" n-on-click="clicks++"></span></div>
+                <div id="b" n-scope n-let-x="nagi.destroy($el)" n-let-y="clicks = 100"><span id="sb" n-on-click="clicks++"></span></div>
+            </div>
+        `);
+        page.$("#sa").click();
+        page.$("#sb").click();
+        expect(page.scope("#outer").clicks).toBe(0);
+        expect(page.$("#a").nagiProxy ?? page.$("#b").nagiProxy ?? null).toBe(null);
+        expect(page.scope("#outer").$refs.r).toBe(undefined);
+    });
+
+    it("sends init and then destroy to an element its first bind took off the page once it is set up again", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ inits: 0, destroys: 0, once: true }">
+                <span n-bind-title="once && (once = false, globalThis.taken = $el, $el.remove())" n-on-init="inits++" n-on-destroy="destroys++"></span>
+            </div>
+        `);
+        const span = page.window.taken;
+        const scope = page.scope("#d");
+        page.window.nagi.destroy(span);
+        expect([scope.inits, scope.destroys]).toEqual([0, 0]);
+        page.$("#d").append(span);
+        page.window.nagi.init(span);
+        page.window.nagi.destroy(span);
+        expect([scope.inits, scope.destroys]).toEqual([1, 1]);
+    });
+
+    it("stops an element whose bind sets it up again every time", async () => {
+        const page = await mount(`<div n-scope><span id="s" n-bind-title="nagi.destroy($el), nagi.init($el)"></span></div>`);
+        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] stopped setting up an element its own set-up keeps setting up again:"]);
+    });
+
     it("sends the events of a request started before its element was set up again to document", async () => {
         let answer;
         const page = await mount(

@@ -773,8 +773,10 @@
             return;
         }
 
+        const gen = dataEl.nagiGen;
         const outer = closestScope(dataEl.parentElement)?.nagiProxy;
         const base = baseOf(dataEl, outer);
+        if (dataEl.nagiGen !== gen) return;
         if (base === failed) {
             dataEl.nagiBroken = true;
             return;
@@ -787,7 +789,7 @@
 
         attrs.forEach(({ name, value }) => {
             const key = name.match(/^n-let-(.+)$/)?.[1];
-            if (!key || reserved(key, dataEl)) return;
+            if (!key || dataEl.nagiGen !== gen || reserved(key, dataEl)) return;
             const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, proxyData, dataEl, undefined, name)) : undefined;
             if (result === failed) return;
             try {
@@ -1043,17 +1045,20 @@
                 node.nagiBroken || node.parentElement?.nagiBroken || node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
         });
         const seen = new Set();
+        const dropped = [];
         let dataEl = leftAlone(baseEl) ? null : baseEl;
         while (dataEl) {
             const parent = dataEl.parentElement;
             const before = dataEl.previousElementSibling;
+            const gen = dataEl.nagiGen;
             seen.add(dataEl);
             dataEl.nagiGone = false;
             makeScope(dataEl);
+            if (dataEl.nagiGen !== gen) dropped.push(dataEl);
             const moved = dataEl.parentElement !== parent || dataEl.previousElementSibling !== before;
             walker.currentNode = dataEl !== baseEl && (moved || !baseEl.contains(dataEl)) ? baseEl : dataEl;
             do dataEl = walker.nextNode();
-            while (dataEl && seen.has(dataEl));
+            while (dataEl && (seen.has(dataEl) || dropped.some((el) => el.contains(dataEl))));
         }
     };
 
@@ -1062,6 +1067,7 @@
         const each = (selector) => roots.flatMap((root) => queryAttr(root, selector));
 
         each("[n-ref]").forEach((el) => {
+            if (el.nagiGone) return;
             const scopeEl = el.nagiProxy ? (closestScope(el.parentElement) ?? el) : closestScope(el);
             if (!scopeEl) return console.error("[Nagi] n-ref needs a scope:", el);
             const refs = scopeEl.nagiRaw.$refs;
@@ -1077,7 +1083,7 @@
         const starts = [];
         each("[name]").filter(isField).forEach((inputEl) => {
             const scopeEl = formScope(inputEl);
-            if (inputEl.nagiField || !scopeEl || reserved(inputEl.name, inputEl)) return;
+            if (inputEl.nagiField || inputEl.nagiGone || !scopeEl || reserved(inputEl.name, inputEl)) return;
             const start = fieldOf(inputEl, scopeEl);
             inputEl.nagiField = !!start;
             if (start) starts.push(start);
@@ -1091,26 +1097,39 @@
                 .map(({ name, value }) => [name, sourceOf(bindEl, name, value)])
                 .filter(([, source]) => source);
             if (!entries.length) return;
+            const depth = settingUp.get(bindEl) ?? 0;
+            if (depth >= 10) return console.error("[Nagi] stopped setting up an element its own set-up keeps setting up again:", bindEl);
             bindEl.nagiBound = true;
-
-            const proxyData = getClosestProxy(bindEl);
-            const props = entries.flatMap(([name, source]) => {
-                const made = evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name), name);
-                return made === failed ? [] : Object.entries(made).map(([key, val]) => [key, val, name]);
-            });
-
-            const gen = bindEl.nagiGen;
-            const gone = () => bindEl.nagiGone || bindEl.nagiGen !== gen;
-            bindEl.nagiInitDue = true;
-            for (const [key, val, name] of props) {
-                if (gone()) return;
-                if (key.startsWith("@")) listen(bindEl, key.slice(1), val, proxyData, name);
-                else bindProp(bindEl, key, val, name);
+            settingUp.set(bindEl, depth + 1);
+            try {
+                bindOne(bindEl, entries);
+            } finally {
+                if (depth) settingUp.set(bindEl, depth);
+                else settingUp.delete(bindEl);
             }
-            if (gone()) return;
-
-            heldInits.push(bindEl);
         });
+    };
+
+    const settingUp = new Map();
+
+    const bindOne = (bindEl, entries) => {
+        const proxyData = getClosestProxy(bindEl);
+        const props = entries.flatMap(([name, source]) => {
+            const made = evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name), name);
+            return made === failed ? [] : Object.entries(made).map(([key, val]) => [key, val, name]);
+        });
+
+        const gen = bindEl.nagiGen;
+        const gone = () => bindEl.nagiGone || bindEl.nagiGen !== gen;
+        bindEl.nagiInitDue = true;
+        for (const [key, val, name] of props) {
+            if (gone()) return;
+            if (key.startsWith("@")) listen(bindEl, key.slice(1), val, proxyData, name);
+            else bindProp(bindEl, key, val, name);
+        }
+        if (gone()) return;
+
+        heldInits.push(bindEl);
     };
 
     let heldInits = null;
