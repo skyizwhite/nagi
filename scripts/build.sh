@@ -5,11 +5,11 @@ if ! command -v npx >/dev/null 2>&1; then
     exit 1
 fi
 
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-
-npx rolldown nagi.js --minify --format esm --logLevel warn --file "$tmp/nagi.min.js"
-
 mkdir -p ./dist
-rm -f ./dist/*
-mv "$tmp/nagi.min.js" ./dist/nagi.min.js
+tmp=./dist/.nagi.min.js.tmp
+trap 'rm -f "$tmp"' EXIT
+
+npx --no-install rolldown nagi.js --minify --format esm --logLevel warn --file "$tmp"
+
+mv "$tmp" ./dist/nagi.min.js
+find ./dist -maxdepth 1 -type f ! -name nagi.min.js -delete
