@@ -388,6 +388,178 @@ describe("n-form", () => {
         expect([ra.checked, rb.checked, page.scope("#f").r]).toEqual([false, true, "b"]);
     });
 
+    it("clears the name of a field a swap takes away, and keeps it through a swap that replaces the field", async () => {
+        let answer = `<div id="box" n-swap="inner"><input name="q" value="new"></div>`;
+        const page = await mount(
+            `<form id="f" n-scope n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <div id="box"><input name="q" value="old"></div>
+                <span id="s" n-bind-textcontent="String(q)"></span>
+            </form>`,
+            { server: () => answer },
+        );
+        const scope = page.scope("#f");
+        page.$("#b").click();
+        await page.settle();
+        expect(scope.q).toBe("new");
+        expect(page.errors).toEqual([]);
+
+        answer = `<div id="box" n-swap="inner"></div>`;
+        page.$("#b").click();
+        await page.settle();
+        expect(scope.q).toBeUndefined();
+        expect(page.$("#s").textContent).toBe("undefined");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("reads a radio group again when its checked radio is taken away", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form><input id="a" type="radio" name="r" value="a" checked><input type="radio" name="r" value="b"></form>
+        `);
+        const scope = page.scope("#f");
+        expect(scope.r).toBe("a");
+        page.window.nagi.destroy(page.$("#a"));
+        page.$("#a").remove();
+        await later(0);
+        expect(scope.r).toBeUndefined();
+    });
+
+    it("reads the radio still checked when another of its group goes, and clears a name whose fields left without teardown", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input id="a" type="radio" name="r" value="a"><input id="b" type="radio" name="r" value="b"><input id="c" type="radio" name="r" value="c">
+            </form>
+        `);
+        const scope = page.scope("#f");
+        page.$("#b").checked = true;
+        page.window.nagi.destroy(page.$("#a"));
+        page.$("#a").remove();
+        await later(0);
+        expect(scope.r).toBe("b");
+
+        page.$("#b").remove();
+        page.window.nagi.destroy(page.$("#c"));
+        page.$("#c").remove();
+        await later(0);
+        expect(scope.r).toBeUndefined();
+    });
+
+    it("clears a radio group whose checked radio had an empty value", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input id="a" type="radio" name="r" value="" checked><input type="radio" name="r" value="b"></form>`);
+        page.window.nagi.destroy(page.$("#a"));
+        page.$("#a").remove();
+        await later(0);
+        expect(page.scope("#f").r).toBeUndefined();
+    });
+
+    it("keeps a value assigned to a name after its field went, and the name of a field torn down but still in the page", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input id="q" name="q" value="x"><input id="s" name="s" value="y"></form>`);
+        const scope = page.scope("#f");
+        page.window.nagi.destroy(page.$("#q"));
+        page.$("#q").remove();
+        scope.q = "kept";
+        page.window.nagi.destroy(page.$("#s"));
+        await later(0);
+        expect([scope.q, scope.s]).toEqual(["kept", "y"]);
+    });
+
+    it("clears the name of a swapped-away field once the response is in, after its init handlers", async () => {
+        const page = await mount(
+            `<form id="f" n-scope="{ seen: 'none' }" n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <div id="box"><input name="q" value="old"></div>
+            </form>`,
+            { server: () => `<div id="box" n-swap="inner"><i n-on-init="seen = String(q)"></i></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#f").seen).toBe("old");
+        expect(page.scope("#f").q).toBeUndefined();
+    });
+
+    it("keeps the name of a field one response moves to another fragment", async () => {
+        const page = await mount(
+            `<form id="f" n-scope="{ seen: [] }" n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <div id="a"><input name="q" value="x"></div><div id="c"></div>
+            </form>`,
+            { server: () => `<div id="a" n-swap="inner"><i n-on-init="seen = [...seen, String(q)]"></i></div><div id="c" n-swap="inner"><input name="q" value="x"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const scope = page.scope("#f");
+        expect(scope.q).toBe("x");
+        expect(scope.seen).toEqual(["x"]);
+    });
+
+    it("lets a field in an earlier fragment take over the name of one a later fragment takes away", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <div id="c"></div><div id="a"><input name="q" value="x"></div>
+            </form>`,
+            { server: () => `<div id="c" n-swap="inner"><input id="new" name="q" value="y"></div><div id="a" n-swap="inner"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const scope = page.scope("#f");
+        expect(scope.q).toBe("y");
+        const input = page.$("#new");
+        input.value = "z";
+        input.dispatchEvent(new page.window.Event("input"));
+        expect(scope.q).toBe("z");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("never shows undefined for a name a field in an earlier fragment takes over", async () => {
+        const page = await mount(
+            `<form id="f" n-scope="{ seen: [] }" n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <span n-bind-title="seen = [...seen, String(q)]"></span>
+                <div id="c"></div><div id="a"><input name="q" value="x"></div>
+            </form>`,
+            { server: () => `<div id="c" n-swap="inner"><input name="q" value="y"></div><div id="a" n-swap="inner"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const scope = page.scope("#f");
+        expect(scope.q).toBe("y");
+        expect(scope.seen).not.toContain("undefined");
+    });
+
+    it("clears a name when the later field of that name in the response goes to another scope", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <div id="a"><input name="q" value="old"></div>
+            </form>
+            <form id="g" n-scope n-form><div id="other"></div></form>`,
+            { server: () => `<div id="a" n-swap="inner"></div><div id="other" n-swap="inner"><input name="q" value="theirs"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#f").q).toBeUndefined();
+        expect(page.scope("#g").q).toBe("theirs");
+    });
+
+    it("still logs two fields of one name that a response brings", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form><button id="b" type="button" n-on-click="$get('/x')"></button><div id="box"></div></form>`,
+            { server: () => `<div id="box" n-swap="inner"><input name="q"><input name="q"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] another field of the scope has this name:"]);
+    });
+
+    it("writes nothing to a scope torn down with its fields", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input name="q" value="x"></form>`);
+        const scope = page.scope("#f");
+        page.window.nagi.destroy(page.$("#f"));
+        await later(0);
+        expect(scope.q).toBe("x");
+    });
+
     it("keeps undefined in the scope when a bind writes it into a text field", async () => {
         const page = await mount(`<form id="f" n-scope n-form n-on-init="q = undefined"><input name="q" n-bind-value="q"></form>`);
         expect(page.scope("#f").q).toBeUndefined();
