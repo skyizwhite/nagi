@@ -86,5 +86,60 @@ describe("n-ref", () => {
         page.window.nagi.destroy(page.$("#a"));
         expect(refs.x).toBeUndefined();
     });
+
+    it("runs no bind of a scope it tears down on the way out", async () => {
+        const page = await mount(`<div id="p" n-scope><input n-ref="q" value="v"><span n-bind-textcontent="$refs.q.value"></span></div>`);
+        page.window.nagi.destroy(page.$("#p"));
+        expect(page.errors).toEqual([]);
+    });
+
+    it("does not run a $watch again when nagi.init inside it puts a ref in", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ html: '<i n-ref=&quot;x&quot;></i>', runs: 0 }">
+                <div id="box"></div>
+                <span n-on-init="$watch(() => { const box = document.getElementById('box'); box.innerHTML = html; nagi.init(box); globalThis.watchRuns = (globalThis.watchRuns ?? 0) + 1 })"></span>
+            </div>
+        `);
+        expect(page.window.watchRuns).toBe(1);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("hands a name to the last of the others when the element it holds goes", async () => {
+        const page = await mount(`<div id="d" n-scope><i id="a" n-ref="x"></i><i id="b" n-ref="x"></i><i id="c" n-ref="x"></i></div>`);
+        page.window.nagi.destroy(page.$("#c"));
+        expect(page.scope("#d").$refs.x).toBe(page.$("#b"));
+    });
+
+    it("keeps the ref of a scope element with no scope around it in its own scope", async () => {
+        const page = await mount(`<main id="m" n-scope n-ref="page"></main>`);
+        expect(page.scope("#m").$refs.page).toBe(page.$("#m"));
+        expect(page.errors).toEqual([]);
+    });
+
+    it("never shows a swapped element's ref as missing to binds outside it", async () => {
+        const page = await mount(
+            `<div id="d" n-scope>
+                <button id="b" n-on-click="$get('/x')"></button>
+                <span id="s" n-bind-textcontent="$refs.panel.dataset.v"></span>
+                <div id="panel" n-ref="panel" data-v="1"></div>
+            </div>`,
+            { server: () => `<div id="panel" n-ref="panel" data-v="2"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.$("#s").textContent).toBe("2");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("runs a bind again only for the ref it reads", async () => {
+        const page = await mount(`
+            <div id="d" n-scope><span n-bind-textcontent="$refs.a ? (globalThis.bindRuns = (globalThis.bindRuns ?? 0) + 1) : 0"></span><i id="a" n-ref="a"></i></div>
+        `);
+        const before = page.window.bindRuns;
+        page.$("#d").insertAdjacentHTML("beforeend", `<i id="z" n-ref="z"></i>`);
+        page.window.nagi.init(page.$("#z"));
+        page.window.nagi.init(page.$("#a"));
+        expect(page.window.bindRuns).toBe(before);
+    });
 });
 
