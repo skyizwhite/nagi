@@ -75,14 +75,18 @@
             runs.add(currentBind);
             currentBind.deps.add(runs);
         };
-        const announce = (name) => {
-            const runs = deps.get(name);
-            runs && [...runs].forEach((run) => run());
-        };
+        const runsOf = (names) => new Set(names.flatMap((name) => [...(deps.get(name) ?? [])]));
         const changed = (names) => {
-            if (!heldRefs) return names.forEach(announce);
-            const held = heldRefs.get(announce) ?? heldRefs.set(announce, new Set()).get(announce);
+            if (!heldRefs) return runsOf(names).forEach((run) => run());
+            const held = heldRefs.get(runsOf) ?? heldRefs.set(runsOf, new Set()).get(runsOf);
             names.forEach((name) => held.add(name));
+        };
+        const put = (target, name, value) => {
+            const had = Object.hasOwn(target, name);
+            if (had && target[name] === value) return true;
+            Object.defineProperty(target, name, { value, writable: true, enumerable: true, configurable: true });
+            changed(had ? [name] : [name, refKeys]);
+            return true;
         };
         const outerRefs = () => outer?.$refs;
         const refs = new Proxy(own, {
@@ -94,15 +98,10 @@
             },
             has: (target, name) => {
                 track(name);
-                return Object.hasOwn(target, name) || (!!outer && name in outerRefs());
+                return Object.hasOwn(target, name) || (!!outer && name in outerRefs()) || Reflect.has(target, name);
             },
-            set: (target, name, value) => {
-                const had = Object.hasOwn(target, name);
-                if (had && target[name] === value) return true;
-                Object.defineProperty(target, name, { value, writable: true, enumerable: true, configurable: true });
-                changed(had ? [name] : [name, refKeys]);
-                return true;
-            },
+            set: (target, name, value) => put(target, name, value),
+            defineProperty: (target, name, descriptor) => ("value" in descriptor ? put(target, name, descriptor.value) : false),
             deleteProperty: (target, name) => {
                 if (!Object.hasOwn(target, name)) return true;
                 delete target[name];
@@ -114,6 +113,7 @@
                 return [...new Set([...Reflect.ownKeys(target), ...(outer ? Reflect.ownKeys(outerRefs()) : [])])];
             },
             getOwnPropertyDescriptor: (target, name) => {
+                track(name);
                 if (Object.hasOwn(target, name) || !outer || !(name in outerRefs())) return Reflect.getOwnPropertyDescriptor(target, name);
                 return { value: outerRefs()[name], writable: true, enumerable: true, configurable: true };
             },
@@ -129,7 +129,9 @@
             return fn();
         } finally {
             heldRefs = null;
-            held.forEach((names, announce) => names.forEach(announce));
+            const runs = new Set();
+            held.forEach((names, runsOf) => runsOf([...names]).forEach((run) => runs.add(run)));
+            runs.forEach((run) => run());
         }
     };
 
@@ -652,6 +654,7 @@
             },
             set(obj, prop, val, receiver) {
                 if (fromOuter(obj, prop)) return Reflect.set(outer, prop, val);
+                if (prop === "$refs") return true;
                 const found = descriptorOf(obj, prop);
                 if (found && "value" in found && val !== Object(val) && Object.is(obj[prop], val)) return true;
                 if (!Reflect.set(obj, prop, val, receiver)) return false;

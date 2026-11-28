@@ -195,5 +195,34 @@ describe("n-ref", () => {
         expect(page.$("#s").textContent).toBe("e");
         expect(page.errors).toEqual([]);
     });
+
+    it("updates a bind that asks Object.hasOwn about a ref", async () => {
+        const page = await mount(`<div id="d" n-scope><span id="s" n-bind-textcontent="Object.hasOwn($refs, 'x') ? 'yes' : 'no'"></span></div>`);
+        page.$("#d").insertAdjacentHTML("beforeend", `<i id="x" n-ref="x"></i>`);
+        page.window.nagi.init(page.$("#x"));
+        expect(page.$("#s").textContent).toBe("yes");
+    });
+
+    it("ignores an assignment to this.$refs in strict code", async () => {
+        const page = await mount(`<div id="d" n-scope="{ reset() { 'use strict'; this.$refs = {}; } }"><i n-ref="x"></i><button id="b" n-on-click="reset()"></button></div>`);
+        page.$("#b").click();
+        expect(page.scope("#d").$refs.x).toBeTruthy();
+        expect(page.errors).toEqual([]);
+    });
+
+    it("runs a bind that reads two refs a swap changed once", async () => {
+        const page = await mount(
+            `<div id="d" n-scope>
+                <button id="b" n-on-click="$get('/x')"></button>
+                <span n-bind-textcontent="($refs.a, $refs.b, globalThis.pairRuns = (globalThis.pairRuns ?? 0) + 1)"></span>
+                <i id="a" n-ref="a"></i><i id="bb" n-ref="b"></i>
+            </div>`,
+            { server: () => `<i id="a" n-ref="a"></i><i id="bb" n-ref="b"></i>` },
+        );
+        const before = page.window.pairRuns;
+        page.$("#b").click();
+        await page.settle();
+        expect(page.window.pairRuns).toBe(before + 1);
+    });
 });
 
