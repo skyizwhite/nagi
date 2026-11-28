@@ -174,7 +174,7 @@ Pick the values a request needs from `$dataset()` rather than sending all of it.
 | `$dispatch(name, detail, options)` | Dispatches a bubbling event from the element |
 | `$watch(fn)` | Runs `fn`, and again whenever what it read changes |
 | `$debounce(fn, ms)` | Runs `fn` once calls have stopped for `ms` |
-| `$persist(name, key)` | Keeps a name of the scope in `localStorage`. Call it from `n-on-init`. A value JSON cannot hold, such as `undefined`, is not kept, and the next page starts from the scope's own value. The key is `_nagiProp-<name>` unless given, the same on every page of the site |
+| `$persist(name, key)` | Keeps a name of the scope in `localStorage` as JSON. Call it from `n-on-init`. When the value gives no JSON, as `undefined` and functions do, or cannot be saved, the stored value is removed and the next page starts from the scope's own value. The key is `_nagiProp-<name>` unless given, the same on every page of the origin |
 
 ### Requests
 
