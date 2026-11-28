@@ -78,4 +78,84 @@ describe("$persist", () => {
         );
         expect(page.$("#d").nagiProxy.n).toBe(3);
     });
+
+    it("$persist forgets a member that becomes undefined, and saves it again once it has a value", async () => {
+        const page = await mount(`<div id="d" n-scope="{ n: 1 }" n-on-init="$persist('n')"></div>`);
+        const scope = page.$("#d").nagiProxy;
+        scope.n = undefined;
+        expect(page.window.localStorage.getItem("_nagiProp-n")).toBe(null);
+        scope.n = 4;
+        expect(page.window.localStorage.getItem("_nagiProp-n")).toBe("4");
+    });
+
+    it("$persist warns about a stored value it cannot read, and goes on saving", async () => {
+        const page = await mount(`<div id="d" n-scope="{ n: 1 }" n-on-init="$persist('n')"></div>`, {
+            beforeInit: (window) => window.localStorage.setItem("_nagiProp-n", "undefined"),
+        });
+        expect(page.$("#d").nagiProxy.n).toBe(1);
+        expect(page.errors).toEqual([]);
+        expect(page.warnings.map(([message]) => message)).toEqual(["[Nagi] cannot read the stored value of"]);
+        expect(page.window.localStorage.getItem("_nagiProp-n")).toBe("1");
+    });
+
+    it("$persist warns once and leaves the member working when localStorage cannot be used", async () => {
+        const page = await mount(`<div id="d" n-scope="{ n: 1 }" n-on-init="$persist('n')"></div>`, {
+            beforeInit: (window) =>
+                Object.defineProperty(window, "localStorage", {
+                    configurable: true,
+                    get() {
+                        throw new window.DOMException("The storage is off.", "SecurityError");
+                    },
+                }),
+        });
+        const scope = page.$("#d").nagiProxy;
+        scope.n = 2;
+        scope.n = 3;
+        expect(scope.n).toBe(3);
+        expect(page.errors).toEqual([]);
+        expect(page.warnings.map(([message]) => message)).toEqual([
+            "[Nagi] cannot read the stored value of",
+            "[Nagi] cannot save the stored value of",
+        ]);
+    });
+
+    it("$persist forgets a member JSON cannot hold", async () => {
+        const page = await mount(`<div id="d" n-scope="{ n: 1 }" n-on-init="$persist('n')"></div>`);
+        page.$("#d").nagiProxy.n = () => {};
+        expect(page.window.localStorage.getItem("_nagiProp-n")).toBe(null);
+    });
+
+    it("$persist forgets the old value when a new one cannot be saved", async () => {
+        const items = new Map();
+        let full = false;
+        const page = await mount(`<div id="d" n-scope="{ n: 1 }" n-on-init="$persist('n')"></div>`, {
+            beforeInit: (window) =>
+                Object.defineProperty(window, "localStorage", {
+                    configurable: true,
+                    value: {
+                        getItem: (key) => items.get(key) ?? null,
+                        removeItem: (key) => void items.delete(key),
+                        setItem: (key, value) => {
+                            if (full) throw new window.DOMException("The quota is full.", "QuotaExceededError");
+                            items.set(key, value);
+                        },
+                    },
+                }),
+        });
+        expect(items.get("_nagiProp-n")).toBe("1");
+        full = true;
+        const scope = page.$("#d").nagiProxy;
+        scope.n = 2;
+        scope.n = 3;
+        expect(items.has("_nagiProp-n")).toBe(false);
+        expect(page.warnings.map(([message]) => message)).toEqual(["[Nagi] cannot save the stored value of"]);
+    });
+
+    it("$persist leaves an empty stored value alone", async () => {
+        const page = await mount(`<div id="d" n-scope="{ n: 1 }" n-on-init="$persist('n')"></div>`, {
+            beforeInit: (window) => window.localStorage.setItem("_nagiProp-n", ""),
+        });
+        expect(page.$("#d").nagiProxy.n).toBe(1);
+        expect(page.warnings).toEqual([]);
+    });
 });
