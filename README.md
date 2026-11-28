@@ -172,7 +172,7 @@ Pick the values a request needs from `$dataset()` rather than sending all of it.
 | `$refs` | The elements named by `n-ref` |
 | `$dataset()` | The `data-*` of the element and its ancestors |
 | `$dispatch(name, detail, options)` | Dispatches a bubbling event from the element |
-| `$watch(fn)` | Runs `fn`, and again whenever what it read changes |
+| `$watch(fn)` | Runs `fn`, and again whenever what it read changes (before its first `await`; see Things to know) |
 | `$debounce(fn, ms, { key })` | Runs `fn` once calls have stopped for `ms`. Calls count as one when they come from the same attribute, `$watch` or, for `.debounce<ms>` and `this.$debounce`, handler, and pass a function with the same code; native functions, such as bound ones, count as the same code. To choose which calls count as one, pass a `key`, which counts for the calls from the same element. Pass one for two bound functions or closures in a loop at one place, and for `this.$debounce` after an `await`. `{ abortable: true }` drops a run still waiting when the scope starts a request |
 | `$persist(name, key)` | Keeps a name of the scope in `localStorage` as JSON. Call it from `n-on-init`. When the value gives no JSON, as `undefined` and functions do, or cannot be saved, the stored value is removed and the next page starts from the scope's own value. The key is `_nagiProp-<name>` unless given, the same on every page of the origin |
 
@@ -260,6 +260,7 @@ row.remove();
 - HTML lowercases attribute names, so `n-let-isOpen` defines `isopen`.
 - Changes are tracked when a name is assigned: write `items = [...items, x]`, not `items.push(x)`, and `user = { ...user, name }`, not `user.name = name`.
 - Declare the names you assign in a scope. Assigning an undeclared name makes a global variable.
+- An async `n-bind-*` or `$watch` follows only the names it reads before its first `await`. In the async function it calls, read the names first, as in `const { id, lang } = this; const data = await load(id)`. Make no `$watch` or `$persist` after an `await` in either, since each run would add another. Only an `n-bind-*` drops the result of a run that a newer run has overtaken.
 - Helpers named bare in `n-on-*` and `n-bind-*` (`$dispatch`, not `this.$dispatch`) act from their element, even after an `await` and even if the element has left the page by then; what it dispatches then reaches only what left with it. Called through `this`, as in a method of the scope, they act from that element only until the first `await`, and from the scope's element after it.
 - Nagi sets up the page when it loads, and what responses bring in. Elements other scripts add or remove need `nagi.init` and `nagi.destroy`.
 

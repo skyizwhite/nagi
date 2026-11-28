@@ -258,7 +258,9 @@
             for (let el = hostOf(this); el?.nodeType === 1; el = el.parentElement) datasets = { ...el.dataset, ...datasets };
             return datasets;
         },
-        $watch: (fn) => void watch(fn),
+        $watch(fn) {
+            watch(fn, this ? hostOf(this) : currentEl);
+        },
         $dispatch(evt, detail, opts) {
             dispatch(hostOf(this) ?? document, evt, { detail, ...opts });
         },
@@ -305,7 +307,7 @@
                         localStorage.removeItem(key);
                     } catch {}
                 }
-            });
+            }, hostOf(this));
         },
     });
 
