@@ -539,7 +539,7 @@
             node.nagiBound = node.nagiField = node.nagiInitDue = false;
             node.nagiGone = true;
             node.nagiGen = (node.nagiGen ?? 0) + 1;
-            node.nagiProxy = node.nagiRaw = node.nagiFields = node.nagiOwnClasses = null;
+            node.nagiProxy = node.nagiRaw = node.nagiFields = node.nagiOwnClasses = node.nagiLook = null;
             node.nagiBroken = false;
             ownScopes.delete(node);
         });
@@ -643,7 +643,10 @@
             const settled = readSettled(newEl);
             if (settled.every(([, value], i) => value === oldValues[i][1])) return [];
             putSettled(newEl, oldValues);
-            return [[newEl, settled, oldValues, ownClasses(newEl)]];
+            const own = ownClasses(newEl);
+            const look = new Set(classesOf(settled[1][1] ?? "").filter((name) => name && !own.has(name)));
+            newEl.nagiLook = { contains: (name) => look.has(name) };
+            return [[newEl, settled, oldValues, own]];
         });
 
     const styleOf = (text) => {
@@ -665,7 +668,7 @@
             if (to == null && !el.classList.length) el.removeAttribute(attr);
         } else if (attr === "style") {
             const [before, after] = [styleOf(from), styleOf(to)];
-            if ([before, after].some((style) => namesOf(style).some((name) => !style.getPropertyValue(name)))) return whole();
+            if ([before, after, el.style].some((style) => namesOf(style).some((name) => !style.getPropertyValue(name)))) return whole();
             new Set([...namesOf(before), ...namesOf(after)]).forEach((name) => {
                 const kept = el.style.getPropertyValue(name) === before.getPropertyValue(name) && el.style.getPropertyPriority(name) === before.getPropertyPriority(name);
                 if (!kept) return;
@@ -677,18 +680,18 @@
     };
 
     const settle = (moving) => {
-        const connected = moving.filter(([newEl]) => newEl.isConnected);
+        const connected = moving.filter(([newEl]) => newEl.isConnected || void (newEl.nagiLook = null));
         if (!connected.length) return;
         void document.documentElement.offsetWidth;
         requestAnimationFrame(() =>
             connected.forEach(([newEl, settled, oldValues, ownThen]) => {
+                newEl.nagiLook = null;
                 if (!newEl.isConnected || newEl.nagiGone) return;
                 const ownNow = ownClasses(newEl);
-                const dropped = [...ownThen].filter((name) => !ownNow.has(name));
                 settled.forEach(([attr, value], i) => {
-                    if (attr === "class" && value != null && dropped.length) {
-                        const names = classesOf(value).filter((name) => name && !dropped.includes(name));
-                        value = names.length ? names.join(" ") : null;
+                    if (attr === "class" && (ownThen.size || ownNow.size)) {
+                        const names = new Set([...classesOf(value ?? "").filter((name) => name && !ownThen.has(name)), ...ownNow]);
+                        value = names.size ? [...names].join(" ") : value == null ? null : "";
                     }
                     settleAttr(newEl, attr, oldValues[i][1], value);
                 });
@@ -971,7 +974,10 @@
 
     const keyedWriters = {
         __proto__: null,
-        class: (el, sub, value) => el.classList.toggle(sub, !!value),
+        class: (el, sub, value) => {
+            el.classList.toggle(sub, !!value);
+            (el.nagiOwnClasses ??= new Map()).set("." + sub, new Set(value ? [sub] : []));
+        },
         style: (el, sub, value) => (unset(value) ? el.style.removeProperty(sub) : el.style.setProperty(sub, value)),
         dataset: (el, sub, value) =>
             unset(value) ? el.removeAttribute("data-" + sub) : el.setAttribute("data-" + sub, value),
@@ -1021,7 +1027,7 @@
             const mine = new Set();
             added.forEach((name) => next.has(name) || bindEl.classList.remove(name));
             next.forEach((name) => {
-                if (added.has(name) || !bindEl.classList.contains(name)) mine.add(name);
+                if (added.has(name) || !(bindEl.nagiLook ?? bindEl.classList).contains(name)) mine.add(name);
                 bindEl.classList.add(name);
             });
             added = mine;

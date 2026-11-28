@@ -477,6 +477,37 @@ describe("cssMorph", () => {
         expect(page.$("#target").className).toBe("card new active");
     });
 
+    it("does not put back a class a keyed bind took off before the frame", async () => {
+        const { frames, beforeInit } = heldFrames();
+        const page = await mount(
+            `<div id="d" n-scope="{ on: true }"><button id="b" n-on-click="$get('/x')"></button><div id="target" class="card"></div></div>`,
+            { server: () => `<div id="target" class="card new" n-bind-class.active="on ? true : Promise.resolve(false)"></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        page.scope("#d").on = false;
+        await later(0);
+        frames.forEach((fn) => fn());
+        expect(page.$("#target").classList.contains("active")).toBe(false);
+    });
+
+    it("keeps a class in the new element's markup that a bind also names, and a class a bind adds before the frame", async () => {
+        const { frames, beforeInit } = heldFrames();
+        const page = await mount(
+            `<div id="d" n-scope="{ open: true, active: false }"><button id="b" n-on-click="$get('/x')"></button><div id="target" class="card active"></div></div>`,
+            { server: () => `<div id="target" class="card open" n-bind-class="{ open, active }"></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const scope = page.scope("#d");
+        scope.active = true;
+        frames.forEach((fn) => fn());
+        const target = page.$("#target");
+        expect([...target.classList].sort()).toEqual(["active", "card", "open"]);
+        scope.open = false;
+        expect(target.classList.contains("open")).toBe(true);
+    });
+
     it("settles nothing on an element torn down before the frame", async () => {
         const { frames, beforeInit } = heldFrames();
         const page = await mount(
