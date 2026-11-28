@@ -128,12 +128,12 @@ Puts the element in its scope's `$refs` under the given name.
 - Binds that read `$refs` update as refs come and go. When elements share a name, the last one in the page wins, and the next to last takes its place when it goes.
 
 #### `n-form`
-Copies the value of each named field inside it into the scope, as the user changes it, and disables the submit buttons while the scope has a request in flight.
+Copies the value of each named field inside it into the scope, as the user changes it.
 
 ```html
 <form n-scope n-form n-on-submit.prevent="$post('/signup', e)">
   <input name="email" type="email">
-  <button>Sign up</button>
+  <button n-bind-disabled="$fetching">Sign up</button>
   <p n-bind-hidden="!email">We will write to <span n-bind-textcontent="email"></span>.</p>
 </form>
 ```

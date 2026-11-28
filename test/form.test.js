@@ -88,49 +88,18 @@ describe("n-form", () => {
         expect("b" in page.$("#f").nagiRaw).toBe(false);
     });
 
-    it("disables the submit buttons while the scope is fetching", async () => {
-        const page = await mount(form);
-        const scope = page.$("#f").nagiProxy;
-        scope.$fetching = true;
-        await page.settle();
-        expect(page.$("#send").disabled).toBe(true);
-
-        scope.$fetching = false;
-        await page.settle();
-        expect(page.$("#send").disabled).toBe(false);
-    });
-
-    it("disables only the submit buttons, and leaves a button disabled in the HTML alone", async () => {
+    it("leaves the submit buttons alone, so a bind on $fetching disables them", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form>
-                <button id="submit"></button>
-                <input id="image" type="image">
-                <button id="plain" type="button"></button>
-                <button id="off" disabled></button>
+                <button id="plain"></button>
+                <button id="bound" n-bind-disabled="$fetching"></button>
             </form>
         `);
-        page.$("#f").nagiProxy.$fetching = true;
-        await page.settle();
-        expect(["submit", "image", "plain", "off"].map((id) => page.$(`#${id}`).disabled)).toEqual([true, true, false, true]);
-
-        page.$("#f").nagiProxy.$fetching = false;
-        await page.settle();
-        expect(["submit", "image", "plain", "off"].map((id) => page.$(`#${id}`).disabled)).toEqual([false, false, false, true]);
-    });
-
-    it("leaves a button disabled that a bind disabled during the request", async () => {
-        const page = await mount(`<form id="f" n-scope="{ ok: true }" n-form><button id="b" n-bind-disabled="!ok"></button></form>`);
         const scope = page.$("#f").nagiProxy;
         scope.$fetching = true;
-        scope.ok = false;
+        expect([page.$("#plain").disabled, page.$("#bound").disabled]).toEqual([false, true]);
         scope.$fetching = false;
-        expect(page.$("#b").disabled).toBe(true);
-    });
-
-    it("leaves alone a button a bind turned from submit into a plain button", async () => {
-        const page = await mount(`<form id="f" n-scope n-form><button id="b" n-bind-type="'button'"></button></form>`);
-        page.$("#f").nagiProxy.$fetching = true;
-        expect(page.$("#b").disabled).toBe(false);
+        expect([page.$("#plain").disabled, page.$("#bound").disabled]).toEqual([false, false]);
     });
 
     it("logs an n-form outside any scope, and leaves its fields and buttons alone", async () => {
@@ -192,21 +161,6 @@ describe("n-form", () => {
     it("does not copy named buttons", async () => {
         const page = await mount(`<form id="f" n-scope n-form><button name="action" value="save"></button></form>`);
         expect("action" in page.$("#f").nagiRaw).toBe(false);
-    });
-
-    it("keeps submit buttons disabled for the whole request, whatever their binds say", async () => {
-        const page = await mount(`
-            <form id="f" n-scope="{ ok: true }" n-form>
-                <button id="a" n-bind-disabled="!ok"></button><button id="b" disabled n-bind-disabled="!ok"></button>
-            </form>
-        `);
-        const scope = page.$("#f").nagiProxy;
-        scope.$fetching = true;
-        scope.ok = false;
-        scope.ok = true;
-        expect([page.$("#a").disabled, page.$("#b").disabled]).toEqual([true, true]);
-        scope.$fetching = false;
-        expect([page.$("#a").disabled, page.$("#b").disabled]).toEqual([false, false]);
     });
 
     it("logs fields other than radios that share a name, and reads only the first", async () => {
@@ -363,12 +317,6 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.q).toBe("preset");
     });
 
-    it("leaves alone buttons with no form to submit", async () => {
-        const page = await mount(`<div id="d" n-scope n-form><button id="b"></button></div>`);
-        page.$("#d").nagiProxy.$fetching = true;
-        expect(page.$("#b").disabled).toBe(false);
-    });
-
     it("leaves ignored radios out when a reset reads a radio group", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form><input id="a" type="radio" name="s" value="a"><div n-ignore><input type="radio" name="s" value="z" checked></div></form>
@@ -384,15 +332,6 @@ describe("n-form", () => {
     it("keeps the type of a value an init handler set when a bind writes it into its field", async () => {
         const page = await mount(`<form id="f" n-scope n-form n-on-init="n = 5"><input name="n" n-bind-value="n"></form>`);
         expect(page.$("#f").nagiProxy.n).toBe(5);
-    });
-
-    it("re-enables only the buttons it disabled when a request ends", async () => {
-        const page = await mount(`<form id="f" n-scope n-form><button id="a" disabled></button></form>`);
-        const scope = page.$("#f").nagiProxy;
-        scope.$fetching = true;
-        page.$("#a").disabled = false;
-        scope.$fetching = false;
-        expect(page.$("#a").disabled).toBe(false);
     });
 
     it("forgets a field another script removed, so its name can be taken again", async () => {
@@ -468,7 +407,7 @@ describe("n-form", () => {
         expect(page.$("#f").nagiProxy.name).toBe("typed");
     });
 
-    it("wires the new fields and submit buttons of an n-form target", async () => {
+    it("wires the new fields of an n-form target", async () => {
         const page = await mount(
             `<div n-scope="{}">
                 <button id="b" type="button" n-on-click="$get('/x')"></button>
@@ -484,9 +423,6 @@ describe("n-form", () => {
         input.value = "bye";
         input.dispatchEvent(new page.window.Event("input"));
         expect(scope.q).toBe("bye");
-
-        scope.$fetching = true;
-        expect(page.$("#go").disabled).toBe(true);
     });
 
     it("wires the fields swapped into an element inside an n-form", async () => {

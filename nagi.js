@@ -495,8 +495,7 @@
             node.nagiCleanup = null;
             node.nagiTimers?.forEach(clearTimeout);
             node.nagiTimers?.clear();
-            if (node.nagiHeld) node.disabled = node.nagiWasDisabled;
-            node.nagiBound = node.nagiField = node.nagiHold = node.nagiHeld = node.nagiInitDue = false;
+            node.nagiBound = node.nagiField = node.nagiInitDue = false;
             node.nagiProxy = node.nagiRaw = node.nagiFields = null;
             node.nagiBroken = false;
             ownScopes.delete(node);
@@ -858,7 +857,6 @@
     const writerOf = (bindEl, main, sub) => {
         if (sub && main in keyedWriters) return (value) => keyedWriters[main](bindEl, sub, value);
         if (sub) return (value) => (bindEl[main][sub] = value);
-        if (main === "disabled") return (value) => bindEl.nagiHeld || (bindEl.disabled = value);
         if (main !== "class") return (value) => (bindEl[main] = value);
 
         let added = new Set();
@@ -948,23 +946,6 @@
             const scopeEl = formScope(inputEl);
             if (inputEl.nagiField || !scopeEl || reserved(inputEl.name, inputEl)) return;
             inputEl.nagiField = fieldOf(inputEl, scopeEl);
-        });
-
-        queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
-            const proxyData = formScope(submitEl)?.nagiProxy;
-            if (submitEl.nagiHold || !proxyData || !submitEl.form) return;
-            submitEl.nagiHold = true;
-            watch(() => {
-                const fetching = proxyData.$fetching;
-                if (fetching && !submitEl.nagiHeld && /^(submit|image)$/.test(submitEl.type)) {
-                    submitEl.nagiWasDisabled = submitEl.disabled;
-                    submitEl.disabled = submitEl.nagiHeld = true;
-                } else if (!fetching && submitEl.nagiHeld) {
-                    submitEl.nagiHeld = false;
-                    if (!submitEl.nagiWasDisabled) submitEl.disabled = false;
-                    submitEl.nagiRuns?.forEach((run) => run.attr === "disabled" && run());
-                }
-            }, submitEl);
         });
 
         queryAttr(baseEl, "*").forEach((bindEl) => {
