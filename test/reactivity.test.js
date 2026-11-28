@@ -176,6 +176,17 @@ describe("async binds", () => {
 });
 
 describe("watchers", () => {
+    it("follows the names a bind's thenable reads in its then", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ lang: 'en', lazy() { return { then: (resolve) => resolve(this.lang) } } }"><span id="s" n-bind-textcontent="lazy()"></span></div>
+        `);
+        await later(0);
+        expect(page.$("#s").textContent).toBe("en");
+        page.scope("#d").lang = "ja";
+        await later(0);
+        expect(page.$("#s").textContent).toBe("ja");
+    });
+
     it("logs a rejecting async $watch on a page that replaced Promise, and binds a thenable whose then returns nothing", async () => {
         const page = await mount(
             `<div id="d" n-scope n-on-init="$watch(async () => { await 0; null.x })"><span id="s" n-bind-textcontent="({ then(resolve) { resolve('hi') } })"></span></div>`,
