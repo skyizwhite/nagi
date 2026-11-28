@@ -254,10 +254,9 @@ Tools are managed with [mise](https://mise.jdx.dev).
 ```sh
 mise install
 npm install
-npm test        # or `mise run test`
+mise run test
+mise run build  # writes dist/nagi.min.js
 ```
-
-`sh scripts/build.sh` writes `dist/nagi.min.js`.
 
 ## License
 
