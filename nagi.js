@@ -71,11 +71,12 @@
 
     const hostHelpers = ["$dispatch", "$dataset", "$get", "$post", "$put", "$patch", "$delete", "$fetch", "$debounce", "$watch", "$persist"];
 
-    const hostLayer = (el, scope) => {
-        const layer = Object.create(null);
-        hostHelpers.forEach((name) => (layer[name] = (...args) => atHost(el, () => scope[name](...args))));
-        return layer;
-    };
+    const hostLayer = (el, scope) =>
+        new Proxy(Object.create(null), {
+            has: (_, name) => hostHelpers.includes(name),
+            get: (_, name) =>
+                hostHelpers.includes(name) ? (...args) => atHost(el.isConnected ? el : null, () => scope[name](...args)) : undefined,
+        });
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
         const prev = [currentEl, currentBind, currentHandler];
@@ -252,7 +253,9 @@
             for (let el = hostOf(this); el?.nodeType === 1; el = el.parentElement) datasets = { ...el.dataset, ...datasets };
             return datasets;
         },
-        $watch: (fn) => void watch(fn),
+        $watch(fn) {
+            watch(fn, hostOf(this));
+        },
         $dispatch(evt, detail, opts) {
             dispatch(hostOf(this) ?? document, evt, { detail, ...opts });
         },
@@ -296,7 +299,7 @@
                         localStorage.removeItem(key);
                     } catch {}
                 }
-            });
+            }, hostOf(this));
         },
     });
 
@@ -490,7 +493,7 @@
     };
 
     const reserved = (key, el) => {
-        if (!/^(\$|_nagi|__proto__$)/i.test(key)) return false;
+        if (!/^(\$|_nagi|__proto__$|__host$)/i.test(key)) return false;
         console.error("[Nagi] this name is Nagi's own:", key, el);
         return true;
     };
@@ -544,7 +547,7 @@
 
         const proxy = new Proxy(rawData, {
             has(obj, prop) {
-                if (prop === "$el") return false;
+                if (prop === "$el" || prop === "__host") return false;
                 if (prop in obj) return true;
                 track(prop);
                 return !!outer && prop in outer;

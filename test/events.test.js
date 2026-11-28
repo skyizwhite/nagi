@@ -340,4 +340,45 @@ describe("helpers after an await", () => {
         page.$("#b").click();
         expect(page.scope("#d").got).toBe("minefalseobjectfunction");
     });
+
+    it("acts from the scope's element when the handler's element left the page during the await", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ got: '' }" n-on-removed="got = 'scope'">
+                <div id="row"><button id="b" n-on-click="${tick}; $dispatch('removed')"></button></div>
+            </div>
+        `);
+        page.$("#b").click();
+        page.$("#row").remove();
+        await later(20);
+        expect(page.scope("#d").got).toBe("scope");
+    });
+
+    it("gives a $watch made after its element is gone to the scope's element", async () => {
+        const page = await mount(`
+            <div id="outer" n-scope="{ n: 0, runs: 0 }">
+                <div id="d" n-scope>
+                    <div id="row"><button id="b" n-on-click="${tick}; $watch(() => { n; runs++ })"></button></div>
+                </div>
+            </div>
+        `);
+        const outer = page.scope("#outer");
+        page.$("#b").click();
+        page.window.nagi.destroy(page.$("#row"));
+        page.$("#row").remove();
+        await later(20);
+        expect(outer.runs).toBe(1);
+        page.window.nagi.destroy(page.$("#d"));
+        outer.n = 1;
+        expect(outer.runs).toBe(1);
+    });
+
+    it("keeps __host for Nagi, so binds under a scope that names it still work", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ __host: null, got: 0 }"><button id="b" n-on-click="got = 1"></button></div>
+        `);
+        page.$("#b").click();
+        expect(page.scope("#d").got).toBe(1);
+        expect(page.errors.map(([message, key]) => [message, key])).toEqual([["[Nagi] this name is Nagi's own:", "__host"]]);
+    });
 });
+
