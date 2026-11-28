@@ -27,11 +27,11 @@
     const define = (obj, key, value, enumerable = true) =>
         Object.defineProperty(obj, key, { value, writable: true, enumerable, configurable: true });
 
-    const evaluate = (expression, data, thisArg, el, host = Object.create(null)) => {
+    const evaluate = (expression, data, thisArg, el, host = Object.create(null), name) => {
         try {
             return new Function("__data", "$el", "__host", `with(__data) with(__host) {return (${expression}\n)}`).call(thisArg, data, el, host);
         } catch (err) {
-            console.error("[Nagi] failed to evaluate:", expression, "\n", err);
+            console.error("[Nagi] failed to evaluate:", expression, "\n", err, "in", el ?? "the page", ...(name ? [name] : []));
             return failed;
         }
     };
@@ -206,7 +206,7 @@
             if (run.gone || run === currentBind) return;
             if (run.active) {
                 run.dirty = true;
-                run.cause = cause;
+                if (cause !== undefined) run.cause = cause;
                 return;
             }
             run.active = true;
@@ -425,7 +425,7 @@
                         localStorage.removeItem(key);
                     } catch {}
                 }
-            }, hostOf(this));
+            }, hostOf(this), hostOf(this), undefined, "$persist");
         },
     });
 
@@ -604,7 +604,7 @@
                         target[strategy](...kids);
                         initAll(kids);
                     }
-                }, undefined, undefined, undefined, "$persist");
+                });
 
                 for (const morph of putOld(morphs)) moving.push(morph);
             }
@@ -694,7 +694,7 @@
 
     const baseOf = (dataEl, outer) => {
         const base = dataEl.getAttribute("n-scope")?.trim();
-        const made = base ? runWithEl(dataEl, () => withOuterNames(outer, (names) => evaluate(base, names, Object.freeze({}), dataEl))) : {};
+        const made = base ? runWithEl(dataEl, () => withOuterNames(outer, (names) => evaluate(base, names, Object.freeze({}), dataEl, undefined, "n-scope"))) : {};
         try {
             if (made !== null && typeof made === "object" && typeof made.then !== "function" && !builtIn(made)) {
                 const descriptors = Object.getOwnPropertyDescriptors(made);
@@ -788,7 +788,7 @@
         attrs.forEach(({ name, value }) => {
             const key = name.match(/^n-let-(.+)$/)?.[1];
             if (!key || reserved(key, dataEl)) return;
-            const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, proxyData, dataEl)) : undefined;
+            const result = value.trim() ? runWithEl(dataEl, () => evaluate(value, proxyData, proxyData, dataEl, undefined, name)) : undefined;
             if (result === failed) return;
             try {
                 if (!(key in rawData) || !Reflect.set(proxyData, key, result)) giveName(dataEl, key, result);
@@ -1095,7 +1095,7 @@
 
             const proxyData = getClosestProxy(bindEl);
             const props = entries.flatMap(([name, source]) => {
-                const made = evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name));
+                const made = evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name), name);
                 return made === failed ? [] : Object.entries(made).map(([key, val]) => [key, val, name]);
             });
 

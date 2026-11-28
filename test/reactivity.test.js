@@ -293,6 +293,22 @@ describe("watchers", () => {
         expect(places).toEqual([["s", "n-bind-style.color"], ["s", "n-bind-title"], ["b", "n-on-click"]]);
     });
 
+    it("says on which element and attribute an expression did not compile", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ a: 1 }" n-let-b="a +">
+                <span id="s" n-bind-title="a +"></span>
+                <button id="b" n-on-click.prevent="if ("></button>
+            </div>
+        `);
+        const places = page.errors.map((args) => args.slice(-2)).map(([el, attr]) => [el.id, attr]);
+        expect(places).toEqual([["d", "n-let-b"], ["s", "n-bind-title"], ["b", "n-on-click.prevent"]]);
+    });
+
+    it("names $persist as the place of a failing save", async () => {
+        const page = await mount(`<div id="d" n-scope="{ get n() { throw new Error('read') } }" n-on-init="$persist('n')"></div>`);
+        expect(page.errors.map((args) => args.at(-1))).toContain("$persist");
+    });
+
     it("logs a bind that keeps setting itself off and stops it", async () => {
         const page = await mount(`
             <div n-scope="{ a: 0, b: 0 }">
