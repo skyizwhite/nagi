@@ -145,7 +145,7 @@
 
     const staleScope = (scope) => {
         const el = scope?._nagiEl;
-        return !!el && (el.nagiProxy ?? ownScopes.get(el)) !== scope;
+        return !!el && el.nagiProxy !== scope && ownScopes.get(el) !== scope;
     };
 
     const atHost = (el, site, fn, stale = false) => {
@@ -257,13 +257,14 @@
             const reading = /^(GET|HEAD|OPTIONS)$/.test(method);
             const inQuery = /^(GET|HEAD|DELETE)$/.test(method);
             const dedupe = options.dedupe !== false;
+            const stale = !!el?.nagiGone || currentStale || staleScope(this);
             const report = (name, detail, cancelable = false) => {
-                const stale = currentStale;
+                const wasStale = currentStale;
                 currentStale = false;
                 try {
-                    return dispatch(el?.isConnected ? el : document, name, { detail, cancelable });
+                    return dispatch(!stale && el?.isConnected ? el : document, name, { detail, cancelable });
                 } finally {
-                    currentStale = stale;
+                    currentStale = wasStale;
                 }
             };
             let write;
@@ -281,8 +282,10 @@
                 write = !reading && `${method} ${url} ${opts.body ? new URLSearchParams(sentOf(entries)) : ""}`;
                 if (dedupe && writing.has(write)) return;
 
-                read?.abort();
-                this._nagiAbort.abort();
+                if (!stale) {
+                    read?.abort();
+                    this._nagiAbort.abort();
+                }
                 return opts;
             });
 
@@ -291,9 +294,11 @@
                 return;
             }
 
-            this._nagiAbort = new AbortController();
-            if (reading) read = controller;
-            if (reading && el && !el.nagiGone && !currentStale && !staleScope(this)) el.nagiRead = controller;
+            if (!stale) {
+                this._nagiAbort = new AbortController();
+                if (reading) read = controller;
+                if (reading && el) el.nagiRead = controller;
+            }
             const deduped = write && dedupe;
             if (deduped) writing.add(write);
             controllers.add(controller);

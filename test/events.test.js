@@ -671,6 +671,37 @@ describe("helpers after an await", () => {
         await page.settle();
     });
 
+    it("leaves the new listeners and the live reads of a scope to a stale request, and persists nothing for it", async () => {
+        let answers = [];
+        const page = await mount(
+            `<div id="d" n-scope="{ errs: 0, draft: 'live' }">
+                <button id="b" n-on-fetcherr="errs++" n-on-click="${tick}; $persist('draft', 'staleDraft'); $get('/stale')"></button>
+                <button id="list" n-on-click="$get('/list')"></button>
+            </div>`,
+            { server: (request) => new Promise((resolve) => answers.push([request.url, resolve])) },
+        );
+        const b = page.$("#b");
+        b.click();
+        page.window.nagi.destroy(b);
+        page.window.nagi.init(b);
+        page.$("#list").click();
+        await later(20);
+        expect(page.window.localStorage.getItem("staleDraft")).toBe(null);
+        answers.forEach(([url, resolve]) => resolve(url.endsWith("/stale") ? { status: 500 } : ""));
+        await page.settle();
+        expect(page.scope("#d").errs).toBe(0);
+        expect(page.requests.map((r) => new URL(r.url).pathname).sort()).toEqual(["/list", "/stale"]);
+    });
+
+    it("keeps an element given n-scope later from treating its own handlers as stale", async () => {
+        const page = await mount(`<button id="b" n-on-click="$debounce(() => (globalThis.laterScope = true), 5)"></button>`);
+        page.$("#b").setAttribute("n-scope", "{}");
+        page.window.nagi.init(page.$("#b"));
+        page.$("#b").click();
+        await later(20);
+        expect(page.window.laterScope).toBe(true);
+    });
+
     it("starts nothing for a handler whose element was torn down and set up again during the await", async () => {
         const page = await mount(`
             <div id="d" n-scope="{ n: 0 }">
