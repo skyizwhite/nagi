@@ -286,3 +286,125 @@ describe("debounce", () => {
         expect(page.scope("#i").got).toEqual([]);
     });
 });
+
+describe("helpers after an await", () => {
+    const tick = "await new Promise((resolve) => setTimeout(resolve))";
+
+    it("dispatches from the handler's element and reads its data-* after an await", async () => {
+        const page = await mount(`
+            <ul id="u" n-scope="{ got: [] }">
+                <li data-id="7" n-on-done="got = [...got, 'li']">
+                    <button id="b" n-on-click="${tick}; got = [...got, $dataset().id]; $dispatch('done')"></button>
+                </li>
+            </ul>
+        `);
+        page.$("#b").click();
+        await later(20);
+        expect(page.scope("#u").got).toEqual(["7", "li"]);
+    });
+
+    it("sends the fetch events of a request made after an await from the handler's element", async () => {
+        const page = await mount(
+            `<div id="d" n-scope="{ got: '' }">
+                <p n-on-fetcherr="got = 'p'"><button id="b" n-on-click="${tick}; $get('/x')"></button></p>
+            </div>`,
+            { server: () => ({ status: 500 }) },
+        );
+        page.$("#b").click();
+        await later(20);
+        await page.settle();
+        expect(page.scope("#d").got).toBe("p");
+    });
+
+    it("gives a $watch made after an await to the handler's element, so it stops with it", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ n: 0, runs: 0 }">
+                <div id="row"><button id="b" n-on-click="${tick}; $watch(() => { n; runs++ })"></button></div>
+            </div>
+        `);
+        const scope = page.scope("#d");
+        page.$("#b").click();
+        await later(20);
+        expect(scope.runs).toBe(1);
+        page.window.nagi.destroy(page.$("#row"));
+        scope.n = 1;
+        expect(scope.runs).toBe(1);
+    });
+
+    it("still finds names of the scope that the host layer does not hold", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ toString: 'mine', got: '' }">
+                <button id="b" n-on-click="got = toString + String($fetching) + typeof $refs + typeof $abort"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        expect(page.scope("#d").got).toBe("minefalseobjectfunction");
+    });
+
+    it("still dispatches from the handler's element when it left the page during the await", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ got: [] }" n-on-removed="got = [...got, 'scope']">
+                <div id="row" n-on-removed="got = [...got, 'row']"><button id="b" n-on-click="${tick}; $dispatch('removed')"></button></div>
+            </div>
+        `);
+        page.$("#b").click();
+        page.$("#row").remove();
+        await later(20);
+        expect(page.scope("#d").got).toEqual(["row"]);
+    });
+
+    it("gives a $watch made after its element left the page to that element, so destroying it stops the watch", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ n: 0, runs: 0 }">
+                <div id="row"><button id="b" n-on-click="${tick}; $watch(() => { n; runs++ })"></button></div>
+            </div>
+        `);
+        const scope = page.scope("#d");
+        const row = page.$("#row");
+        page.$("#b").click();
+        row.remove();
+        await later(20);
+        expect(scope.runs).toBe(1);
+        page.window.nagi.destroy(row);
+        scope.n = 1;
+        expect(scope.runs).toBe(1);
+    });
+
+    it("keeps __host for Nagi, so binds under a scope that names it still work", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ __host: null, got: 0 }"><button id="b" n-on-click="got = 1"></button></div>
+        `);
+        page.$("#b").click();
+        expect(page.scope("#d").got).toBe(1);
+        expect(page.errors.map(([message, key]) => [message, key])).toEqual([["[Nagi] this name is Nagi's own:", "__host"]]);
+    });
+
+    it("reads the data-* of an element destroyed after it left the page", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ got: '' }">
+                <ul><li id="row" data-id="7"><button n-on-destroy="got = $dataset().id"></button></li></ul>
+            </div>
+        `);
+        const row = page.$("#row");
+        row.remove();
+        page.window.nagi.destroy(row);
+        expect(page.scope("#d").got).toBe("7");
+    });
+
+    it("acts from a bind's element after the await of its promise", async () => {
+        const page = await mount(`
+            <div id="d" n-scope>
+                <p data-id="9"><span id="s" n-bind-textcontent="(async () => { ${tick}; return $dataset().id })()"></span></p>
+            </div>
+        `);
+        await later(20);
+        expect(page.$("#s").textContent).toBe("9");
+    });
+
+    it("gives the same helper each time it is read", async () => {
+        const page = await mount(`<div id="d" n-scope="{ same: null }"><button id="b" n-on-click="same = $dispatch === $dispatch"></button></div>`);
+        page.$("#b").click();
+        expect(page.scope("#d").same).toBe(true);
+    });
+});
+

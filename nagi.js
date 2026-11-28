@@ -26,9 +26,9 @@
     const define = (obj, key, value, enumerable = true) =>
         Object.defineProperty(obj, key, { value, writable: true, enumerable, configurable: true });
 
-    const evaluate = (expression, data, thisArg, el) => {
+    const evaluate = (expression, data, thisArg, el, host = Object.create(null)) => {
         try {
-            return new Function("__data", "$el", `with(__data) {return (${expression}\n)}`).call(thisArg, data, el);
+            return new Function("__data", "$el", "__host", `with(__data) with(__host) {return (${expression}\n)}`).call(thisArg, data, el, host);
         } catch (err) {
             console.error("[Nagi] failed to evaluate:", expression, "\n", err);
             return failed;
@@ -57,6 +57,28 @@
     const giveHelpers = (raw, el) => {
         Object.entries({ ...helpers(), _nagiEl: el }).forEach(([key, value]) => define(raw, key, value, false));
         return raw;
+    };
+
+    const atHost = (el, fn) => {
+        const prev = currentEl;
+        currentEl = el;
+        try {
+            return fn();
+        } finally {
+            currentEl = prev;
+        }
+    };
+
+    const hostHelpers = ["$dispatch", "$dataset", "$get", "$post", "$put", "$patch", "$delete", "$fetch", "$debounce", "$watch", "$persist"];
+
+    const hostLayer = (el, scope) => {
+        const made = Object.create(null);
+        return new Proxy(made, {
+            has: (_, name) => hostHelpers.includes(name),
+            get: (_, name) =>
+                hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, () => scope[name](...args))) : undefined,
+            set: (_, name, value) => Reflect.set(scope, name, value),
+        });
     };
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
@@ -472,7 +494,7 @@
     };
 
     const reserved = (key, el) => {
-        if (!/^(\$|_nagi|__proto__$)/i.test(key)) return false;
+        if (key !== "__host" && !/^(\$|_nagi|__proto__$)/i.test(key)) return false;
         console.error("[Nagi] this name is Nagi's own:", key, el);
         return true;
     };
@@ -526,7 +548,7 @@
 
         const proxy = new Proxy(rawData, {
             has(obj, prop) {
-                if (prop === "$el") return false;
+                if (prop === "$el" || prop === "__host") return false;
                 if (prop in obj) return true;
                 track(prop);
                 return !!outer && prop in outer;
@@ -817,7 +839,8 @@
             bindEl.nagiBound = true;
 
             const proxyData = getClosestProxy(bindEl);
-            const props = Object.assign({}, ...entries.map((entry) => evaluate(`{${entry}}`, proxyData, proxyData, bindEl)));
+            const host = hostLayer(bindEl, proxyData);
+            const props = Object.assign({}, ...entries.map((entry) => evaluate(`{${entry}}`, proxyData, proxyData, bindEl, host)));
 
             Object.entries(props).forEach(([key, val]) =>
                 key.startsWith("@") ? listen(bindEl, key.slice(1), val, proxyData) : bindProp(bindEl, key, val),
