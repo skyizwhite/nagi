@@ -265,6 +265,47 @@ describe("n-form", () => {
         expect(c.value).toBe("1.");
     });
 
+    it("keeps an assignment to a select's name when an option's label bind runs", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <select name="size"><option value="s">S</option><option value="m" n-bind-textcontent="size === 'm' ? 'M (chosen)' : 'M'">M</option></select>
+                <button id="b" type="button" n-on-click="size = 'm'"></button>
+            </form>
+        `);
+        page.$("#b").click();
+        expect(page.scope("#f").size).toBe("m");
+    });
+
+    it("keeps binds off a field while its own n-on-input handler runs", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ cents: 0 }" n-form>
+                <input id="a" name="amount" n-on-input="cents = Math.round($el.value * 100)" n-bind-value="cents / 100">
+            </form>
+        `);
+        const a = page.$("#a");
+        a.value = "1.";
+        a.dispatchEvent(new page.window.Event("input"));
+        expect(a.value).toBe("1.");
+        expect(page.scope("#f").cents).toBe(100);
+    });
+
+    it("reads a select again when a bind on its optgroup changes its options", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ opts: '<option value=a>a</option><option value=b selected>b</option>' }" n-form>
+                <select name="c"><optgroup n-bind-innerhtml="opts"></optgroup></select>
+            </form>
+        `);
+        const scope = page.scope("#f");
+        expect(scope.c).toBe("b");
+        scope.opts = "<option value=a>a</option>";
+        expect(scope.c).toBe("a");
+    });
+
+    it("keeps null in the scope when a bind writes it into a text field", async () => {
+        const page = await mount(`<form id="f" n-scope n-form n-on-init="q = null"><input name="q" n-bind-value="q"></form>`);
+        expect(page.scope("#f").q).toBeNull();
+    });
+
     it("keeps undefined in the scope when a bind writes it into a text field", async () => {
         const page = await mount(`<form id="f" n-scope n-form n-on-init="q = undefined"><input name="q" n-bind-value="q"></form>`);
         expect(page.scope("#f").q).toBeUndefined();

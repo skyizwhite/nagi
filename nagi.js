@@ -759,13 +759,21 @@
     const sameValue = (had, now) => {
         if (had === now) return true;
         if (Array.isArray(now)) return Array.isArray(had) && had.length === now.length && had.every((item, i) => String(item) === String(now[i]));
+        if (had == null && now === "") return true;
         return now !== Object(now) && had !== Object(had) && String(had) === String(now);
     };
 
-    const fieldProps = /^(value|checked|selectedIndex|valueAsNumber|defaultValue|defaultChecked|min|max|step|multiple|files|textContent|innerHTML|innerText)$/;
-    const optionProps = /^(selected|defaultSelected|value|text|textContent|innerHTML|innerText|label)$/;
-    const liveProps = /^(value|checked|selectedIndex|valueAsNumber|selected)$/;
+    const liveProps = /^(value|checked|selectedIndex|valueAsNumber|valueAsDate|selected)$/;
     let editingField = null;
+    const editingWhile = (el, fn) => {
+        const prev = editingField;
+        editingField = el;
+        try {
+            return fn();
+        } finally {
+            editingField = prev;
+        }
+    };
 
     const fieldOf = (inputEl, scopeEl) => {
         const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
@@ -796,16 +804,9 @@
         const setVal = () => {
             if (group.members.has(inputEl)) proxyData[name] = read();
         };
-        const onEdit = () => {
-            const prev = editingField;
-            editingField = inputEl;
-            try {
-                setVal();
-            } finally {
-                editingField = prev;
-            }
-        };
+        const onEdit = () => editingWhile(inputEl, setVal);
         const field = { inputEl, setVal };
+        inputEl.nagiFieldValue = () => (group.members.has(inputEl) ? read() : undefined);
         inputEl.nagiReread = () => {
             if (!group.members.has(inputEl)) return;
             const now = read();
@@ -820,7 +821,7 @@
         (inputEl.nagiCleanup ||= []).push(() => {
             inputEl.removeEventListener("input", onEdit);
             inputEl.removeEventListener("change", onEdit);
-            inputEl.nagiReread = null;
+            inputEl.nagiReread = inputEl.nagiFieldValue = null;
             group.members.delete(inputEl);
             formFields.delete(field);
         });
@@ -907,13 +908,13 @@
 
         const delay = +mods.find((mod) => mod.startsWith("debounce"))?.slice(8);
 
-        const listener = (e) => runWithEl(bindEl, () => {
+        const listener = (e) => editingWhile(/^(input|change)$/.test(eventName) ? bindEl : editingField, () => runWithEl(bindEl, () => {
             if (mods.includes("prevent")) e.preventDefault();
             if (mods.includes("stop")) e.stopPropagation();
 
             if (delay) proxyData.$debounce(() => runWithEl(bindEl, () => handle(val, e), null, val), delay);
             else handle(val, e);
-        }, null, val);
+        }, null, val));
 
         const listenOn = mods.includes("window") ? window : bindEl;
         listenOn.addEventListener(eventName, listener, { once: mods.includes("once") });
@@ -923,19 +924,19 @@
     const bindProp = (bindEl, key, val) => {
         const [main, ...rest] = key.split(".");
         const writeOnly = writerOf(bindEl, main, rest.join("."));
-        const option = bindEl.tagName === "OPTION";
-        const setsField = !rest.length && (option ? optionProps : fieldProps).test(main);
-        const live = setsField && liveProps.test(main);
-        const fieldOfBind = () => setsField && (option ? bindEl.closest("select") : bindEl);
+        const live = !rest.length && liveProps.test(main);
+        const fieldOfBind = () => (bindEl.nagiReread ? bindEl : bindEl.closest("select"));
         const write = (value, editing, later) => {
             const field = fieldOfBind();
-            if (live && field && field === editing) return;
+            if (live && editing && (field ?? bindEl) === editing) return;
+            const before = field?.nagiFieldValue?.();
+            const reread = () => field && !sameValue(before, field.nagiFieldValue?.()) && field.nagiReread?.();
             if (!later) {
                 writeOnly(value);
-                return field?.nagiReread?.();
+                return reread();
             }
             runWithEl(bindEl, () => writeOnly(value));
-            if (field) runWithEl(bindEl, () => field.nagiReread?.(), run);
+            runWithEl(bindEl, reread, run);
         };
         let latest = 0;
         const run = watch(() => {
