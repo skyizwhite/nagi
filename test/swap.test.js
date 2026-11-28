@@ -451,6 +451,32 @@ describe("cssMorph", () => {
         expect(page.$("#target").className).toBe("card new active");
     });
 
+    it("leaves a style property other code set before the frame, and settles the rest", async () => {
+        const { frames, beforeInit } = heldFrames();
+        const page = await mount(
+            `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="target" style="width: 1px; color: red; /* x; y */ height: 1px"></div></div>`,
+            { server: () => `<div id="target" style="color: blue"></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const target = page.$("#target");
+        target.style.width = "50px";
+        frames.forEach((fn) => fn());
+        expect([target.style.width, target.style.color, target.style.height]).toEqual(["50px", "blue", ""]);
+    });
+
+    it("keeps a bound class at the frame while its bind still waits for a new value", async () => {
+        const { frames, beforeInit } = heldFrames();
+        const page = await mount(
+            `<div id="d" n-scope="{ async state() { await new Promise(() => {}) } }"><button id="b" n-on-click="$get('/x')"></button><div id="target" class="card"></div></div>`,
+            { server: () => `<div id="target" class="card new" n-bind-class="globalThis.first ? state() : (globalThis.first = true, { active: true })"></div>`, beforeInit },
+        );
+        page.$("#b").click();
+        await page.settle();
+        frames.forEach((fn) => fn());
+        expect(page.$("#target").className).toBe("card new active");
+    });
+
     it("settles nothing on an element torn down before the frame", async () => {
         const { frames, beforeInit } = heldFrames();
         const page = await mount(

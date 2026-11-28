@@ -643,52 +643,35 @@
             const settled = readSettled(newEl);
             if (settled.every(([, value], i) => value === oldValues[i][1])) return [];
             putSettled(newEl, oldValues);
-            const own = ownClasses(newEl);
-            const names = settled[1][1] && classesOf(settled[1][1]).filter((name) => name && !own.has(name));
-            if (own.size && names) settled[1] = ["class", names.length ? names.join(" ") : null];
-            return [[newEl, settled, oldValues]];
+            return [[newEl, settled, oldValues, ownClasses(newEl)]];
         });
 
-    const stylesOf = (text) => {
-        const found = new Map();
-        const take = (part) => {
-            const at = part.indexOf(":");
-            const name = part.slice(0, at).trim();
-            const value = part.slice(at + 1).trim();
-            const important = /!\s*important$/i.test(value);
-            const plain = important ? value.replace(/!\s*important$/i, "").trim() : value;
-            if (at > 0 && name && plain) found.set(name.startsWith("--") ? name : name.toLowerCase(), [plain, important ? "important" : ""]);
-        };
-        let depth = 0, quote = null, start = 0;
-        for (let i = 0; i < text.length; i++) {
-            const c = text[i];
-            if (quote) {
-                if (c === "\\") i++;
-                else if (c === quote) quote = null;
-            } else if (c === '"' || c === "'") quote = c;
-            else if (c === "(") depth++;
-            else if (c === ")") depth--;
-            else if (c === ";" && !depth) {
-                take(text.slice(start, i));
-                start = i + 1;
-            }
-        }
-        take(text.slice(start));
-        return found;
+    const styleOf = (text) => {
+        const style = document.createElement("div").style;
+        style.cssText = text ?? "";
+        return style;
     };
+
+    const namesOf = (style) => Array.from({ length: style.length }, (_, i) => style.item(i));
 
     const settleAttr = (el, attr, from, to) => {
         const now = el.getAttribute(attr);
-        if (now === from) return to != null ? el.setAttribute(attr, to) : el.removeAttribute(attr);
+        const whole = () => (to != null ? el.setAttribute(attr, to) : el.removeAttribute(attr));
+        if (now === from) return whole();
         if (attr === "class") {
             const [before, after] = [new Set(classesOf(from ?? "").filter(Boolean)), new Set(classesOf(to ?? "").filter(Boolean))];
             before.forEach((name) => after.has(name) || el.classList.remove(name));
             after.forEach((name) => before.has(name) || el.classList.add(name));
             if (to == null && !el.classList.length) el.removeAttribute(attr);
         } else if (attr === "style") {
-            const [before, after] = [stylesOf(from ?? ""), stylesOf(to ?? "")];
-            before.forEach((_, name) => after.has(name) || el.style.removeProperty(name));
-            after.forEach(([value, priority], name) => before.get(name)?.join() === [value, priority].join() || el.style.setProperty(name, value, priority));
+            const [before, after] = [styleOf(from), styleOf(to)];
+            if ([before, after].some((style) => namesOf(style).some((name) => !style.getPropertyValue(name)))) return whole();
+            new Set([...namesOf(before), ...namesOf(after)]).forEach((name) => {
+                const kept = el.style.getPropertyValue(name) === before.getPropertyValue(name) && el.style.getPropertyPriority(name) === before.getPropertyPriority(name);
+                if (!kept) return;
+                if (after.getPropertyValue(name)) el.style.setProperty(name, after.getPropertyValue(name), after.getPropertyPriority(name));
+                else el.style.removeProperty(name);
+            });
             if (to == null && !el.style.length) el.removeAttribute(attr);
         }
     };
@@ -698,9 +681,17 @@
         if (!connected.length) return;
         void document.documentElement.offsetWidth;
         requestAnimationFrame(() =>
-            connected.forEach(([newEl, settled, oldValues]) => {
+            connected.forEach(([newEl, settled, oldValues, ownThen]) => {
                 if (!newEl.isConnected || newEl.nagiGone) return;
-                settled.forEach(([attr, value], i) => settleAttr(newEl, attr, oldValues[i][1], value));
+                const ownNow = ownClasses(newEl);
+                const dropped = [...ownThen].filter((name) => !ownNow.has(name));
+                settled.forEach(([attr, value], i) => {
+                    if (attr === "class" && value != null && dropped.length) {
+                        const names = classesOf(value).filter((name) => name && !dropped.includes(name));
+                        value = names.length ? names.join(" ") : null;
+                    }
+                    settleAttr(newEl, attr, oldValues[i][1], value);
+                });
                 newEl.nagiRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
             }),
         );
