@@ -168,6 +168,136 @@ describe("debounce", () => {
         expect([...page.scope("#i").got].sort()).toEqual(["input", "ping"]);
     });
 
+    it("keeps apart the different debounces of one handler", async () => {
+        const page = await mount(`
+            <div n-scope="{ got: [] }">
+                <button id="b" n-on-click="$debounce(() => got = [...got, 'a'], 10); $debounce(() => got = [...got, 'b'], 20)"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        await later(40);
+        expect(page.scope("#b").got).toEqual(["a", "b"]);
+    });
+
+    it("runs the debounce of a handler called quickly again only once", async () => {
+        const page = await mount(`
+            <div n-scope="{ ran: 0 }"><button id="b" n-on-click="$debounce(() => ran++, 20)"></button></div>
+        `);
+        for (let i = 0; i < 3; i++) page.$("#b").click();
+        await later(40);
+        expect(page.scope("#b").ran).toBe(1);
+    });
+
+    it("keeps apart the same debounce in two handlers of an element after an await", async () => {
+        const page = await mount(`
+            <div n-scope="{ ran: 0 }">
+                <input id="i" n-on-input="await 0; $debounce(() => ran++, 20)" n-on-change="await 0; $debounce(() => ran++, 20)">
+            </div>
+        `);
+        const input = page.$("#i");
+        input.dispatchEvent(new page.window.Event("input"));
+        input.dispatchEvent(new page.window.Event("change"));
+        await later(50);
+        expect(page.scope("#i").ran).toBe(2);
+    });
+
+    it("keeps one debounce of a handler whether or not it awaited first", async () => {
+        const page = await mount(`
+            <div n-scope="{ ran: 0 }"><input id="i" n-on-input="if ($el.value === 'b') await 0; $debounce(() => ran++, 20)"></div>
+        `);
+        const input = page.$("#i");
+        for (const value of ["a", "b"]) {
+            input.value = value;
+            input.dispatchEvent(new page.window.Event("input"));
+        }
+        await later(50);
+        expect(page.scope("#i").ran).toBe(1);
+    });
+
+    it("debounces a function bound anew on each call as one", async () => {
+        const page = await mount(`
+            <div n-scope="{ got: [] }">
+                <input id="i" n-on-input="const add = (x) => got = [...got, x]; $debounce(add.bind(null, $el.value), 20)">
+            </div>
+        `);
+        const input = page.$("#i");
+        for (const value of ["a", "ab", "abc"]) {
+            input.value = value;
+            input.dispatchEvent(new page.window.Event("input"));
+        }
+        await later(50);
+        expect(page.scope("#i").got).toEqual(["abc"]);
+    });
+
+    it("keeps apart calls given different keys, and counts calls given one key as one", async () => {
+        const page = await mount(`
+            <div n-scope="{ got: [] }">
+                <button id="b" n-on-click="['a', 'b'].forEach((x) => $debounce(() => got = [...got, x], 10, { key: x })); $debounce(() => got = [...got, 'c'], 10, { key: 'k' })"></button>
+                <button id="c" n-on-click="$debounce(() => got = [...got, 'd'], 10, { key: 'k' })"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        page.$("#c").click();
+        await later(40);
+        expect([...page.scope("#b").got].sort()).toEqual(["a", "b", "c", "d"]);
+    });
+
+    it("counts calls with one key on one element as one, whatever their code, and takes any value as a key", async () => {
+        const page = await mount(`
+            <div n-scope="{ got: [] }">
+                <button id="b" n-on-click="const a = {}, b = {}, s = Symbol('s');
+                    $debounce(() => got = [...got, 'x'], 10, { key: 'k' });
+                    $debounce(() => got = [...got, 'y'], 10, { key: 'k' });
+                    $debounce(() => got = [...got, 'a'], 10, { key: a });
+                    $debounce(() => got = [...got, 'b'], 10, { key: b });
+                    $debounce(() => got = [...got, 's'], 10, { key: s })"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        await later(40);
+        expect([...page.scope("#b").got].sort()).toEqual(["a", "b", "s", "y"]);
+        expect(page.errors).toEqual([]);
+    });
+
+    it("keys a this.$debounce in a .debounce handler by that handler", async () => {
+        const page = await mount(`
+            <div n-scope="{ ran: 0, save() { this.$debounce(() => this.ran++, 10) } }">
+                <input id="i" n-on-input.debounce10="save()" n-on-change.debounce10="save()">
+            </div>
+        `);
+        const input = page.$("#i");
+        input.dispatchEvent(new page.window.Event("input"));
+        input.dispatchEvent(new page.window.Event("change"));
+        await later(50);
+        expect(page.scope("#i").ran).toBe(2);
+    });
+
+    it("keys a this.$debounce in a debounced function by the place the first $debounce came from", async () => {
+        const page = await mount(`
+            <div n-scope="{ ran: 0, save() { this.$debounce(() => this.ran++, 10) } }">
+                <input id="i" n-on-input="$debounce(() => save(), 10)" n-on-change="$debounce(() => save(), 10)">
+            </div>
+        `);
+        const input = page.$("#i");
+        input.dispatchEvent(new page.window.Event("input"));
+        input.dispatchEvent(new page.window.Event("change"));
+        await later(50);
+        expect(page.scope("#i").ran).toBe(2);
+    });
+
+    it("takes abortable as true or in the options", async () => {
+        const page = await mount(
+            `<div id="d" n-scope="{ ran: 0 }">
+                <button id="b" n-on-click="$debounce(() => ran++, 20, true); $debounce(() => ran += 10, 20, { abortable: true }); $debounce(() => ran += 100, 20); $get('/x')"></button>
+            </div>`,
+            { server: () => "" },
+        );
+        page.$("#b").click();
+        await page.settle();
+        await later(40);
+        expect(page.scope("#d").ran).toBe(100);
+    });
+
     it("keeps a timer for each watcher of an element", async () => {
         const page = await mount(`
             <div n-scope="{ got: [] }">

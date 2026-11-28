@@ -10,6 +10,7 @@
     let currentBind = null;
     let currentEl = null;
     let currentHandler = null;
+    let currentSite = null;
 
     // Utility functions
     const dispatch = (el, name, opts) => el.dispatchEvent(new CustomEvent(name, { bubbles: true, detail: {}, ...opts }));
@@ -53,41 +54,42 @@
     };
 
     const hostOf = (scope) => currentEl ?? scope._nagiEl;
+    const nativeCode = /^function[^{]*\{\s*\[native code\]\s*\}$/;
 
     const giveHelpers = (raw, el) => {
         Object.entries({ ...helpers(), _nagiEl: el }).forEach(([key, value]) => define(raw, key, value, false));
         return raw;
     };
 
-    const atHost = (el, fn) => {
-        const prev = currentEl;
-        currentEl = el;
+    const atHost = (el, site, fn) => {
+        const prev = [currentEl, currentSite];
+        [currentEl, currentSite] = [el, site];
         try {
             return fn();
         } finally {
-            currentEl = prev;
+            [currentEl, currentSite] = prev;
         }
     };
 
     const hostHelpers = ["$dispatch", "$dataset", "$get", "$post", "$put", "$patch", "$delete", "$fetch", "$debounce", "$watch", "$persist"];
 
-    const hostLayer = (el, scope) => {
+    const hostLayer = (el, scope, site) => {
         const made = Object.create(null);
         return new Proxy(made, {
             has: (_, name) => hostHelpers.includes(name),
             get: (_, name) =>
-                hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, () => scope[name](...args))) : undefined,
+                hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, name === "$debounce" ? site : null, () => scope[name](...args))) : undefined,
             set: (_, name, value) => Reflect.set(scope, name, value),
         });
     };
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
-        const prev = [currentEl, currentBind, currentHandler];
-        [currentEl, currentBind, currentHandler] = [el, bind, handler];
+        const prev = [currentEl, currentBind, currentHandler, currentSite];
+        [currentEl, currentBind, currentHandler, currentSite] = [el, bind, handler, null];
         try {
             return fn();
         } finally {
-            [currentEl, currentBind, currentHandler] = prev;
+            [currentEl, currentBind, currentHandler, currentSite] = prev;
         }
     };
 
@@ -260,15 +262,18 @@
         $dispatch(evt, detail, opts) {
             dispatch(hostOf(this) ?? document, evt, { detail, ...opts });
         },
-        $debounce(fn, ms, abortable = false) {
+        $debounce(fn, ms, options) {
+            const { key: given, abortable = false } = typeof options === "object" && options ? options : { abortable: !!options };
             const el = hostOf(this);
             const signal = abortable && runWithEl(el, () => this._nagiAbort?.signal);
             const timers = ((el ?? document).nagiTimers ||= new Map());
-            const key = currentHandler ?? currentBind?.key ?? fn.nagiSource ?? String(fn);
+            const site = currentBind?.key ?? currentSite ?? (currentHandler ? idOf(currentHandler) : "");
+            const code = fn.nagiSource ?? String(fn);
+            const key = given !== undefined ? given : `\0${site} ${nativeCode.test(code) ? "native" : code}`;
             clearTimeout(timers.get(key));
             timers.set(key, setTimeout(() => {
                 timers.delete(key);
-                if (!signal?.aborted) runWithEl(el, fn);
+                if (!signal?.aborted) runWithEl(el, () => ((currentSite = site), fn()));
             }, ms));
         },
         $persist(prop, key) {
@@ -759,7 +764,7 @@
             if (mods.includes("prevent")) e.preventDefault();
             if (mods.includes("stop")) e.stopPropagation();
 
-            if (delay) proxyData.$debounce(() => handle(val, e), delay);
+            if (delay) proxyData.$debounce(() => runWithEl(bindEl, () => handle(val, e), null, val), delay);
             else handle(val, e);
         }, null, val);
 
@@ -834,13 +839,17 @@
 
         queryAttr(baseEl, "*").forEach((bindEl) => {
             if (bindEl.nagiBound) return;
-            const entries = [...bindEl.attributes].map(({ name, value }) => sourceOf(bindEl, name, value)).filter(Boolean);
+            const entries = [...bindEl.attributes]
+                .map(({ name, value }) => [name, sourceOf(bindEl, name, value)])
+                .filter(([, source]) => source);
             if (!entries.length) return;
             bindEl.nagiBound = true;
 
             const proxyData = getClosestProxy(bindEl);
-            const host = hostLayer(bindEl, proxyData);
-            const props = Object.assign({}, ...entries.map((entry) => evaluate(`{${entry}}`, proxyData, proxyData, bindEl, host)));
+            const props = Object.assign(
+                {},
+                ...entries.map(([name, source]) => evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name))),
+            );
 
             Object.entries(props).forEach(([key, val]) =>
                 key.startsWith("@") ? listen(bindEl, key.slice(1), val, proxyData) : bindProp(bindEl, key, val),
