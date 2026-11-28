@@ -491,6 +491,50 @@ describe("n-form", () => {
         expect(scope.seen).toEqual(["x"]);
     });
 
+    it("lets a field in an earlier fragment take over the name of one a later fragment takes away", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <div id="c"></div><div id="a"><input name="q" value="x"></div>
+            </form>`,
+            { server: () => `<div id="c" n-swap="inner"><input id="new" name="q" value="y"></div><div id="a" n-swap="inner"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const scope = page.scope("#f");
+        expect(scope.q).toBe("y");
+        const input = page.$("#new");
+        input.value = "z";
+        input.dispatchEvent(new page.window.Event("input"));
+        expect(scope.q).toBe("z");
+        expect(page.errors).toEqual([]);
+    });
+
+    it("clears a name when the later field of that name in the response goes to another scope", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <div id="a"><input name="q" value="old"></div>
+            </form>
+            <form id="g" n-scope n-form><div id="other"></div></form>`,
+            { server: () => `<div id="a" n-swap="inner"></div><div id="other" n-swap="inner"><input name="q" value="theirs"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#f").q).toBeUndefined();
+        expect(page.scope("#g").q).toBe("theirs");
+    });
+
+    it("still logs two fields of one name that a response brings", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form><button id="b" type="button" n-on-click="$get('/x')"></button><div id="box"></div></form>`,
+            { server: () => `<div id="box" n-swap="inner"><input name="q"><input name="q"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] another field of the scope has this name:"]);
+    });
+
     it("writes nothing to a scope torn down with its fields", async () => {
         const page = await mount(`<form id="f" n-scope n-form><input name="q" value="x"></form>`);
         const scope = page.scope("#f");

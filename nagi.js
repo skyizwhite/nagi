@@ -528,6 +528,8 @@
     const swapAll = (text, moving) => {
         const fragments = fragmentsOf(text);
         const namesIn = (el) => queryAttr(el, "[name]").filter(isField).map((field) => field.name);
+        const refused = (refusedFields = []);
+        laterChecks = [];
         try {
             for (const [i, fragment] of fragments.entries()) {
                 upcomingNames = new Set(fragments.slice(i + 1).flatMap(namesIn));
@@ -559,8 +561,12 @@
                 for (const morph of putOld(morphs)) moving.push(morph);
             }
         } finally {
-            upcomingNames = null;
+            upcomingNames = refusedFields = null;
         }
+        refused.forEach((field) => field.isConnected && !field.nagiField && init(field));
+        const checks = laterChecks;
+        laterChecks = [];
+        checks.forEach((check) => check());
     };
 
     const attributesToSettle = ["style", "class", "height", "width"];
@@ -797,7 +803,7 @@
         const fresh = !group;
         group?.members.forEach((el) => el.isConnected || group.members.delete(el));
         if (group?.members.size && !(radio && group.radio && group.form === form))
-            return void console.error("[Nagi] another field of the scope has this name:", name, inputEl);
+            return void (refusedFields ? refusedFields.push(inputEl) : console.error("[Nagi] another field of the scope has this name:", name, inputEl));
         if (!group) {
             if (hasName(rawData, name)) return void console.error("[Nagi] this field's name is already a name of the scope:", name, inputEl);
             define(rawData, name, undefined);
@@ -838,8 +844,8 @@
             formFields.delete(field);
             const left = rawData[name];
             const check = () => {
-                if (scopeEl.nagiFields?.get(name) !== group || inputEl.isConnected || !Object.is(rawData[name], left)) return;
-                if (upcomingNames?.has(name)) return;
+                if (scopeEl.nagiFields?.get(name) !== group || scopeEl.contains(inputEl) || !Object.is(rawData[name], left)) return;
+                if (upcomingNames?.has(name)) return void laterChecks.push(check);
                 group.members.forEach((el) => el.isConnected || group.members.delete(el));
                 const [rest] = group.members;
                 proxyData[name] = rest ? rest.nagiFieldValue?.() : undefined;
@@ -1040,6 +1046,8 @@
     let heldInits = null;
     let fieldChecks = null;
     let upcomingNames = null;
+    let refusedFields = null;
+    let laterChecks = [];
 
     const holdInits = (fn) => {
         if (heldInits) return fn();
