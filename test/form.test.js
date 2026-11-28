@@ -233,6 +233,7 @@ describe("n-form", () => {
             </form>
         `);
         const c = page.$("#c");
+        c.focus();
         c.value = "1.";
         c.dispatchEvent(new page.window.Event("input"));
         expect(c.value).toBe("1.");
@@ -259,6 +260,7 @@ describe("n-form", () => {
             </form>
         `);
         const c = page.$("#c");
+        c.focus();
         c.value = "1.";
         c.dispatchEvent(new page.window.Event("input"));
         await later(20);
@@ -276,17 +278,20 @@ describe("n-form", () => {
         expect(page.scope("#f").size).toBe("m");
     });
 
-    it("keeps binds off a field while its own n-on-input handler runs", async () => {
+    it("keeps binds off a field while it has focus, and puts their value in when it leaves", async () => {
         const page = await mount(`
             <form id="f" n-scope="{ cents: 0 }" n-form>
                 <input id="a" name="amount" n-on-input="cents = Math.round($el.value * 100)" n-bind-value="cents / 100">
             </form>
         `);
         const a = page.$("#a");
+        a.focus();
         a.value = "1.";
         a.dispatchEvent(new page.window.Event("input"));
         expect(a.value).toBe("1.");
         expect(page.scope("#f").cents).toBe(100);
+        a.blur();
+        expect(a.value).toBe("1");
     });
 
     it("reads a select again when a bind on its optgroup changes its options", async () => {
@@ -304,6 +309,57 @@ describe("n-form", () => {
     it("keeps null in the scope when a bind writes it into a text field", async () => {
         const page = await mount(`<form id="f" n-scope n-form n-on-init="q = null"><input name="q" n-bind-value="q"></form>`);
         expect(page.scope("#f").q).toBeNull();
+    });
+
+    it("keeps a focused field from a debounced handler, a wrapper's handler and an earlier promise", async () => {
+        let answer;
+        const page = await mount(
+            `<form id="f" n-scope="{ cents: 0, city: '' }" n-form n-on-input="if ($event.target.name === 'w') cents = 7">
+                <input id="a" name="amount" n-on-input.debounce10="cents = Math.round($el.value * 100)" n-bind-value="cents / 100">
+                <input id="w" name="w" n-bind-value="cents">
+                <input id="c" name="town" n-bind-value="city ? lookup() : ''">
+            </form>`,
+            { beforeInit: (window) => (window.lookup = () => new Promise((resolve) => (answer = resolve))) },
+        );
+        const scope = page.scope("#f");
+        const a = page.$("#a");
+        a.focus();
+        a.value = "1.";
+        a.dispatchEvent(new page.window.Event("input"));
+        await later(30);
+        expect(a.value).toBe("1.");
+
+        const w = page.$("#w");
+        w.focus();
+        w.value = "x";
+        w.dispatchEvent(new page.window.Event("input", { bubbles: true }));
+        expect(w.value).toBe("x");
+
+        scope.city = "tokyo";
+        const c = page.$("#c");
+        c.focus();
+        c.value = "ky";
+        answer("Kyoto");
+        await later(10);
+        expect(c.value).toBe("ky");
+    });
+
+    it("keeps a focused radio group from a bind on another radio of it", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ locked: true }" n-form>
+                <input id="ra" type="radio" name="r" value="a"><input type="radio" name="r" value="b" n-bind-checked="r !== 'a' || locked">
+            </form>
+        `);
+        const ra = page.$("#ra");
+        ra.focus();
+        ra.checked = true;
+        ra.dispatchEvent(new page.window.Event("change"));
+        expect(page.scope("#f").r).toBe("a");
+    });
+
+    it("keeps an empty value the scope holds when its field reads it back as another kind of empty", async () => {
+        const page = await mount(`<form id="f" n-scope n-form n-on-init="qty = ''"><input type="number" name="qty" value="5" n-bind-value="qty"></form>`);
+        expect(page.scope("#f").qty).toBe("");
     });
 
     it("keeps undefined in the scope when a bind writes it into a text field", async () => {
