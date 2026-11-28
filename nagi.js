@@ -56,9 +56,83 @@
     const hostOf = (scope) => currentEl ?? scope._nagiEl;
     const nativeCode = /^function[^{]*\{\s*\[native code\]\s*\}$/;
 
-    const giveHelpers = (raw, el) => {
+    const giveHelpers = (raw, el, outer) => {
         Object.entries({ ...helpers(), _nagiEl: el }).forEach(([key, value]) => define(raw, key, value, false));
+        Object.defineProperty(raw, "$refs", { value: refsOf(outer), writable: false, enumerable: false, configurable: true });
         return raw;
+    };
+
+    const refsOwn = new WeakMap();
+    const refKeys = Symbol();
+    let heldRefs = null;
+
+    const refsOf = (outer) => {
+        const own = {};
+        const deps = new Map();
+        const track = (name) => {
+            if (!currentBind) return;
+            const runs = deps.get(name) ?? deps.set(name, new Set()).get(name);
+            runs.add(currentBind);
+            currentBind.deps.add(runs);
+        };
+        const runsOf = (names) => new Set(names.flatMap((name) => [...(deps.get(name) ?? [])]));
+        const changed = (names) => {
+            if (!heldRefs) return runsOf(names).forEach((run) => run());
+            const held = heldRefs.get(runsOf) ?? heldRefs.set(runsOf, new Set()).get(runsOf);
+            names.forEach((name) => held.add(name));
+        };
+        const put = (target, name, value) => {
+            const had = Object.hasOwn(target, name);
+            if (had && target[name] === value) return true;
+            Object.defineProperty(target, name, { value, writable: true, enumerable: true, configurable: true });
+            changed(had ? [name] : [name, refKeys]);
+            return true;
+        };
+        const outerRefs = () => outer?.$refs;
+        const refs = new Proxy(own, {
+            get: (target, name) => {
+                track(name);
+                if (Object.hasOwn(target, name)) return target[name];
+                if (outer && name in outerRefs()) return outerRefs()[name];
+                return Reflect.get(target, name);
+            },
+            has: (target, name) => {
+                track(name);
+                return Object.hasOwn(target, name) || (!!outer && name in outerRefs()) || Reflect.has(target, name);
+            },
+            set: (target, name, value) => put(target, name, value),
+            defineProperty: (target, name, descriptor) => ("value" in descriptor ? put(target, name, descriptor.value) : false),
+            deleteProperty: (target, name) => {
+                if (!Object.hasOwn(target, name)) return true;
+                delete target[name];
+                changed([name, refKeys]);
+                return true;
+            },
+            ownKeys: (target) => {
+                track(refKeys);
+                return [...new Set([...Reflect.ownKeys(target), ...(outer ? Reflect.ownKeys(outerRefs()) : [])])];
+            },
+            getOwnPropertyDescriptor: (target, name) => {
+                track(name);
+                if (Object.hasOwn(target, name) || !outer || !(name in outerRefs())) return Reflect.getOwnPropertyDescriptor(target, name);
+                return { value: outerRefs()[name], writable: true, enumerable: true, configurable: true };
+            },
+        });
+        refsOwn.set(refs, own);
+        return refs;
+    };
+
+    const holdRefs = (fn) => {
+        if (heldRefs) return fn();
+        const held = (heldRefs = new Map());
+        try {
+            return fn();
+        } finally {
+            heldRefs = null;
+            const runs = new Set();
+            held.forEach((names, runsOf) => runsOf([...names]).forEach((run) => runs.add(run)));
+            runs.forEach((run) => run());
+        }
     };
 
     const atHost = (el, site, fn) => {
@@ -139,7 +213,6 @@
 
     // Helpers that are included with every data object
     const helpers = (pending = 0, writing = new Set(), controllers = new Set(), read = null) => ({
-        $refs: {},
         $fetching: false,
         _nagiAbort: new AbortController(),
         ...Object.fromEntries(
@@ -409,12 +482,6 @@
 
     const drop = (el) => {
         queryAttr(el, "*").forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
-        queryAttr(el, "[n-ref]").forEach((node) => {
-            const refs = node.nagiRefScope?.$refs;
-            const name = node.getAttribute("n-ref");
-            if (refs?.[name] === node) delete refs[name];
-            node.nagiRefScope = null;
-        });
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
             node.nagiRead?.abort();
@@ -428,6 +495,18 @@
             node.nagiProxy = node.nagiRaw = node.nagiFields = null;
             ownScopes.delete(node);
         });
+        queryAttr(el, "[n-ref]").forEach((node) => {
+            const scopeEl = node.nagiRefScope;
+            const refs = scopeEl?.nagiRaw?.$refs;
+            const name = node.getAttribute("n-ref");
+            node.nagiRefScope = null;
+            if (!refs || refsOwn.get(refs)?.[name] !== node) return;
+            const other = queryAttr(scopeEl, "[n-ref]").findLast(
+                (n) => n.nagiRefScope === scopeEl && n.getAttribute("n-ref") === name && !el.contains(n),
+            );
+            if (other) refs[name] = other;
+            else delete refs[name];
+        });
     };
 
     const initAll = (nodes) => nodes.forEach((node) => node.nodeType === 1 && init(node));
@@ -435,34 +514,38 @@
     const swap = (text) => {
         const moving = [];
         try {
-            for (const fragment of fragmentsOf(text)) {
-                const strategy = fragment.getAttribute("n-swap") || "outer";
-                const target = fragment.id && document.getElementById(fragment.id);
-                if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
-                if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
-                if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
-
-                const kids = [...fragment.childNodes];
-
-                const morphs = cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1));
-
-                if (strategy === "inner") {
-                    [...target.children].forEach(drop);
-                    target.replaceChildren(...kids);
-                    initAll([...target.childNodes]);
-                } else if (strategy === "outer") {
-                    drop(target);
-                    target.replaceWith(fragment);
-                    init(fragment);
-                } else {
-                    target[strategy](...kids);
-                    initAll(kids);
-                }
-
-                for (const morph of putOld(morphs)) moving.push(morph);
-            }
+            holdRefs(() => swapAll(text, moving));
         } finally {
             settle(moving);
+        }
+    };
+
+    const swapAll = (text, moving) => {
+        for (const fragment of fragmentsOf(text)) {
+            const strategy = fragment.getAttribute("n-swap") || "outer";
+            const target = fragment.id && document.getElementById(fragment.id);
+            if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
+            if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
+            if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
+
+            const kids = [...fragment.childNodes];
+
+            const morphs = cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1));
+
+            if (strategy === "inner") {
+                [...target.children].forEach(drop);
+                target.replaceChildren(...kids);
+                initAll([...target.childNodes]);
+            } else if (strategy === "outer") {
+                drop(target);
+                target.replaceWith(fragment);
+                init(fragment);
+            } else {
+                target[strategy](...kids);
+                initAll(kids);
+            }
+
+            for (const morph of putOld(morphs)) moving.push(morph);
         }
     };
 
@@ -571,6 +654,7 @@
             },
             set(obj, prop, val, receiver) {
                 if (fromOuter(obj, prop)) return Reflect.set(outer, prop, val);
+                if (prop === "$refs") return true;
                 const found = descriptorOf(obj, prop);
                 if (found && "value" in found && val !== Object(val) && Object.is(obj[prop], val)) return true;
                 if (!Reflect.set(obj, prop, val, receiver)) return false;
@@ -597,9 +681,8 @@
             return;
         }
 
-        const rawData = giveHelpers(baseOf(dataEl), dataEl);
-
         const outer = closestScope(dataEl.parentElement)?.nagiProxy;
+        const rawData = giveHelpers(baseOf(dataEl), dataEl, outer);
         const proxyData = reactive(rawData, outer);
 
         dataEl.nagiProxy = proxyData;
@@ -808,10 +891,14 @@
         }
 
         queryAttr(baseEl, "[n-ref]").forEach((el) => {
-            const scope = closestScope(el)?.nagiProxy;
-            if (!scope) return console.error("[Nagi] n-ref needs a scope:", el);
-            scope.$refs[el.getAttribute("n-ref")] = el;
-            el.nagiRefScope = scope;
+            const scopeEl = el.nagiProxy ? (closestScope(el.parentElement) ?? el) : closestScope(el);
+            if (!scopeEl) return console.error("[Nagi] n-ref needs a scope:", el);
+            const refs = scopeEl.nagiRaw.$refs;
+            const name = el.getAttribute("n-ref");
+            const held = refsOwn.get(refs)?.[name];
+            el.nagiRefScope = scopeEl;
+            const later = held && held !== el && held.isConnected && held.nagiRefScope === scopeEl && el.compareDocumentPosition(held) & Node.DOCUMENT_POSITION_FOLLOWING;
+            if (!later) refs[name] = el;
         });
 
         queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));
