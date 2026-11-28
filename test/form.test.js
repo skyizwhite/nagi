@@ -463,7 +463,7 @@ describe("n-form", () => {
         expect([scope.q, scope.s]).toEqual(["kept", "y"]);
     });
 
-    it("clears the name of a swapped-away field before the init handlers of the swap", async () => {
+    it("clears the name of a swapped-away field once the response is in, after its init handlers", async () => {
         const page = await mount(
             `<form id="f" n-scope="{ seen: 'none' }" n-form>
                 <button id="b" type="button" n-on-click="$get('/x')"></button>
@@ -473,7 +473,8 @@ describe("n-form", () => {
         );
         page.$("#b").click();
         await page.settle();
-        expect(page.scope("#f").seen).toBe("undefined");
+        expect(page.scope("#f").seen).toBe("old");
+        expect(page.scope("#f").q).toBeUndefined();
     });
 
     it("keeps the name of a field one response moves to another fragment", async () => {
@@ -508,6 +509,22 @@ describe("n-form", () => {
         input.dispatchEvent(new page.window.Event("input"));
         expect(scope.q).toBe("z");
         expect(page.errors).toEqual([]);
+    });
+
+    it("never shows undefined for a name a field in an earlier fragment takes over", async () => {
+        const page = await mount(
+            `<form id="f" n-scope="{ seen: [] }" n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <span n-bind-title="seen = [...seen, String(q)]"></span>
+                <div id="c"></div><div id="a"><input name="q" value="x"></div>
+            </form>`,
+            { server: () => `<div id="c" n-swap="inner"><input name="q" value="y"></div><div id="a" n-swap="inner"></div>` },
+        );
+        page.$("#b").click();
+        await page.settle();
+        const scope = page.scope("#f");
+        expect(scope.q).toBe("y");
+        expect(scope.seen).not.toContain("undefined");
     });
 
     it("clears a name when the later field of that name in the response goes to another scope", async () => {

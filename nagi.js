@@ -526,13 +526,17 @@
     };
 
     const swapAll = (text, moving) => {
-        const fragments = fragmentsOf(text);
-        const namesIn = (el) => queryAttr(el, "[name]").filter(isField).map((field) => field.name);
         const refused = (refusedFields = []);
-        laterChecks = [];
+        const checks = (fieldChecks = []);
+        const safely = (fn) => {
+            try {
+                fn();
+            } catch (err) {
+                console.error("[Nagi] failed to run:", fn, "\n", err);
+            }
+        };
         try {
-            for (const [i, fragment] of fragments.entries()) {
-                upcomingNames = new Set(fragments.slice(i + 1).flatMap(namesIn));
+            for (const fragment of fragmentsOf(text)) {
                 const strategy = fragment.getAttribute("n-swap") || "outer";
                 const target = fragment.id && document.getElementById(fragment.id);
                 if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
@@ -561,12 +565,10 @@
                 for (const morph of putOld(morphs)) moving.push(morph);
             }
         } finally {
-            upcomingNames = refusedFields = null;
+            refusedFields = fieldChecks = null;
+            refused.forEach((field) => safely(() => field.isConnected && !field.nagiField && init(field)));
+            checks.forEach(safely);
         }
-        refused.forEach((field) => field.isConnected && !field.nagiField && init(field));
-        const checks = laterChecks;
-        laterChecks = [];
-        checks.forEach((check) => check());
     };
 
     const attributesToSettle = ["style", "class", "height", "width"];
@@ -845,8 +847,7 @@
             const left = rawData[name];
             const check = () => {
                 if (scopeEl.nagiFields?.get(name) !== group || scopeEl.contains(inputEl) || !Object.is(rawData[name], left)) return;
-                if (upcomingNames?.has(name)) return void laterChecks.push(check);
-                group.members.forEach((el) => el.isConnected || group.members.delete(el));
+                group.members.forEach((el) => (el.isConnected && scopeEl.contains(el)) || group.members.delete(el));
                 const [rest] = group.members;
                 proxyData[name] = rest ? rest.nagiFieldValue?.() : undefined;
             };
@@ -1045,19 +1046,15 @@
 
     let heldInits = null;
     let fieldChecks = null;
-    let upcomingNames = null;
     let refusedFields = null;
-    let laterChecks = [];
 
     const holdInits = (fn) => {
         if (heldInits) return fn();
         const held = (heldInits = []);
-        const checks = (fieldChecks = []);
         try {
             return fn();
         } finally {
-            heldInits = fieldChecks = null;
-            checks.forEach((check) => check());
+            heldInits = null;
             held.forEach((el) => {
                 if (!el.nagiInitDue || !el.isConnected) return;
                 el.nagiInitDue = false;
