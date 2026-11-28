@@ -565,16 +565,38 @@ describe("n-form", () => {
         expect(page.scope("#f").q).toBeUndefined();
     });
 
-    it("logs fields other than radios that share a name, and reads only the first", async () => {
+    it("logs fields other than radios and checkboxes that share a name, and reads only the first", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form>
-                <input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b">
                 <input type="hidden" name="ids" value="1"><input type="hidden" name="ids" value="2">
+                <input type="checkbox" name="mix" value="a"><input type="text" name="mix">
             </form>
         `);
         const scope = page.$("#f").nagiProxy;
-        expect([scope.t, scope.ids]).toEqual([true, "1"]);
+        expect([scope.ids, scope.mix]).toEqual(["1", false]);
         expect(page.errors).toHaveLength(2);
+    });
+
+    it("reads checkboxes that share a name as the list of the checked values, and a lone one as true or false", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ pick: [] }" n-form>
+                <input id="a" type="checkbox" name="t" value="a" checked><input id="b" type="checkbox" name="t" value="b">
+                <input type="checkbox" name="c" value="z" n-bind-checked="pick.includes('z')"><input type="checkbox" name="c" value="y">
+                <input type="checkbox" name="agree">
+            </form>
+        `);
+        const scope = page.scope("#f");
+        expect([scope.t, scope.c, scope.agree]).toEqual([["a"], [], false]);
+        const b = page.$("#b");
+        b.checked = true;
+        b.dispatchEvent(new page.window.Event("change"));
+        expect(scope.t).toEqual(["a", "b"]);
+        scope.pick = ["z"];
+        expect(scope.c).toEqual(["z"]);
+        page.window.nagi.destroy(b);
+        b.remove();
+        await later(0);
+        expect(scope.t).toBe(true);
     });
 
     it("lets a field a swap brings in take the name of the one it replaced", async () => {

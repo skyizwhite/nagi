@@ -799,24 +799,27 @@
     const fieldOf = (inputEl, scopeEl) => {
         const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
         const { name, type, form } = inputEl;
-        const radio = type === "radio";
+        const shared = type === "radio" || type === "checkbox";
         const owned = (scopeEl.nagiFields ||= new Map());
         let group = owned.get(name);
         const fresh = !group;
         group?.members.forEach((el) => el.isConnected || group.members.delete(el));
-        if (group?.members.size && !(radio && group.radio && group.form === form))
+        if (group?.members.size && !(shared && group.type === type && group.form === form))
             return void (refusedFields ? refusedFields.push(inputEl) : console.error("[Nagi] another field of the scope has this name:", name, inputEl));
         if (!group) {
             if (hasName(rawData, name)) return void console.error("[Nagi] this field's name is already a name of the scope:", name, inputEl);
             define(rawData, name, undefined);
             owned.set(name, (group = { members: new Set() }));
         }
-        Object.assign(group, { radio, form });
+        Object.assign(group, { type, form });
         group.members.add(inputEl);
 
         const read = {
             radio: () => [...group.members].find((el) => el.isConnected && el.form === inputEl.form && el.checked)?.value,
-            checkbox: () => inputEl.checked,
+            checkbox: () => {
+                const boxes = [...group.members].filter((el) => el.isConnected && el.form === inputEl.form);
+                return boxes.length > 1 ? boxes.filter((el) => el.checked).map((el) => el.value) : inputEl.checked;
+            },
             file: () => inputEl.files,
             number: () => (inputEl.value === "" ? undefined : +inputEl.value),
             range: () => +inputEl.value,
