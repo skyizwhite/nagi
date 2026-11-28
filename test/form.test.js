@@ -565,6 +565,25 @@ describe("n-form", () => {
         expect(page.scope("#f").q).toBeUndefined();
     });
 
+    it("reads a pair of checkboxes a swap brings in as a list from the start", async () => {
+        const page = await mount(
+            `<form id="f" n-scope n-form>
+                <button id="b" type="button" n-on-click="$get('/x')"></button>
+                <span id="s" n-bind-textcontent="t.join(',')"></span>
+                <div id="g"><input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b"></div>
+            </form>`,
+            { server: () => `<div id="g" n-swap="inner"><input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b" checked></div>` },
+        );
+        const seen = [];
+        page.scope("#f").$watch(() => seen.push(Array.isArray(page.scope("#f").t) ? "list" : typeof page.scope("#f").t));
+        page.$("#b").click();
+        await page.settle();
+        expect(page.scope("#f").t).toEqual(["a", "b"]);
+        expect(page.$("#s").textContent).toBe("a,b");
+        expect(seen.slice(1)).not.toContain("boolean");
+        expect(page.errors).toEqual([]);
+    });
+
     it("logs fields other than radios and checkboxes that share a name, and reads only the first", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form>

@@ -817,8 +817,11 @@
         const read = {
             radio: () => [...group.members].find((el) => el.isConnected && el.form === inputEl.form && el.checked)?.value,
             checkbox: () => {
-                const boxes = [...group.members].filter((el) => el.isConnected && el.form === inputEl.form);
-                return boxes.length > 1 ? boxes.filter((el) => el.checked).map((el) => el.value) : inputEl.checked;
+                const boxes = [...scopeEl.querySelectorAll("input[type=checkbox]")].filter(
+                    (el) => el.name === name && el.form === inputEl.form && formScope(el) === scopeEl && !leftAlone(el),
+                );
+                if (boxes.length > 1) return boxes.filter((el) => el.checked).map((el) => el.value);
+                return (boxes[0] ?? inputEl).checked;
             },
             file: () => inputEl.files,
             number: () => (inputEl.value === "" ? undefined : +inputEl.value),
