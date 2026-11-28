@@ -195,6 +195,7 @@
     };
 
     let runCount = 0;
+    const NativePromise = (async () => {})().constructor;
 
     const watch = (fn, el = currentEl, owner = el) => {
         if (owner?.nagiGone || currentStale) return Object.assign(() => {}, { gone: true, deps: new Set(), children: [] });
@@ -207,7 +208,8 @@
                     run.dirty = false;
                     unlink(run);
                     try {
-                        runWithEl(el, fn, run);
+                        const value = runWithEl(el, fn, run);
+                        if (value instanceof NativePromise) value.catch((err) => run.gone || console.error("[Nagi] failed to run:", fn, "\n", err));
                     } catch (err) {
                         console.error("[Nagi] failed to run:", fn, "\n", err);
                     }
@@ -1006,9 +1008,9 @@
             const value = val();
             const mine = ++latest;
             if (typeof value?.then !== "function") return write(value);
-            value
+            new NativePromise((resolve, reject) => value.then(resolve, reject))
                 .then((resolved) => mine === latest && !run?.gone && write(resolved, true))
-                .catch((err) => console.error("[Nagi] failed to run:", val, "\n", err));
+                .catch((err) => mine === latest && !run?.gone && console.error("[Nagi] failed to run:", val, "\n", err));
         }, bindEl);
         run.attr = /^class(name|list)$/i.test(main) ? "class" : main;
         run.nagiRetry = () => skipped && run();
