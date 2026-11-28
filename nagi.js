@@ -56,10 +56,18 @@
     const hostOf = (scope) => currentEl ?? scope._nagiEl;
     const nativeCode = /^function[^{]*\{\s*\[native code\]\s*\}$/;
 
-    const giveHelpers = (raw, el) => {
-        Object.entries({ ...helpers(), _nagiEl: el }).forEach(([key, value]) => define(raw, key, value, false));
+    const giveHelpers = (raw, el, outer) => {
+        Object.entries({ ...helpers(), _nagiEl: el, $refs: refsOf({}, outer) }).forEach(([key, value]) => define(raw, key, value, false));
         return raw;
     };
+
+    const refsOf = (own, outer) =>
+        new Proxy(own, {
+            get: (target, name) => (Object.hasOwn(target, name) ? target[name] : outer?.$refs[name]),
+            has: (target, name) => Object.hasOwn(target, name) || (!!outer && name in outer.$refs),
+        });
+
+    const announceRefs = (scope) => announcers.get(scope)?.("$refs");
 
     const atHost = (el, site, fn) => {
         const prev = [currentEl, currentSite];
@@ -410,10 +418,16 @@
     const drop = (el) => {
         queryAttr(el, "*").forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
         queryAttr(el, "[n-ref]").forEach((node) => {
-            const refs = node.nagiRefScope?.$refs;
+            const scope = node.nagiRefScope;
             const name = node.getAttribute("n-ref");
-            if (refs?.[name] === node) delete refs[name];
             node.nagiRefScope = null;
+            if (!scope || scope.$refs[name] !== node) return;
+            const other = queryAttr(scope._nagiEl, "[n-ref]").find(
+                (n) => n.nagiRefScope === scope && n.getAttribute("n-ref") === name && !el.contains(n),
+            );
+            if (other) scope.$refs[name] = other;
+            else delete scope.$refs[name];
+            announceRefs(scope);
         });
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
@@ -597,9 +611,8 @@
             return;
         }
 
-        const rawData = giveHelpers(baseOf(dataEl), dataEl);
-
         const outer = closestScope(dataEl.parentElement)?.nagiProxy;
+        const rawData = giveHelpers(baseOf(dataEl), dataEl, outer);
         const proxyData = reactive(rawData, outer);
 
         dataEl.nagiProxy = proxyData;
@@ -808,10 +821,11 @@
         }
 
         queryAttr(baseEl, "[n-ref]").forEach((el) => {
-            const scope = closestScope(el)?.nagiProxy;
+            const scope = closestScope(el.nagiProxy ? el.parentElement : el)?.nagiProxy;
             if (!scope) return console.error("[Nagi] n-ref needs a scope:", el);
             scope.$refs[el.getAttribute("n-ref")] = el;
             el.nagiRefScope = scope;
+            announceRefs(scope);
         });
 
         queryAttr(baseEl, "[n-form]").forEach((form) => closestScope(form) || console.error("[Nagi] n-form needs a scope:", form));

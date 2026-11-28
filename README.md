@@ -122,6 +122,10 @@ Puts the element in its scope's `$refs` under the given name.
 </div>
 ```
 
+- Inner scopes find the refs of outer scopes too, the nearer scope first.
+- An element with `n-scope` goes into the `$refs` of the scope around it.
+- Binds that read `$refs` update as refs come and go. When two elements share a name, the last one wins, and the other takes its place when it goes.
+
 #### `n-form`
 Copies the value of each named field inside it into the scope, as the user changes it, and disables the submit buttons while the scope has a request in flight.
 
@@ -169,7 +173,7 @@ Pick the values a request needs from `$dataset()` rather than sending all of it.
 | `$fetch(url, method, data, options)` | Sends a request with any method |
 | `$abort()` | Aborts the scope's requests |
 | `$fetching` | `true` while the scope has a request in flight |
-| `$refs` | The elements named by `n-ref` |
+| `$refs` | The elements named by `n-ref`, in this scope and outer ones |
 | `$dataset()` | The `data-*` of the element and its ancestors |
 | `$dispatch(name, detail, options)` | Dispatches a bubbling event from the element |
 | `$watch(fn)` | Runs `fn`, and again whenever what it read changes (before its first `await`; see Things to know) |

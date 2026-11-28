@@ -42,4 +42,49 @@ describe("n-ref", () => {
         const page = await mount(`<input id="i" n-ref="field">`);
         expect(page.errors).toHaveLength(1);
     });
+
+    it("finds a ref of an outer scope from an inner one, the nearer scope first", async () => {
+        const page = await mount(`
+            <div n-scope>
+                <dialog n-ref="dialog" id="outer-dialog"></dialog>
+                <p n-ref="note" id="outer-note"></p>
+                <div id="inner" n-scope><p n-ref="note" id="inner-note"></p></div>
+            </div>
+        `);
+        const refs = page.scope("#inner").$refs;
+        expect(refs.dialog).toBe(page.$("#outer-dialog"));
+        expect(refs.note).toBe(page.$("#inner-note"));
+        expect("dialog" in refs).toBe(true);
+    });
+
+    it("puts an element that makes its own scope in the scope around it", async () => {
+        const page = await mount(`<div id="d" n-scope><dialog id="dlg" n-scope="{ open: false }" n-ref="dialog"></dialog></div>`);
+        expect(page.scope("#d").$refs.dialog).toBe(page.$("#dlg"));
+    });
+
+    it("updates binds that read $refs when a ref comes and goes, in its scope and in inner ones", async () => {
+        const page = await mount(`
+            <div id="d" n-scope>
+                <span id="s" n-bind-textcontent="$refs.box ? 'yes' : 'no'"></span>
+                <div n-scope><i id="t" n-bind-textcontent="$refs.box ? 'yes' : 'no'"></i></div>
+            </div>
+        `);
+        expect([page.$("#s").textContent, page.$("#t").textContent]).toEqual(["no", "no"]);
+        page.$("#d").insertAdjacentHTML("beforeend", `<input id="box" n-ref="box">`);
+        page.window.nagi.init(page.$("#box"));
+        expect([page.$("#s").textContent, page.$("#t").textContent]).toEqual(["yes", "yes"]);
+        page.window.nagi.destroy(page.$("#box"));
+        expect([page.$("#s").textContent, page.$("#t").textContent]).toEqual(["no", "no"]);
+    });
+
+    it("puts back another element of the same name when the ref it holds goes", async () => {
+        const page = await mount(`<div id="d" n-scope><i id="a" n-ref="x"></i><i id="b" n-ref="x"></i></div>`);
+        const refs = page.scope("#d").$refs;
+        expect(refs.x).toBe(page.$("#b"));
+        page.window.nagi.destroy(page.$("#b"));
+        expect(refs.x).toBe(page.$("#a"));
+        page.window.nagi.destroy(page.$("#a"));
+        expect(refs.x).toBeUndefined();
+    });
 });
+
