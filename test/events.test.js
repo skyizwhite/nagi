@@ -655,6 +655,22 @@ describe("helpers after an await", () => {
         expect(page.scope("#d").got).toBe(1);
     });
 
+    it("ties no read to a scope element made anew when a request goes through the old scope", async () => {
+        let answer;
+        const page = await mount(
+            `<div id="x" n-scope><button id="b" n-on-click="${tick}; this.$get('/x')"></button></div>`,
+            { server: () => new Promise((resolve) => (answer = resolve)) },
+        );
+        const x = page.$("#x");
+        page.$("#b").click();
+        page.window.nagi.destroy(x);
+        page.window.nagi.init(x);
+        await later(20);
+        expect(x.nagiRead).toBeFalsy();
+        answer("");
+        await page.settle();
+    });
+
     it("starts nothing for a handler whose element was torn down and set up again during the await", async () => {
         const page = await mount(`
             <div id="d" n-scope="{ n: 0 }">

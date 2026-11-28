@@ -141,6 +141,7 @@
     };
 
     let currentStale = false;
+    const startsWork = /^\$(watch|persist|debounce|get|post|put|patch|delete|fetch)$/;
 
     const staleScope = (scope) => {
         const el = scope?._nagiEl;
@@ -165,7 +166,7 @@
         return new Proxy(made, {
             has: (_, name) => hostHelpers.includes(name),
             get: (_, name) =>
-                hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, name === "$debounce" ? site : null, () => scope[name](...args), el.nagiGen !== gen || staleScope(scope))) : undefined,
+                hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, name === "$debounce" ? site : null, () => scope[name](...args), startsWork.test(name) && (el.nagiGen !== gen || staleScope(scope)))) : undefined,
             set: (_, name, value) => Reflect.set(scope, name, value),
         });
     };
@@ -256,8 +257,15 @@
             const reading = /^(GET|HEAD|OPTIONS)$/.test(method);
             const inQuery = /^(GET|HEAD|DELETE)$/.test(method);
             const dedupe = options.dedupe !== false;
-            const report = (name, detail, cancelable = false) =>
-                dispatch(el?.isConnected ? el : document, name, { detail, cancelable });
+            const report = (name, detail, cancelable = false) => {
+                const stale = currentStale;
+                currentStale = false;
+                try {
+                    return dispatch(el?.isConnected ? el : document, name, { detail, cancelable });
+                } finally {
+                    currentStale = stale;
+                }
+            };
             let write;
 
             const opts = runWithEl(el, () => {
@@ -285,7 +293,7 @@
 
             this._nagiAbort = new AbortController();
             if (reading) read = controller;
-            if (reading && el && !el.nagiGone && !currentStale) el.nagiRead = controller;
+            if (reading && el && !el.nagiGone && !currentStale && !staleScope(this)) el.nagiRead = controller;
             const deduped = write && dedupe;
             if (deduped) writing.add(write);
             controllers.add(controller);
