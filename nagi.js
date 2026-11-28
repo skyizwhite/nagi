@@ -53,6 +53,7 @@
     };
 
     const hostOf = (scope) => currentEl ?? scope._nagiEl;
+    const liveHostOf = (scope) => [currentEl, scope._nagiEl].find((el) => el?.isConnected);
 
     const giveHelpers = (raw, el) => {
         Object.entries({ ...helpers(), _nagiEl: el }).forEach(([key, value]) => define(raw, key, value, false));
@@ -71,12 +72,14 @@
 
     const hostHelpers = ["$dispatch", "$dataset", "$get", "$post", "$put", "$patch", "$delete", "$fetch", "$debounce", "$watch", "$persist"];
 
-    const hostLayer = (el, scope) =>
-        new Proxy(Object.create(null), {
+    const hostLayer = (el, scope) => {
+        const made = Object.create(null);
+        return new Proxy(made, {
             has: (_, name) => hostHelpers.includes(name),
             get: (_, name) =>
-                hostHelpers.includes(name) ? (...args) => atHost(el.isConnected ? el : null, () => scope[name](...args)) : undefined,
+                hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, () => scope[name](...args))) : undefined,
         });
+    };
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
         const prev = [currentEl, currentBind, currentHandler];
@@ -254,10 +257,10 @@
             return datasets;
         },
         $watch(fn) {
-            watch(fn, hostOf(this));
+            watch(fn, liveHostOf(this));
         },
         $dispatch(evt, detail, opts) {
-            dispatch(hostOf(this) ?? document, evt, { detail, ...opts });
+            dispatch(liveHostOf(this) ?? document, evt, { detail, ...opts });
         },
         $debounce(fn, ms, abortable = false) {
             const el = hostOf(this);
@@ -299,7 +302,7 @@
                         localStorage.removeItem(key);
                     } catch {}
                 }
-            }, hostOf(this));
+            }, liveHostOf(this));
         },
     });
 
@@ -493,7 +496,7 @@
     };
 
     const reserved = (key, el) => {
-        if (!/^(\$|_nagi|__proto__$|__host$)/i.test(key)) return false;
+        if (key !== "__host" && !/^(\$|_nagi|__proto__$)/i.test(key)) return false;
         console.error("[Nagi] this name is Nagi's own:", key, el);
         return true;
     };

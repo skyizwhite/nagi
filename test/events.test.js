@@ -380,5 +380,33 @@ describe("helpers after an await", () => {
         expect(page.scope("#d").got).toBe(1);
         expect(page.errors.map(([message, key]) => [message, key])).toEqual([["[Nagi] this name is Nagi's own:", "__host"]]);
     });
+
+    it("reads the data-* of an element destroyed after it left the page", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ got: '' }">
+                <ul><li id="row" data-id="7"><button n-on-destroy="got = $dataset().id"></button></li></ul>
+            </div>
+        `);
+        const row = page.$("#row");
+        row.remove();
+        page.window.nagi.destroy(row);
+        expect(page.scope("#d").got).toBe("7");
+    });
+
+    it("acts from a bind's element after the await of its promise", async () => {
+        const page = await mount(`
+            <div id="d" n-scope>
+                <p data-id="9"><span id="s" n-bind-textcontent="(async () => { ${tick}; return $dataset().id })()"></span></p>
+            </div>
+        `);
+        await later(20);
+        expect(page.$("#s").textContent).toBe("9");
+    });
+
+    it("gives the same helper each time it is read", async () => {
+        const page = await mount(`<div id="d" n-scope="{ same: null }"><button id="b" n-on-click="same = $dispatch === $dispatch"></button></div>`);
+        page.$("#b").click();
+        expect(page.scope("#d").same).toBe(true);
+    });
 });
 
