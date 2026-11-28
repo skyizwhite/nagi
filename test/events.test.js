@@ -341,35 +341,33 @@ describe("helpers after an await", () => {
         expect(page.scope("#d").got).toBe("minefalseobjectfunction");
     });
 
-    it("acts from the scope's element when the handler's element left the page during the await", async () => {
+    it("still dispatches from the handler's element when it left the page during the await", async () => {
         const page = await mount(`
-            <div id="d" n-scope="{ got: '' }" n-on-removed="got = 'scope'">
-                <div id="row"><button id="b" n-on-click="${tick}; $dispatch('removed')"></button></div>
+            <div id="d" n-scope="{ got: [] }" n-on-removed="got = [...got, 'scope']">
+                <div id="row" n-on-removed="got = [...got, 'row']"><button id="b" n-on-click="${tick}; $dispatch('removed')"></button></div>
             </div>
         `);
         page.$("#b").click();
         page.$("#row").remove();
         await later(20);
-        expect(page.scope("#d").got).toBe("scope");
+        expect(page.scope("#d").got).toEqual(["row"]);
     });
 
-    it("gives a $watch made after its element is gone to the scope's element", async () => {
+    it("gives a $watch made after its element left the page to that element, so destroying it stops the watch", async () => {
         const page = await mount(`
-            <div id="outer" n-scope="{ n: 0, runs: 0 }">
-                <div id="d" n-scope>
-                    <div id="row"><button id="b" n-on-click="${tick}; $watch(() => { n; runs++ })"></button></div>
-                </div>
+            <div id="d" n-scope="{ n: 0, runs: 0 }">
+                <div id="row"><button id="b" n-on-click="${tick}; $watch(() => { n; runs++ })"></button></div>
             </div>
         `);
-        const outer = page.scope("#outer");
+        const scope = page.scope("#d");
+        const row = page.$("#row");
         page.$("#b").click();
-        page.window.nagi.destroy(page.$("#row"));
-        page.$("#row").remove();
+        row.remove();
         await later(20);
-        expect(outer.runs).toBe(1);
-        page.window.nagi.destroy(page.$("#d"));
-        outer.n = 1;
-        expect(outer.runs).toBe(1);
+        expect(scope.runs).toBe(1);
+        page.window.nagi.destroy(row);
+        scope.n = 1;
+        expect(scope.runs).toBe(1);
     });
 
     it("keeps __host for Nagi, so binds under a scope that names it still work", async () => {

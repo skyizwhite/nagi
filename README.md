@@ -260,7 +260,7 @@ row.remove();
 - HTML lowercases attribute names, so `n-let-isOpen` defines `isopen`.
 - Changes are tracked when a name is assigned: write `items = [...items, x]`, not `items.push(x)`, and `user = { ...user, name }`, not `user.name = name`.
 - Declare the names you assign in a scope. Assigning an undeclared name makes a global variable.
-- Helpers named bare in `n-on-*` and `n-bind-*` (`$dispatch`, not `this.$dispatch`) act from their element, even after an `await`, unless the element has left the page. Called through `this`, as in a method of the scope, they act from that element only until the first `await`, and from the scope's element after it.
+- Helpers named bare in `n-on-*` and `n-bind-*` (`$dispatch`, not `this.$dispatch`) act from their element, even after an `await` and even if the element has left the page by then; what it dispatches then reaches only what left with it. Called through `this`, as in a method of the scope, they act from that element only until the first `await`, and from the scope's element after it.
 - Nagi sets up the page when it loads, and what responses bring in. Elements other scripts add or remove need `nagi.init` and `nagi.destroy`.
 
 ## Development

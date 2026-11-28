@@ -53,7 +53,6 @@
     };
 
     const hostOf = (scope) => currentEl ?? scope._nagiEl;
-    const liveHostOf = (scope) => [currentEl, scope._nagiEl].find((el) => el?.isConnected);
 
     const giveHelpers = (raw, el) => {
         Object.entries({ ...helpers(), _nagiEl: el }).forEach(([key, value]) => define(raw, key, value, false));
@@ -78,6 +77,7 @@
             has: (_, name) => hostHelpers.includes(name),
             get: (_, name) =>
                 hostHelpers.includes(name) ? (made[name] ||= (...args) => atHost(el, () => scope[name](...args))) : undefined,
+            set: (_, name, value) => Reflect.set(scope, name, value),
         });
     };
 
@@ -256,11 +256,9 @@
             for (let el = hostOf(this); el?.nodeType === 1; el = el.parentElement) datasets = { ...el.dataset, ...datasets };
             return datasets;
         },
-        $watch(fn) {
-            watch(fn, liveHostOf(this));
-        },
+        $watch: (fn) => void watch(fn),
         $dispatch(evt, detail, opts) {
-            dispatch(liveHostOf(this) ?? document, evt, { detail, ...opts });
+            dispatch(hostOf(this) ?? document, evt, { detail, ...opts });
         },
         $debounce(fn, ms, abortable = false) {
             const el = hostOf(this);
@@ -302,7 +300,7 @@
                         localStorage.removeItem(key);
                     } catch {}
                 }
-            }, liveHostOf(this));
+            });
         },
     });
 
