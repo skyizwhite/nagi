@@ -141,4 +141,33 @@ describe("nagi.destroy", () => {
         b.dispatchEvent(new page.window.Event("input"));
         expect(page.scope("#f").q).toBe("c");
     });
+
+    it("leaves no listener or init on an element a bind of it tears down during set-up", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ clicks: 0, inits: 0 }">
+                <span id="s" n-bind-title="nagi.destroy($el)" n-on-click="clicks++" n-on-init="inits++"></span>
+            </div>
+        `);
+        const span = page.$("#s");
+        page.window.nagi.init(span);
+        span.click();
+        expect(page.scope("#d").clicks).toBeLessThan(2);
+        expect(page.scope("#d").inits).toBe(0);
+    });
+
+    it("sends the events of a request started before its element was set up again to document", async () => {
+        let answer;
+        const page = await mount(
+            `<div id="d" n-scope="{ errs: 0, docErrs: 0 }" n-on-fetcherr="docErrs++"><button id="b" n-on-fetcherr.stop="errs++" n-on-click="$post('/x')"></button></div>`,
+            { server: () => new Promise((resolve) => (answer = resolve)) },
+        );
+        const b = page.$("#b");
+        b.click();
+        page.window.nagi.destroy(b);
+        page.window.nagi.init(b);
+        answer({ status: 500 });
+        await page.settle();
+        expect(page.scope("#d").errs).toBe(0);
+    });
 });
+

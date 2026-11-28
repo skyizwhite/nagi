@@ -260,11 +260,12 @@
             const inQuery = /^(GET|HEAD|DELETE)$/.test(method);
             const dedupe = options.dedupe !== false;
             const stale = !!el?.nagiGone || currentStale || staleScope(this);
+            const gen = el?.nagiGen;
             const report = (name, detail, cancelable = false) => {
                 const wasStale = currentStale;
                 currentStale = false;
                 try {
-                    return dispatch(!stale && el?.isConnected ? el : document, name, { detail, cancelable });
+                    return dispatch(!stale && el?.isConnected && el.nagiGen === gen ? el : document, name, { detail, cancelable });
                 } finally {
                     currentStale = wasStale;
                 }
@@ -1090,9 +1091,12 @@
                 ...entries.map(([name, source]) => evaluate(`{${source}}`, proxyData, proxyData, bindEl, hostLayer(bindEl, proxyData, name))),
             );
 
-            Object.entries(props).forEach(([key, val]) =>
-                key.startsWith("@") ? listen(bindEl, key.slice(1), val, proxyData) : bindProp(bindEl, key, val),
-            );
+            for (const [key, val] of Object.entries(props)) {
+                if (bindEl.nagiGone) return;
+                if (key.startsWith("@")) listen(bindEl, key.slice(1), val, proxyData);
+                else bindProp(bindEl, key, val);
+            }
+            if (bindEl.nagiGone) return;
 
             bindEl.nagiInitDue = true;
             heldInits.push(bindEl);
