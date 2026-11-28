@@ -467,6 +467,28 @@ describe("outer scopes", () => {
         const inner = page.$("#i").nagiProxy;
         expect(inner.f).toBe(inner.f);
     });
+
+    it("lets n-scope read the names of outer scopes once, as n-let-* does", async () => {
+        const page = await mount(`
+            <div id="o" n-scope="{ price: 2, qty: 3 }">
+                <div id="i" n-scope="{ total: price * qty }" n-let-same="price * qty"></div>
+            </div>
+        `);
+        const inner = page.scope("#i");
+        expect([inner.total, inner.same]).toEqual([6, 6]);
+        page.scope("#o").price = 5;
+        expect([inner.total, inner.same]).toEqual([6, 6]);
+    });
+
+    it("keeps Nagi's names of outer scopes out of n-scope, and outer names before globals", async () => {
+        const page = await mount(
+            `<div n-scope="{ label: 'outer' }">
+                <div id="i" n-scope="{ got: [typeof $get, typeof $refs, label].join() }"></div>
+            </div>`,
+            { beforeInit: (window) => (window.label = "global") },
+        );
+        expect(page.scope("#i").got).toBe("undefined,undefined,outer");
+    });
 });
 
 describe("finding scopes", () => {

@@ -595,9 +595,19 @@
                 return true;
     };
 
+    const outerNames = (outer) =>
+        outer
+            ? new Proxy(Object.create(null), {
+                  has: (_, name) => typeof name === "string" && !/^(\$|_nagi)/i.test(name) && name in outer,
+                  get: (_, name) => outer[name],
+                  set: (_, name, value) => Reflect.set(outer, name, value),
+              })
+            : {};
+
     const baseOf = (dataEl) => {
         const base = dataEl.getAttribute("n-scope")?.trim();
-        const made = base ? evaluate(base, {}, Object.freeze({}), dataEl) : {};
+        const outer = closestScope(dataEl.parentElement)?.nagiProxy;
+        const made = base ? runWithEl(dataEl, () => evaluate(base, outerNames(outer), Object.freeze({}), dataEl)) : {};
         try {
             if (made !== null && typeof made === "object" && typeof made.then !== "function" && !builtIn(made)) {
                 const descriptors = Object.getOwnPropertyDescriptors(made);
