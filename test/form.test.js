@@ -222,7 +222,26 @@ describe("n-form", () => {
         `);
         await later(30);
         expect(page.errors).toEqual([]);
-        expect(page.scope("#f").late.length).toBeLessThan(5);
+        expect([page.scope("#f").tag, page.scope("#f").late]).toEqual(["#", "#"]);
+    });
+
+    it("does not overwrite a field while it is being typed in, when another field's bind feeds back", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input id="c" name="c" n-bind-value="f == null || f === '' ? c : String((f - 32) * 5 / 9)">
+                <input id="fa" name="f" n-bind-value="c == null || c === '' ? f : String(c * 9 / 5 + 32)">
+            </form>
+        `);
+        const c = page.$("#c");
+        c.value = "1.";
+        c.dispatchEvent(new page.window.Event("input"));
+        expect(c.value).toBe("1.");
+        expect(page.$("#fa").value).toBe("33.8");
+    });
+
+    it("keeps undefined in the scope when a bind writes it into a text field", async () => {
+        const page = await mount(`<form id="f" n-scope n-form n-on-init="q = undefined"><input name="q" n-bind-value="q"></form>`);
+        expect(page.scope("#f").q).toBeUndefined();
     });
 
     it("logs fields other than radios that share a name, and reads only the first", async () => {

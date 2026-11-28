@@ -759,11 +759,12 @@
     const sameValue = (had, now) => {
         if (had === now) return true;
         if (Array.isArray(now)) return Array.isArray(had) && had.length === now.length && had.every((item, i) => String(item) === String(now[i]));
-        return had != null && now != null && now !== Object(now) && had !== Object(had) && String(had) === String(now);
+        return now !== Object(now) && had !== Object(had) && String(had) === String(now);
     };
 
-    const fieldProps = /^(value|checked|selectedIndex|valueAsNumber|valueAsDate)$/;
-    const optionProps = /^(selected|value|text|textContent|label)$/;
+    const fieldProps = /^(value|checked|selectedIndex|valueAsNumber|defaultValue|defaultChecked|type|textContent|innerHTML|innerText)$/;
+    const optionProps = /^(selected|defaultSelected|value|text|textContent|innerHTML|innerText|label)$/;
+    let editingField = null;
 
     const fieldOf = (inputEl, scopeEl) => {
         const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
@@ -794,6 +795,15 @@
         const setVal = () => {
             if (group.members.has(inputEl)) proxyData[name] = read();
         };
+        const onEdit = () => {
+            const prev = editingField;
+            editingField = inputEl;
+            try {
+                setVal();
+            } finally {
+                editingField = prev;
+            }
+        };
         const field = { inputEl, setVal };
         inputEl.nagiReread = () => {
             if (!group.members.has(inputEl)) return;
@@ -803,12 +813,12 @@
 
         setVal();
         if (fresh && read() === undefined) announceName(scopeEl, name);
-        inputEl.addEventListener("input", setVal);
-        inputEl.addEventListener("change", setVal);
+        inputEl.addEventListener("input", onEdit);
+        inputEl.addEventListener("change", onEdit);
         formFields.add(field);
         (inputEl.nagiCleanup ||= []).push(() => {
-            inputEl.removeEventListener("input", setVal);
-            inputEl.removeEventListener("change", setVal);
+            inputEl.removeEventListener("input", onEdit);
+            inputEl.removeEventListener("change", onEdit);
             inputEl.nagiReread = null;
             group.members.delete(inputEl);
             formFields.delete(field);
@@ -912,10 +922,13 @@
     const bindProp = (bindEl, key, val) => {
         const [main, ...rest] = key.split(".");
         const writeOnly = writerOf(bindEl, main, rest.join("."));
-        const field = rest.length ? null : bindEl.tagName === "OPTION" ? optionProps.test(main) && bindEl.closest("select") : fieldProps.test(main) && bindEl;
+        const option = bindEl.tagName === "OPTION";
+        const setsField = !rest.length && (option ? optionProps : fieldProps).test(main);
         const write = (value) => {
+            const field = setsField && (option ? bindEl.closest("select") : bindEl);
+            if (field && field === editingField) return;
             writeOnly(value);
-            field?.nagiReread?.();
+            if (field) field.nagiReread?.();
         };
         let latest = 0;
         const run = watch(() => {
