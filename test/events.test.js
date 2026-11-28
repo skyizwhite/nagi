@@ -536,5 +536,25 @@ describe("helpers after an await", () => {
         page.$("#b").click();
         expect(page.scope("#d").same).toBe(true);
     });
+
+    it("gives a this.$watch made after an await to the scope's element, and still works without this", async () => {
+        const page = await mount(`
+            <div id="outer" n-scope="{ n: 0 }">
+                <div id="d" n-scope="{ async start() { await 0; this.$watch(() => { this.n; globalThis.countA = (globalThis.countA ?? 0) + 1 }) } }">
+                    <button id="b" n-on-click="start()"></button>
+                    <button id="c" n-on-click="const w = $watch; w(() => { n; globalThis.countB = (globalThis.countB ?? 0) + 1 })"></button>
+                </div>
+            </div>
+        `);
+        const { window } = page;
+        page.$("#b").click();
+        await later(20);
+        page.$("#c").click();
+        expect([window.countA, window.countB]).toEqual([1, 1]);
+        page.window.nagi.destroy(page.$("#d"));
+        page.scope("#outer").n = 1;
+        expect([window.countA, window.countB]).toEqual([1, 1]);
+        expect(page.errors).toEqual([]);
+    });
 });
 
