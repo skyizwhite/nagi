@@ -13,10 +13,24 @@ describe("n-scope", () => {
         expect(page.$("#a").nagiProxy.x).toBe("hi");
     });
 
-    it("logs and falls back to an empty scope when the expression is invalid", async () => {
-        const page = await mount(`<div id="a" n-scope="{ n: }"></div>`);
-        expect(page.$("#a").nagiProxy.n).toBeUndefined();
+    it("logs an invalid expression once and leaves the element and its contents alone", async () => {
+        const page = await mount(`
+            <div id="a" n-scope="{ n: }"><span id="s" n-bind-textcontent="missing"></span><button id="b" n-on-click="count = 1"></button></div>
+        `);
+        page.$("#b").click();
+        expect(page.$("#a").nagiProxy).toBeFalsy();
+        expect(page.$("#s").nagiBound).toBeFalsy();
+        expect(page.window.count).toBeUndefined();
         expect(page.errors).toHaveLength(1);
+    });
+
+    it("sets up a broken n-scope once it is torn down and fixed", async () => {
+        const page = await mount(`<div id="a" n-scope="{ n: }"><span id="s" n-bind-textcontent="n"></span></div>`);
+        const a = page.$("#a");
+        page.window.nagi.destroy(a);
+        a.setAttribute("n-scope", "{ n: 1 }");
+        page.window.nagi.init(a);
+        expect(page.$("#s").textContent).toBe("1");
     });
 
     it("makes a scope from an object an expression gives", async () => {
@@ -34,13 +48,13 @@ describe("n-scope", () => {
         expect(page.errors).toEqual([]);
     });
 
-    it("logs a value that gives a promise or a primitive, and makes an empty scope", async () => {
+    it("logs a value that gives a promise or a primitive, and leaves the element alone", async () => {
         const page = await mount(`
             <div id="a" n-scope="Promise.resolve({ n: 1 })"></div>
             <div id="b" n-scope="'ab'"></div>
         `);
-        expect(page.$("#a").nagiProxy.n).toBeUndefined();
-        expect(page.$("#b").nagiProxy[0]).toBeUndefined();
+        expect(page.$("#a").nagiProxy).toBeFalsy();
+        expect(page.$("#b").nagiProxy).toBeFalsy();
         expect(page.errors).toHaveLength(2);
     });
 
@@ -167,12 +181,12 @@ describe("n-scope objects", () => {
         expect(page.$("#b").nagiProxy?.x).toBe(1);
     });
 
-    it("logs an n-scope object made from a built-in class, and makes an empty scope", async () => {
+    it("logs an n-scope object made from a built-in class, and leaves the element alone", async () => {
         const page = await mount(
             `<div id="a" n-scope="new Store()"></div><div id="b" n-scope="new Map()"></div>`,
             { beforeInit: (window) => (window.Store = class extends window.Map {}) },
         );
-        expect(page.$("#a").nagiProxy.get).toBeUndefined();
+        expect(page.$("#a").nagiProxy).toBeFalsy();
         expect(page.errors).toHaveLength(2);
     });
 

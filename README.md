@@ -58,7 +58,7 @@ Makes a reactive scope from an object. Elements inside it can read and write its
 
 - The value can be any expression that gives an object, such as `n-scope="makeCart($el)"`. Write methods with method syntax (`inc() { this.n++ }`), not arrow functions.
 - Like `n-let-*`, the value can read the names of outer scopes, once, but not Nagi's `$` names other than `$el`. Methods in the object still reach the scope through `this`.
-- `n-scope` with no value makes an empty scope.
+- `n-scope` with no value makes an empty scope. If the value fails or gives something other than an object, Nagi logs an error and leaves the element and what is inside it alone, as with `n-ignore`.
 - Scopes nest. Inner elements can use the names of outer scopes too.
 
 #### `n-let-<name>`
