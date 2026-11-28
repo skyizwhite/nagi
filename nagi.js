@@ -764,7 +764,7 @@
             if (mods.includes("prevent")) e.preventDefault();
             if (mods.includes("stop")) e.stopPropagation();
 
-            if (delay) proxyData.$debounce(() => handle(val, e), delay);
+            if (delay) proxyData.$debounce(() => runWithEl(bindEl, () => handle(val, e), null, val), delay);
             else handle(val, e);
         }, null, val);
 
