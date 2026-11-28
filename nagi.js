@@ -756,9 +756,14 @@
         return false;
     };
 
-    const sameValue = (had, now) =>
-        had === now ||
-        (had != null && now != null && (Array.isArray(now) ? Array.isArray(had) && String(had) === String(now) : typeof now === "string" && String(had) === now));
+    const sameValue = (had, now) => {
+        if (had === now) return true;
+        if (Array.isArray(now)) return Array.isArray(had) && had.length === now.length && had.every((item, i) => String(item) === String(now[i]));
+        return had != null && now != null && now !== Object(now) && had !== Object(had) && String(had) === String(now);
+    };
+
+    const fieldProps = /^(value|checked|selectedIndex|valueAsNumber|valueAsDate)$/;
+    const optionProps = /^(selected|value|text|textContent|label)$/;
 
     const fieldOf = (inputEl, scopeEl) => {
         const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
@@ -784,7 +789,7 @@
             file: () => inputEl.files,
             number: () => (inputEl.value === "" ? undefined : +inputEl.value),
             range: () => +inputEl.value,
-            "select-multiple": () => [...inputEl.selectedOptions].map((option) => option.value),
+            "select-multiple": () => [...inputEl.options].filter((option) => option.selected).map((option) => option.value),
         }[type] ?? (() => inputEl.value);
         const setVal = () => {
             if (group.members.has(inputEl)) proxyData[name] = read();
@@ -907,9 +912,10 @@
     const bindProp = (bindEl, key, val) => {
         const [main, ...rest] = key.split(".");
         const writeOnly = writerOf(bindEl, main, rest.join("."));
+        const field = rest.length ? null : bindEl.tagName === "OPTION" ? optionProps.test(main) && bindEl.closest("select") : fieldProps.test(main) && bindEl;
         const write = (value) => {
             writeOnly(value);
-            (bindEl.tagName === "OPTION" ? bindEl.closest("select") : bindEl)?.nagiReread?.();
+            field?.nagiReread?.();
         };
         let latest = 0;
         const run = watch(() => {
@@ -917,7 +923,7 @@
             const mine = ++latest;
             if (typeof value?.then !== "function") return write(value);
             value
-                .then((resolved) => mine === latest && !run?.gone && write(resolved))
+                .then((resolved) => mine === latest && !run?.gone && runWithEl(bindEl, () => write(resolved), run))
                 .catch((err) => console.error("[Nagi] failed to run:", val, "\n", err));
         }, bindEl);
         run.attr = /^class(name|list)$/i.test(main) ? "class" : main;

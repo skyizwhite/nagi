@@ -186,6 +186,45 @@ describe("n-form", () => {
         expect([scope.agree, scope.size]).toEqual([false, "s"]);
     });
 
+    it("keeps an assignment to a field's name when another bind of the field runs", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input name="q" value="abc" n-bind-class="{ empty: !q }">
+                <button id="b" type="button" n-on-click="q = ''"></button>
+            </form>
+        `);
+        page.$("#b").click();
+        expect(page.scope("#f").q).toBe("");
+    });
+
+    it("keeps a number or a list the scope holds when a bind writes it into its field", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form n-on-init="qty = '5'; tags = ['a,b']">
+                <input type="number" name="qty" n-bind-value="qty">
+                <select multiple name="tags">
+                    <option value="a,b" n-bind-selected="tags.includes('a,b')">ab</option>
+                    <option value="a" n-bind-selected="tags.includes('a')">a</option>
+                    <option value="b" n-bind-selected="tags.includes('b')">b</option>
+                </select>
+            </form>
+        `);
+        const scope = page.scope("#f");
+        expect(scope.qty).toBe("5");
+        expect(scope.tags).toEqual(["a,b"]);
+    });
+
+    it("does not loop on a bind that sets its field from the field's own name, even through a promise", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input name="tag" n-bind-value="'#' + (tag ?? '')">
+                <input name="late" n-bind-value="Promise.resolve('#' + (late ?? ''))">
+            </form>
+        `);
+        await later(30);
+        expect(page.errors).toEqual([]);
+        expect(page.scope("#f").late.length).toBeLessThan(5);
+    });
+
     it("logs fields other than radios that share a name, and reads only the first", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form>
