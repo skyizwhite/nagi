@@ -604,6 +604,24 @@ describe("n-form", () => {
         expect(page.scope("#d").diet).toEqual(["none"]);
     });
 
+    it("counts a checkbox that joins its group later in the same task", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><div id="g1"><input type="checkbox" name="t" value="a"></div><div id="g2"></div></form>`);
+        const scope = page.scope("#f");
+        const a = page.document.querySelector("[value=a]");
+        a.dispatchEvent(new page.window.Event("change"));
+        page.$("#g2").insertAdjacentHTML("beforeend", `<input id="b" type="checkbox" name="t" value="b" checked>`);
+        page.window.nagi.init(page.$("#b"));
+        expect(scope.t).toEqual(["b"]);
+    });
+
+    it("keeps radios of one form under two n-form containers in one group", async () => {
+        const page = await mount(`
+            <div id="d" n-scope><form id="f" n-form><input type="radio" name="r" value="1"></form><div n-form><input type="radio" form="f" name="r" value="2" checked></div></div>
+        `);
+        expect(page.errors).toEqual([]);
+        expect(page.scope("#d").r).toBe("2");
+    });
+
     it("counts a disabled checkbox in its group", async () => {
         const page = await mount(`
             <form id="f" n-scope n-form><input type="checkbox" name="t" value="a" checked><input type="checkbox" name="t" value="b" disabled></form>

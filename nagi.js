@@ -805,22 +805,22 @@
         let group = owned.get(name);
         const fresh = !group;
         group?.members.forEach((el) => el.isConnected || group.members.delete(el));
-        if (group?.members.size && !(shared && group.type === type && group.form === form && group.nform === nform))
+        if (group?.members.size && !(shared && group.type === type && group.form === form && (type === "radio" || group.nform === nform)))
             return void (refusedFields ? refusedFields.push(inputEl) : console.error("[Nagi] another field of the scope has this name:", name, inputEl));
         if (!group) {
             if (hasName(rawData, name)) return void console.error("[Nagi] this field's name is already a name of the scope:", name, inputEl);
             define(rawData, name, undefined);
             owned.set(name, (group = { members: new Set() }));
         }
-        Object.assign(group, { type, form, nform });
+        Object.assign(group, { type, form, nform, boxes: null });
         group.members.add(inputEl);
 
         const read = {
             radio: () => [...group.members].find((el) => el.isConnected && el.form === inputEl.form && el.checked)?.value,
             checkbox: () => {
                 if (!group.boxes) {
-                    group.boxes = [...document.getElementsByName(name)].filter(
-                        (el) => el.type === "checkbox" && el.form === form && el.closest("[n-form]") === nform && formScope(el) === scopeEl && !leftAlone(el),
+                    group.boxes = [...inputEl.getRootNode().querySelectorAll("input[type=checkbox]")].filter(
+                        (el) => el.name === name && el.form === form && el.closest("[n-form]") === nform && formScope(el) === scopeEl && !leftAlone(el),
                     );
                     queueMicrotask(() => (group.boxes = null));
                 }
@@ -854,6 +854,7 @@
             inputEl.removeEventListener("change", setVal);
             inputEl.nagiReread = inputEl.nagiFieldValue = null;
             group.members.delete(inputEl);
+            group.boxes = null;
             formFields.delete(field);
             const left = rawData[name];
             const check = () => {
