@@ -286,3 +286,58 @@ describe("debounce", () => {
         expect(page.scope("#i").got).toEqual([]);
     });
 });
+
+describe("helpers after an await", () => {
+    const tick = "await new Promise((resolve) => setTimeout(resolve))";
+
+    it("dispatches from the handler's element and reads its data-* after an await", async () => {
+        const page = await mount(`
+            <ul id="u" n-scope="{ got: [] }">
+                <li data-id="7" n-on-done="got = [...got, 'li']">
+                    <button id="b" n-on-click="${tick}; got = [...got, $dataset().id]; $dispatch('done')"></button>
+                </li>
+            </ul>
+        `);
+        page.$("#b").click();
+        await later(20);
+        expect(page.scope("#u").got).toEqual(["7", "li"]);
+    });
+
+    it("sends the fetch events of a request made after an await from the handler's element", async () => {
+        const page = await mount(
+            `<div id="d" n-scope="{ got: '' }">
+                <p n-on-fetcherr="got = 'p'"><button id="b" n-on-click="${tick}; $get('/x')"></button></p>
+            </div>`,
+            { server: () => ({ status: 500 }) },
+        );
+        page.$("#b").click();
+        await later(20);
+        await page.settle();
+        expect(page.scope("#d").got).toBe("p");
+    });
+
+    it("gives a $watch made after an await to the handler's element, so it stops with it", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ n: 0, runs: 0 }">
+                <div id="row"><button id="b" n-on-click="${tick}; $watch(() => { n; runs++ })"></button></div>
+            </div>
+        `);
+        const scope = page.scope("#d");
+        page.$("#b").click();
+        await later(20);
+        expect(scope.runs).toBe(1);
+        page.window.nagi.destroy(page.$("#row"));
+        scope.n = 1;
+        expect(scope.runs).toBe(1);
+    });
+
+    it("still finds names of the scope that the host layer does not hold", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ toString: 'mine', got: '' }">
+                <button id="b" n-on-click="got = toString + String($fetching) + typeof $refs + typeof $abort"></button>
+            </div>
+        `);
+        page.$("#b").click();
+        expect(page.scope("#d").got).toBe("minefalseobjectfunction");
+    });
+});
