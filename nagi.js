@@ -36,9 +36,14 @@
         }
     };
 
+    const leftAlone = (el) => {
+        for (; el; el = el.parentElement) if (el.nagiBroken || el.hasAttribute("n-ignore")) return true;
+        return false;
+    };
+
     const queryAttr = (el, selector) => {
         const elMatch = el.matches(selector) ? [el] : [];
-        return [...elMatch, ...el.querySelectorAll(selector)].filter((val) => !val.closest("[n-ignore]"));
+        return [...elMatch, ...el.querySelectorAll(selector)].filter((val) => !leftAlone(val));
     };
 
     const closestScope = (el) => {
@@ -481,7 +486,7 @@
     };
 
     const drop = (el) => {
-        queryAttr(el, "*").forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
+        [el, ...el.querySelectorAll("*")].forEach((node) => node.nagiBound && dispatch(node, "destroy", { bubbles: false }));
         [el, ...el.querySelectorAll("*")].forEach((node) => {
             (node.nagiProxy ?? ownScopes.get(node))?._nagiStop();
             node.nagiRead?.abort();
@@ -493,9 +498,10 @@
             if (node.nagiHeld) node.disabled = node.nagiWasDisabled;
             node.nagiBound = node.nagiField = node.nagiHold = node.nagiHeld = false;
             node.nagiProxy = node.nagiRaw = node.nagiFields = null;
+            node.nagiBroken = false;
             ownScopes.delete(node);
         });
-        queryAttr(el, "[n-ref]").forEach((node) => {
+        [el, ...el.querySelectorAll("[n-ref]")].forEach((node) => {
             const scopeEl = node.nagiRefScope;
             const refs = scopeEl?.nagiRaw?.$refs;
             const name = node.getAttribute("n-ref");
@@ -638,11 +644,11 @@
                 });
                 return Object.create(Object.getPrototypeOf(made), descriptors);
             }
-            if (made !== failed) console.error("[Nagi] n-scope must give an object:", base, dataEl);
+            if (made !== failed) console.error("[Nagi] n-scope must give an object, so Nagi leaves the element alone:", base, dataEl);
         } catch (err) {
-            console.error("[Nagi] failed to read the object of n-scope:", base, dataEl, "\n", err);
+            console.error("[Nagi] failed to read the object of n-scope, so Nagi leaves the element alone:", base, dataEl, "\n", err);
         }
-        return {};
+        return failed;
     };
 
     const announcers = new WeakMap();
@@ -707,7 +713,12 @@
         }
 
         const outer = closestScope(dataEl.parentElement)?.nagiProxy;
-        const rawData = giveHelpers(baseOf(dataEl, outer), dataEl, outer);
+        const base = baseOf(dataEl, outer);
+        if (base === failed) {
+            dataEl.nagiBroken = true;
+            return;
+        }
+        const rawData = giveHelpers(base, dataEl, outer);
         const proxyData = reactive(rawData, outer);
 
         dataEl.nagiProxy = proxyData;
@@ -900,10 +911,11 @@
 
     const init = (baseEl) => {
         const walker = document.createTreeWalker(baseEl, NodeFilter.SHOW_ELEMENT, {
-            acceptNode: (node) => (node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+            acceptNode: (node) =>
+                node.nagiBroken || node.parentElement?.nagiBroken || node.hasAttribute("n-ignore") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
         });
         const seen = new Set();
-        let dataEl = baseEl.closest("[n-ignore]") ? null : baseEl;
+        let dataEl = leftAlone(baseEl) ? null : baseEl;
         while (dataEl) {
             const parent = dataEl.parentElement;
             const before = dataEl.previousElementSibling;
