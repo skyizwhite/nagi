@@ -127,7 +127,6 @@ describe("nagi.destroy", () => {
         expect(outer.runs).toBe(3);
     });
 
-
     it("sets up a field later once the field that held its name is gone", async () => {
         const page = await mount(`<form id="f" n-scope n-form><input id="a" name="q" value="a"></form>`);
         page.$("#f").insertAdjacentHTML("beforeend", `<input id="b" name="q" value="b">`);

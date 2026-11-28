@@ -756,6 +756,10 @@
         return false;
     };
 
+    const sameValue = (had, now) =>
+        had === now ||
+        (had != null && now != null && (Array.isArray(now) ? Array.isArray(had) && String(had) === String(now) : typeof now === "string" && String(had) === now));
+
     const fieldOf = (inputEl, scopeEl) => {
         const { nagiProxy: proxyData, nagiRaw: rawData } = scopeEl;
         const { name, type, form } = inputEl;
@@ -786,6 +790,11 @@
             if (group.members.has(inputEl)) proxyData[name] = read();
         };
         const field = { inputEl, setVal };
+        inputEl.nagiReread = () => {
+            if (!group.members.has(inputEl)) return;
+            const now = read();
+            if (!sameValue(rawData[name], now)) proxyData[name] = now;
+        };
 
         setVal();
         if (fresh && read() === undefined) announceName(scopeEl, name);
@@ -795,6 +804,7 @@
         (inputEl.nagiCleanup ||= []).push(() => {
             inputEl.removeEventListener("input", setVal);
             inputEl.removeEventListener("change", setVal);
+            inputEl.nagiReread = null;
             group.members.delete(inputEl);
             formFields.delete(field);
         });
@@ -896,7 +906,11 @@
 
     const bindProp = (bindEl, key, val) => {
         const [main, ...rest] = key.split(".");
-        const write = writerOf(bindEl, main, rest.join("."));
+        const writeOnly = writerOf(bindEl, main, rest.join("."));
+        const write = (value) => {
+            writeOnly(value);
+            (bindEl.tagName === "OPTION" ? bindEl.closest("select") : bindEl)?.nagiReread?.();
+        };
         let latest = 0;
         const run = watch(() => {
             const value = val();

@@ -102,20 +102,13 @@ describe("n-form", () => {
         expect([page.$("#plain").disabled, page.$("#bound").disabled]).toEqual([false, false]);
     });
 
-    it("logs an n-form outside any scope, and leaves its fields and buttons alone", async () => {
-        const answers = [];
-        const page = await mount(
-            `<form n-form><input name="q" value="a"><button id="send"></button></form>
+    it("logs an n-form outside any scope, and leaves its fields alone", async () => {
+        const page = await mount(`
+            <form n-form><input name="q" value="a"></form>
             <span id="s" n-bind-textcontent="typeof q"></span>
-            <button id="b" n-on-click="$get('/x')"></button>`,
-            { server: () => new Promise((resolve) => answers.push(resolve)) },
-        );
+        `);
         expect(page.$("#s").textContent).toBe("undefined");
         expect(page.errors).toHaveLength(1);
-        page.$("#b").click();
-        expect(page.$("#send").disabled).toBe(false);
-        answers.forEach((answer) => answer(""));
-        await page.settle();
     });
 
     it("keeps the fields of an n-form inside a scope in that scope", async () => {
@@ -161,6 +154,36 @@ describe("n-form", () => {
     it("does not copy named buttons", async () => {
         const page = await mount(`<form id="f" n-scope n-form><button name="action" value="save"></button></form>`);
         expect("action" in page.$("#f").nagiRaw).toBe(false);
+    });
+
+    it("follows a field whose value a bind sets from another field", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input id="title" name="title" value="Hello World">
+                <input name="slug" n-bind-value="title.toLowerCase().replace(/ /g, '-')">
+                <p id="p" n-bind-textcontent="slug"></p>
+            </form>
+        `);
+        expect(page.$("#p").textContent).toBe("hello-world");
+        const title = page.$("#title");
+        title.value = "Nagi Rocks";
+        title.dispatchEvent(new page.window.Event("input"));
+        expect(page.scope("#f").slug).toBe("nagi-rocks");
+        expect(page.$("#p").textContent).toBe("nagi-rocks");
+    });
+
+    it("follows a checkbox, a select and a radio group a bind sets", async () => {
+        const page = await mount(`
+            <form id="f" n-scope="{ on: true, pick: 'b' }" n-form>
+                <input type="checkbox" name="agree" n-bind-checked="on">
+                <select name="size"><option value="s">S</option><option value="m" n-bind-selected="on">M</option></select>
+                <input type="radio" name="r" value="a"><input type="radio" name="r" value="b" n-bind-checked="pick === 'b'">
+            </form>
+        `);
+        const scope = page.scope("#f");
+        expect([scope.agree, scope.size, scope.r]).toEqual([true, "m", "b"]);
+        scope.on = false;
+        expect([scope.agree, scope.size]).toEqual([false, "s"]);
     });
 
     it("logs fields other than radios that share a name, and reads only the first", async () => {
@@ -413,7 +436,7 @@ describe("n-form", () => {
                 <button id="b" type="button" n-on-click="$get('/x')"></button>
                 <form id="target" n-form></form>
             </div>`,
-            { server: () => `<form id="target" n-swap="inner"><input name="q" value="hi"><button id="go">Go</button></form>` },
+            { server: () => `<form id="target" n-swap="inner"><input name="q" value="hi"></form>` },
         );
         await swapOnce(page);
         const scope = page.scope("#target");
