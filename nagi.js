@@ -306,6 +306,7 @@
             if (deduped) writing.add(write);
             controllers.add(controller);
             let timedOut = false;
+            let done = null;
             let received = false;
             const { timeout } = options;
             const timer = Number.isFinite(timeout) && timeout > 0 && setTimeout(() => {
@@ -338,10 +339,10 @@
                             console.warn("[Nagi] cannot replace the URL with", replace, err);
                         }
                     }
-                    if (swapped) swap(text);
+                    const applied = swapped ? swap(text) : 0;
                     if (!res.ok)
                         throw Object.assign(new Error(`${res.status} ${res.statusText}`), { status: res.status, text, swapped });
-                    report("fetchdone", { url, status: res.status, swapped });
+                    done = { url, status: res.status, swapped: applied > 0 };
                 })
                 .catch((err) => {
                     if (timedOut) err = new DOMException("The request timed out.", "TimeoutError");
@@ -355,6 +356,7 @@
                     if (el?.nagiRead === controller) el.nagiRead = null;
                     if (deduped) writing.delete(write);
                     if (!--pending) this.$fetching = false;
+                    if (done) report("fetchdone", done);
                 });
         },
         $dataset() {
@@ -549,13 +551,14 @@
     const swap = (text) => {
         const moving = [];
         try {
-            holdRefs(() => swapAll(text, moving));
+            return holdRefs(() => swapAll(text, moving));
         } finally {
             settle(moving);
         }
     };
 
     const swapAll = (text, moving) => {
+        let applied = 0;
         const refused = (refusedFields = []);
         const checks = (fieldChecks = []);
         const safely = (fn) => {
@@ -577,6 +580,7 @@
 
                 const morphs = cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1));
 
+                applied++;
                 holdInits(() => {
                     if (strategy === "inner") {
                         [...target.children].forEach(drop);
@@ -599,6 +603,7 @@
             refused.forEach((field) => safely(() => field.isConnected && !field.nagiField && init(field)));
             checks.forEach(safely);
         }
+        return applied;
     };
 
     const attributesToSettle = ["style", "class", "height", "width"];
