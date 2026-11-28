@@ -223,6 +223,8 @@ What comes in works like the rest of the page, and CSS transitions run on elemen
 | `n-redirect: <url>` | Goes to the URL instead (send it with a 2xx status) |
 | `n-replace-url: <url>` | Replaces the URL in the address bar |
 
+The browser follows an HTTP redirect (3xx) by itself, and the page it leads to is swapped in by its `id`s like any response. To leave the page, answer with `n-redirect` instead. In particular, when a request with `n-request: true` needs a login, answer with HTML to swap in (a message) or with `n-redirect`, not with a redirect to the login page, whose elements would be swapped into the current page.
+
 ### Events
 
 | Event | When |
