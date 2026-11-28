@@ -394,7 +394,7 @@ describe("n-form", () => {
             `<form id="f" n-scope n-form>
                 <button id="b" type="button" n-on-click="$get('/x')"></button>
                 <div id="box"><input name="q" value="old"></div>
-                <span id="s" n-bind-textcontent="q.length"></span>
+                <span id="s" n-bind-textcontent="String(q)"></span>
             </form>`,
             { server: () => answer },
         );
@@ -408,6 +408,8 @@ describe("n-form", () => {
         page.$("#b").click();
         await page.settle();
         expect(scope.q).toBeUndefined();
+        expect(page.$("#s").textContent).toBe("undefined");
+        expect(page.errors).toEqual([]);
     });
 
     it("reads a radio group again when its checked radio is taken away", async () => {
@@ -420,6 +422,34 @@ describe("n-form", () => {
         page.$("#a").remove();
         await later(0);
         expect(scope.r).toBeUndefined();
+    });
+
+    it("reads the radio still checked when another of its group goes, and clears a name whose fields left without teardown", async () => {
+        const page = await mount(`
+            <form id="f" n-scope n-form>
+                <input id="a" type="radio" name="r" value="a"><input id="b" type="radio" name="r" value="b"><input id="c" type="radio" name="r" value="c">
+            </form>
+        `);
+        const scope = page.scope("#f");
+        page.$("#b").checked = true;
+        page.window.nagi.destroy(page.$("#a"));
+        page.$("#a").remove();
+        await later(0);
+        expect(scope.r).toBe("b");
+
+        page.$("#b").remove();
+        page.window.nagi.destroy(page.$("#c"));
+        page.$("#c").remove();
+        await later(0);
+        expect(scope.r).toBeUndefined();
+    });
+
+    it("writes nothing to a scope torn down with its fields", async () => {
+        const page = await mount(`<form id="f" n-scope n-form><input name="q" value="x"></form>`);
+        const scope = page.scope("#f");
+        page.window.nagi.destroy(page.$("#f"));
+        await later(0);
+        expect(scope.q).toBe("x");
     });
 
     it("keeps undefined in the scope when a bind writes it into a text field", async () => {

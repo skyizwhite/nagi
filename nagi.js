@@ -830,10 +830,11 @@
             group.members.delete(inputEl);
             formFields.delete(field);
             queueMicrotask(() => {
-                if (owned.get(name) !== group) return;
-                const rest = [...group.members].find((el) => el.isConnected);
+                if (scopeEl.nagiFields?.get(name) !== group) return;
+                group.members.forEach((el) => el.isConnected || group.members.delete(el));
+                const [rest] = group.members;
                 if (rest) rest.nagiReread?.();
-                else if (!group.members.size) proxyData[name] = undefined;
+                else proxyData[name] = undefined;
             });
         });
         return true;
