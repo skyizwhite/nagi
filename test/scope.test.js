@@ -353,6 +353,17 @@ describe("names kept for Nagi", () => {
         expect(page.$("#s").textContent).toBe("2");
         expect(page.errors).toEqual([]);
     });
+
+    it("keeps Nagi's names out of the scope's keys, though they can still be used", async () => {
+        const page = await mount(`
+            <div id="d" n-scope="{ a: 1 }" n-let-b="2" n-on-init="this.keys = Object.keys({ ...this }).join()"></div>
+        `);
+        const scope = page.scope("#d");
+        expect(scope.keys).toBe("a,b");
+        expect(Object.keys(scope)).toEqual(["a", "b", "keys"]);
+        expect(typeof scope.$get).toBe("function");
+        expect(scope.$fetching).toBe(false);
+    });
 });
 
 describe("outer scopes", () => {

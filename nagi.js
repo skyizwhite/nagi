@@ -23,8 +23,8 @@
         }
     };
 
-    const define = (obj, key, value) =>
-        Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
+    const define = (obj, key, value, enumerable = true) =>
+        Object.defineProperty(obj, key, { value, writable: true, enumerable, configurable: true });
 
     const evaluate = (expression, data, thisArg, el) => {
         try {
@@ -48,11 +48,16 @@
     const getClosestProxy = (el) => {
         const scope = closestScope(el)?.nagiProxy;
         if (scope) return scope;
-        if (!ownScopes.has(el)) ownScopes.set(el, reactive({ ...helpers(), _nagiEl: el }));
+        if (!ownScopes.has(el)) ownScopes.set(el, reactive(giveHelpers({}, el)));
         return ownScopes.get(el);
     };
 
     const hostOf = (scope) => currentEl ?? scope._nagiEl;
+
+    const giveHelpers = (raw, el) => {
+        Object.entries({ ...helpers(), _nagiEl: el }).forEach(([key, value]) => define(raw, key, value, false));
+        return raw;
+    };
 
     const runWithEl = (el, fn, bind = null, handler = null) => {
         const prev = [currentEl, currentBind, currentHandler];
@@ -302,9 +307,21 @@
         return body;
     };
 
-    const sendable = (key, item) => {
-        if (item !== Object(item) || isBlob(item) || !String(item).startsWith("[object ")) return true;
-        console.warn("[Nagi] cannot send:", key, item);
+    const timeOf = (value) => {
+        try {
+            return Date.prototype.getTime.call(value);
+        } catch {}
+    };
+
+    const textOf = (item) => {
+        if (typeof item === "symbol") return;
+        if (item !== Object(item)) return String(item);
+        const time = timeOf(item);
+        if (time !== undefined) return isNaN(time) ? undefined : new Date(time).toISOString();
+        try {
+            const text = String(item);
+            if (!text.startsWith("[object ")) return text;
+        } catch {}
     };
 
     const objectBody = (data) => {
@@ -312,8 +329,14 @@
             [value]
                 .flat()
                 .flatMap((item) => (isListOf(item, "item") ? [...item] : [item]))
-                .filter((item) => item != null && sendable(key, item))
-                .map((item) => [key, isBlob(item) ? item : String(item)]),
+                .flatMap((item) => {
+                    if (item == null || typeof item === "function") return [];
+                    if (isBlob(item)) return [[key, item]];
+                    const text = textOf(item);
+                    if (text !== undefined) return [[key, text]];
+                    console.warn("[Nagi] cannot send:", key, item);
+                    return [];
+                }),
         );
         const body = pairs.some(([, value]) => isBlob(value)) ? new FormData() : new URLSearchParams();
         pairs.forEach(([key, value]) => body.append(key, value));
@@ -539,8 +562,7 @@
             return;
         }
 
-        const rawData = baseOf(dataEl);
-        Object.entries({ ...helpers(), _nagiEl: dataEl }).forEach(([key, value]) => define(rawData, key, value));
+        const rawData = giveHelpers(baseOf(dataEl), dataEl);
 
         const outer = closestScope(dataEl.parentElement)?.nagiProxy;
         const proxyData = reactive(rawData, outer);
