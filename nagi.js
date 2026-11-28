@@ -539,7 +539,7 @@
             node.nagiBound = node.nagiField = node.nagiInitDue = false;
             node.nagiGone = true;
             node.nagiGen = (node.nagiGen ?? 0) + 1;
-            node.nagiProxy = node.nagiRaw = node.nagiFields = node.nagiOwnClasses = node.nagiLook = null;
+            node.nagiProxy = node.nagiRaw = node.nagiFields = null;
             node.nagiBroken = false;
             ownScopes.delete(node);
         });
@@ -633,8 +633,6 @@
         );
     };
 
-    const ownClasses = (el) => new Set([...(el.nagiOwnClasses?.values() ?? [])].flatMap((names) => [...names]));
-
     const putSettled = (el, values) =>
         values.forEach(([attr, value]) => (value != null ? el.setAttribute(attr, value) : el.removeAttribute(attr)));
 
@@ -643,10 +641,7 @@
             const settled = readSettled(newEl);
             if (settled.every(([, value], i) => value === oldValues[i][1])) return [];
             putSettled(newEl, oldValues);
-            const own = ownClasses(newEl);
-            const look = new Set(classesOf(settled[1][1] ?? "").filter((name) => name && !own.has(name)));
-            newEl.nagiLook = { contains: (name) => look.has(name) };
-            return [[newEl, settled, oldValues, own]];
+            return [[newEl, settled, oldValues]];
         });
 
     const styleOf = (text) => {
@@ -683,18 +678,8 @@
         if (!moving.length) return;
         void document.documentElement.offsetWidth;
         requestAnimationFrame(() =>
-            moving.forEach(([newEl, settled, oldValues, ownThen]) => {
-                newEl.nagiLook = null;
-                if (!newEl.isConnected) return;
-                if (newEl.nagiGone) ownThen = new Set();
-                const ownNow = ownClasses(newEl);
-                settled.forEach(([attr, value], i) => {
-                    if (attr === "class" && (ownThen.size || ownNow.size)) {
-                        const names = new Set([...classesOf(value ?? "").filter((name) => name && !ownThen.has(name)), ...ownNow]);
-                        value = names.size ? [...names].join(" ") : value == null ? null : "";
-                    }
-                    settleAttr(newEl, attr, oldValues[i][1], value);
-                });
+            moving.forEach(([newEl, settled, oldValues]) => {
+                settled.forEach(([attr, value], i) => settleAttr(newEl, attr, oldValues[i][1], value));
                 newEl.nagiRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
             }),
         );
@@ -974,12 +959,7 @@
 
     const keyedWriters = {
         __proto__: null,
-        class: (el, sub, value) => {
-            const owned = (el.nagiOwnClasses ??= new Map());
-            const mine = value && (owned.get("." + sub)?.has(sub) || !(el.nagiLook ?? el.classList).contains(sub));
-            el.classList.toggle(sub, !!value);
-            owned.set("." + sub, new Set(mine ? [sub] : []));
-        },
+        class: (el, sub, value) => el.classList.toggle(sub, !!value),
         style: (el, sub, value) => (unset(value) ? el.style.removeProperty(sub) : el.style.setProperty(sub, value)),
         dataset: (el, sub, value) =>
             unset(value) ? el.removeAttribute("data-" + sub) : el.setAttribute("data-" + sub, value),
@@ -1024,18 +1004,16 @@
         if (main !== "class") return (value) => (bindEl[main] = value);
 
         let added = new Set();
-        const write = (value) => {
+        return (value) => {
             const next = new Set(classesOf(value).filter(Boolean));
             const mine = new Set();
             added.forEach((name) => next.has(name) || bindEl.classList.remove(name));
             next.forEach((name) => {
-                if (added.has(name) || !(bindEl.nagiLook ?? bindEl.classList).contains(name)) mine.add(name);
+                if (added.has(name) || !bindEl.classList.contains(name)) mine.add(name);
                 bindEl.classList.add(name);
             });
             added = mine;
-            (bindEl.nagiOwnClasses ??= new Map()).set(write, mine);
         };
-        return write;
     };
 
     const handle = (val, e, place) => val(e)?.catch?.((err) => console.error("[Nagi] failed to run:", val, "\n", err, ...place));
