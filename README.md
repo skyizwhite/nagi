@@ -230,7 +230,7 @@ Requests are sent with `fetch`, which follows HTTP redirects by itself. Nagi see
 | Event | When |
 |---|---|
 | `init` | An element with `n-bind-*` or `n-on-*` is set up |
-| `destroy` | Such an element is about to be removed by a swap |
+| `destroy` | Such an element is about to be removed by a swap, or is passed to `nagi.destroy` |
 | `fetcherr` | A request fails or times out, or its response is not 2xx. `e.detail` has `status`, `text` and `err` |
 | `fetchskip` | A write is skipped because the same one is in flight |
 | `fetchredirect` | Nagi is about to follow `n-redirect`. Cancel it to stay |
@@ -241,13 +241,27 @@ The `fetch*` events bubble. Listen with `.window` to catch them all:
 <body n-on-fetcherr.window="alert(`Failed: ${e.detail.status ?? e.detail.err}`)">
 ```
 
+### Changing the page from scripts
+
+Nagi sets up the page when it loads, and what responses bring in. When another script adds or removes elements, tell Nagi with the global `nagi`:
+
+| Function | Description |
+|---|---|
+| `nagi.init(el)` | Sets up `el` and what is inside it that is not set up yet, in the scopes around it. Calling it again does nothing more |
+| `nagi.destroy(el)` | Tears down `el` and what is inside it as a swap would: sends `destroy`, stops its binds, listeners, timers and reads. Call it before or after removing `el` |
+
+```js
+nagi.destroy(row);
+row.remove();
+```
+
 ### Things to know
 
 - HTML lowercases attribute names, so `n-let-isOpen` defines `isopen`.
 - Changes are tracked when a name is assigned: write `items = [...items, x]`, not `items.push(x)`, and `user = { ...user, name }`, not `user.name = name`.
 - Declare the names you assign in a scope. Assigning an undeclared name makes a global variable.
 - In a handler, call `$dispatch` and `$dataset()` before the first `await`; after it they act from the scope's element. `$el` stays the handler's element.
-- Nagi sets up the page when it loads, and what responses bring in. Elements added by other scripts are not set up.
+- Nagi sets up the page when it loads, and what responses bring in. Elements other scripts add or remove need `nagi.init` and `nagi.destroy`.
 
 ## Development
 

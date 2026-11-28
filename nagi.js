@@ -390,8 +390,10 @@
             node.nagiRead?.abort();
             node.nagiRuns?.forEach(kill);
             node.nagiCleanup?.forEach((clean) => clean());
+            node.nagiCleanup = null;
             node.nagiTimers?.forEach(clearTimeout);
             node.nagiTimers?.clear();
+            node.nagiBound = node.nagiField = node.nagiHold = false;
         });
     };
 
@@ -638,6 +640,8 @@
         inputEl.addEventListener("change", setVal);
         formFields.add(field);
         (inputEl.nagiCleanup ||= []).push(() => {
+            inputEl.removeEventListener("input", setVal);
+            inputEl.removeEventListener("change", setVal);
             group.members.delete(inputEl);
             formFields.delete(field);
         });
@@ -734,7 +738,7 @@
 
         const listenOn = mods.includes("window") ? window : bindEl;
         listenOn.addEventListener(eventName, listener, { once: mods.includes("once") });
-        if (listenOn === window) (bindEl.nagiCleanup ||= []).push(() => window.removeEventListener(eventName, listener));
+        (bindEl.nagiCleanup ||= []).push(() => listenOn.removeEventListener(eventName, listener));
     };
 
     const bindProp = (bindEl, key, val) => {
@@ -779,12 +783,15 @@
 
         queryAttr(baseEl, "[name]").filter(isField).forEach((inputEl) => {
             const scopeEl = formScope(inputEl);
-            if (scopeEl && !reserved(inputEl.name, inputEl)) fieldOf(inputEl, scopeEl);
+            if (inputEl.nagiField || !scopeEl || reserved(inputEl.name, inputEl)) return;
+            inputEl.nagiField = true;
+            fieldOf(inputEl, scopeEl);
         });
 
         queryAttr(baseEl, "button, input[type=submit], input[type=image]").forEach((submitEl) => {
             const proxyData = formScope(submitEl)?.nagiProxy;
-            if (!proxyData || !submitEl.form) return;
+            if (submitEl.nagiHold || !proxyData || !submitEl.form) return;
+            submitEl.nagiHold = true;
             let wasDisabled = false;
             watch(() => {
                 const fetching = proxyData.$fetching;
@@ -815,6 +822,13 @@
             dispatch(bindEl, "init", { bubbles: false });
         });
     };
+
+    const isElement = (name, el) => el?.nodeType === 1 || void console.error(`[Nagi] nagi.${name} needs an element:`, el);
+
+    window.nagi = Object.freeze({
+        init: (el) => void (isElement("init", el) && init(el)),
+        destroy: (el) => void (isElement("destroy", el) && drop(el)),
+    });
 
     document.addEventListener("DOMContentLoaded", () => init(document.body));
 })();
