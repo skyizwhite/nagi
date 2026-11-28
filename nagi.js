@@ -354,56 +354,71 @@
     const initAll = (nodes) => nodes.forEach((node) => node.nodeType === 1 && init(node));
 
     const swap = (text) => {
-        for (const fragment of fragmentsOf(text)) {
-            const strategy = fragment.getAttribute("n-swap") || "outer";
-            const target = fragment.id && document.getElementById(fragment.id);
-            if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
-            if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
-            if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
+        const moving = [];
+        try {
+            for (const fragment of fragmentsOf(text)) {
+                const strategy = fragment.getAttribute("n-swap") || "outer";
+                const target = fragment.id && document.getElementById(fragment.id);
+                if (!fragment.id) { console.warn("[Nagi] Fragment is missing an id: ", fragment); continue; }
+                if (!target) { console.warn("[Nagi] Swap target not found: #", fragment.id); continue; }
+                if (!/^(inner|outer|before|after|prepend|append)$/.test(strategy)) { console.error("[Nagi] Invalid swap strategy: ", strategy); continue; }
 
-            const kids = [...fragment.childNodes];
+                const kids = [...fragment.childNodes];
 
-            const settles = (strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1)).map(cssMorph);
+                const morphs = cssMorph(strategy === "outer" ? [fragment] : kids.filter((kid) => kid.nodeType === 1));
 
-            if (strategy === "inner") {
-                [...target.children].forEach(drop);
-                target.replaceChildren(...kids);
-                initAll([...target.childNodes]);
-            } else if (strategy === "outer") {
-                drop(target);
-                target.replaceWith(fragment);
-                init(fragment);
-            } else {
-                target[strategy](...kids);
-                initAll(kids);
+                if (strategy === "inner") {
+                    [...target.children].forEach(drop);
+                    target.replaceChildren(...kids);
+                    initAll([...target.childNodes]);
+                } else if (strategy === "outer") {
+                    drop(target);
+                    target.replaceWith(fragment);
+                    init(fragment);
+                } else {
+                    target[strategy](...kids);
+                    initAll(kids);
+                }
+
+                for (const morph of putOld(morphs)) moving.push(morph);
             }
-
-            settles.forEach((settle) => settle());
+        } finally {
+            settle(moving);
         }
     };
 
     const attributesToSettle = ["style", "class", "height", "width"];
     const readSettled = (el) => attributesToSettle.map((attr) => [attr, el.getAttribute(attr)]);
 
-    const cssMorph = (fragment) => {
-        const pairs = queryAttr(fragment, "[id]").flatMap((newEl) => {
-            const oldEl = document.getElementById(newEl.id);
-            return oldEl && oldEl.tagName === newEl.tagName ? [[newEl, readSettled(oldEl)]] : [];
+    const cssMorph = (roots) =>
+        roots.flatMap((root) =>
+            queryAttr(root, "[id]").flatMap((newEl) => {
+                const oldEl = document.getElementById(newEl.id);
+                return oldEl && oldEl.tagName === newEl.tagName ? [[newEl, readSettled(oldEl)]] : [];
+            }),
+        );
+
+    const putSettled = (el, values) =>
+        values.forEach(([attr, value]) => (value != null ? el.setAttribute(attr, value) : el.removeAttribute(attr)));
+
+    const putOld = (morphs) =>
+        morphs.flatMap(([newEl, oldValues]) => {
+            const settled = readSettled(newEl);
+            if (settled.every(([, value], i) => value === oldValues[i][1])) return [];
+            putSettled(newEl, oldValues);
+            return [[newEl, settled]];
         });
 
-        return () =>
-            pairs.forEach(([newEl, oldValues]) => {
-                const apply = (values) =>
-                    values.forEach(([attr, value]) =>
-                        value != null ? newEl.setAttribute(attr, value) : newEl.removeAttribute(attr),
-                    );
-                const settled = readSettled(newEl);
-                apply(oldValues);
-                requestAnimationFrame(() => {
-                    apply(settled);
-                    newEl.nagiRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
-                });
-            });
+    const settle = (moving) => {
+        const connected = moving.filter(([newEl]) => newEl.isConnected);
+        if (!connected.length) return;
+        void document.documentElement.offsetWidth;
+        requestAnimationFrame(() =>
+            connected.forEach(([newEl, settled]) => {
+                putSettled(newEl, settled);
+                newEl.nagiRuns?.forEach((run) => attributesToSettle.includes(run.attr) && run());
+            }),
+        );
     };
 
     const reserved = (key, el) => {
