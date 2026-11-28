@@ -680,13 +680,13 @@
     };
 
     const settle = (moving) => {
-        const connected = moving.filter(([newEl]) => newEl.isConnected || void (newEl.nagiLook = null));
-        if (!connected.length) return;
+        if (!moving.length) return;
         void document.documentElement.offsetWidth;
         requestAnimationFrame(() =>
-            connected.forEach(([newEl, settled, oldValues, ownThen]) => {
+            moving.forEach(([newEl, settled, oldValues, ownThen]) => {
                 newEl.nagiLook = null;
-                if (!newEl.isConnected || newEl.nagiGone) return;
+                if (!newEl.isConnected) return;
+                if (newEl.nagiGone) ownThen = new Set();
                 const ownNow = ownClasses(newEl);
                 settled.forEach(([attr, value], i) => {
                     if (attr === "class" && (ownThen.size || ownNow.size)) {
@@ -975,8 +975,10 @@
     const keyedWriters = {
         __proto__: null,
         class: (el, sub, value) => {
+            const owned = (el.nagiOwnClasses ??= new Map());
+            const mine = value && (owned.get("." + sub)?.has(sub) || !(el.nagiLook ?? el.classList).contains(sub));
             el.classList.toggle(sub, !!value);
-            (el.nagiOwnClasses ??= new Map()).set("." + sub, new Set(value ? [sub] : []));
+            owned.set("." + sub, new Set(mine ? [sub] : []));
         },
         style: (el, sub, value) => (unset(value) ? el.style.removeProperty(sub) : el.style.setProperty(sub, value)),
         dataset: (el, sub, value) =>

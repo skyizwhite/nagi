@@ -508,7 +508,7 @@ describe("cssMorph", () => {
         expect(target.classList.contains("open")).toBe(true);
     });
 
-    it("settles nothing on an element torn down before the frame", async () => {
+    it("settles an element torn down but left on the page before the frame to its new look", async () => {
         const { frames, beforeInit } = heldFrames();
         const page = await mount(
             `<div n-scope><button id="b" n-on-click="$get('/x')"></button><div id="target" class="old"></div></div>`,
@@ -519,7 +519,7 @@ describe("cssMorph", () => {
         const target = page.$("#target");
         page.window.nagi.destroy(target);
         frames.forEach((fn) => fn());
-        expect(target.className).toBe("old");
+        expect(target.className).toBe("new");
     });
 
     it("moves an outer swap's element from the one it takes out even when the same id comes earlier in the page", async () => {
