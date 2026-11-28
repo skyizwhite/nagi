@@ -176,6 +176,13 @@ describe("async binds", () => {
 });
 
 describe("watchers", () => {
+    it("logs a $watch whose promise rejects after an await, and leaves a returned thenable alone", async () => {
+        const page = await mount(`<div id="d" n-scope n-on-init="$watch(async () => { await 0; null.x }); $watch(() => ({ then() { globalThis.thenCalled = true } }))"></div>`);
+        await later(10);
+        expect(page.errors.map(([message, , , err]) => [message, err?.name])).toEqual([["[Nagi] failed to run:", "TypeError"]]);
+        expect(page.window.thenCalled).toBeUndefined();
+    });
+
     it("$watch reruns a function when what it read changes", async () => {
         const page = await mount(`
             <div id="d" n-scope="{ n: 1, seen: [] }" n-on-init="$watch(() => seen.push(n))"></div>
@@ -319,11 +326,4 @@ describe("elements a swap removes", () => {
         page.$("#d").nagiProxy.n = 5;
         expect(page.window.localStorage["_nagiProp-n"]).toBe("1");
     });
-
-    it("logs a $watch whose promise rejects after an await", async () => {
-        const page = await mount(`<div id="d" n-scope n-on-init="$watch(async () => { await 0; null.x })"></div>`);
-        await later(10);
-        expect(page.errors.map(([message]) => message)).toEqual(["[Nagi] failed to run:"]);
-    });
 });
-

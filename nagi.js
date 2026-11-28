@@ -208,7 +208,7 @@
                     unlink(run);
                     try {
                         const value = runWithEl(el, fn, run);
-                        if (typeof value?.then === "function") value.then(null, (err) => console.error("[Nagi] failed to run:", fn, "\n", err));
+                        if (value instanceof Promise) value.catch((err) => console.error("[Nagi] failed to run:", fn, "\n", err));
                     } catch (err) {
                         console.error("[Nagi] failed to run:", fn, "\n", err);
                     }
